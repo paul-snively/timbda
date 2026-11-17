@@ -345,10 +345,16 @@ Discovered prior art (cite and differentiate; verify marked items during the M0 
   NOT formalized (sec. 3.7); "choices laid out in space, not in time" — search-as-data is VC's own
   design thesis, not our invention. VC != Timbda-0: Timbda-0 is the OPLSS'26 ZF-denotation line,
   whose full paper SPJ repeatedly calls "the subject of another paper" (still unpublished).
-- github.com/sweirich/lambda-calculus (Weirich): Coq mechanizations of VC-era material — verse
-  equational theory from the ICFP reduction rules (verse/icfp.v), step-based denotational
-  semantics with sets of labeled results (stepverse/), graph-model semantics with
-  consistency/continuity proofs (graphverse/). "First mechanization of Verse semantics" is NOT ours.
+- github.com/sweirich/lambda-calculus (Weirich; MIT; ~77 commits; README verified 2026-11-16): Coq
+  mechanizations of lambda calculus + "extensions for the verse programming language":
+  verse/syntax.v (well-scoped de Bruijn via autosubst), verse/icfp.v (equational theory explicitly
+  "based on ICFP reduction rules" = VC-era), stepverse/ (denotations as sets of values / sets of
+  LABELED RESULTS), graphverse/ (graph-model semantics + consistency/continuity/substitution
+  theories), structures/ (Sets, Monad, FSet, NFSet libraries). "First mechanization of Verse
+  semantics" is NOT ours. Her mechanized artifacts target VC-era (ICFP reduction-rule) semantics —
+  read them before weighing our claim 2: the stepverse/ labeled-result and graphverse/ graph-model
+  lines are adjacent to candidate sets. Her well-scoped de Bruijn / autosubst idiom is the right
+  idiom; `coq/Syntax.v` borrows it.
 - github.com/rudi-cilibrasi/openverse (created 2026-11-04, active): unofficial Verse runtime;
   Verse semantics defined and proved in Lean 4; C runtime checked against it (integer arithmetic,
   program loading, rollback proved via QuickProof [VST + CompCert]; object store/value heap by
