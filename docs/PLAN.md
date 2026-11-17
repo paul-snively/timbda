@@ -34,7 +34,9 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
     agreement, strategy adequacy incl. match-first).
   - Tier 3 — papers leave open (full confluence, general strategy invariance) => faithfully stated
     conjectures, attempted opportunistically per fragment (beta/delta subsystem, determinate
-    fragments), never milestone-blocking.
+    fragments), never milestone-blocking. Nuance (see sec. 11): VC (ICFP'23) *did* prove confluence
+    for well-behaved terms — by hand, Appendix C — and *explicitly leaves evaluation strategies
+    unformalized* (its sec. 3.7). Mechanized confluence and mechanized strategy adequacy remain open.
 - No Isabelle/HOL, no Lean: Rocq is the sole prover. Practical framing; minimal open-research emphasis.
 
 ## 2. Architecture
@@ -332,3 +334,77 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
   /recall or find_solutions, and check /strata-status / get_project_context at session start.
 - After each significant decision or fix, store a new Strata record per the project AGENTS.md so
   the ledger stays current between sessions.
+
+## 11. Prior-art audit and claim boundaries (added 2026-11-16; full audit = first week of M0)
+
+Discovered prior art (cite and differentiate; verify marked items during the M0 audit):
+
+- Verse Calculus (VC), ICFP'23 (Augustsson, Breitner, Claessen, Jhala, Peyton Jones, Shivers,
+  Steele, Sweeney): rewrite semantics for deterministic functional logic; confluence PROVEN for
+  well-behaved terms (hand proof, extended-version Appendix C); evaluation strategies explicitly
+  NOT formalized (sec. 3.7); "choices laid out in space, not in time" — search-as-data is VC's own
+  design thesis, not our invention. VC != Timbda-0: Timbda-0 is the OPLSS'26 ZF-denotation line,
+  whose full paper SPJ repeatedly calls "the subject of another paper" (still unpublished).
+- github.com/sweirich/lambda-calculus (Weirich): Coq mechanizations of VC-era material — verse
+  equational theory from the ICFP reduction rules (verse/icfp.v), step-based denotational
+  semantics with sets of labeled results (stepverse/), graph-model semantics with
+  consistency/continuity proofs (graphverse/). "First mechanization of Verse semantics" is NOT ours.
+- github.com/rudi-cilibrasi/openverse (created 2026-11-04, active): unofficial Verse runtime;
+  Verse semantics defined and proved in Lean 4; C runtime checked against it (integer arithmetic,
+  program loading, rollback proved via QuickProof [VST + CompCert]; object store/value heap by
+  differential testing + fuzzing). Repo also lists Rocq sources — watch what they mechanize in
+  Rocq. "First verified Verse implementation/runtime" is NOT ours.
+- CompCertFX (Bayazit, Ebresafe, Xie — U Toronto; preprint 2025/26): first VERIFIED COMPILER for
+  effect handlers — CompCert extended with one-shot handlers, proved in Rocq down to stack
+  switching in AArch64 assembly; new IRs MachSwitched1/2; repaired CompCert invariants (stack
+  disjointness, value analysis under non-local control). "Verified compilation to stack switching"
+  is NOT ours; they verify the correctness OF switching; our distinct claim is its licensed use
+  (T12) and provable ABSENCE for determinate fragments of a natively nondeterministic source (T7).
+- Iris-WasmFX (PLDI 2026): mechanisation of the WasmFX/Wasm stack-switching proposal in Iris
+  (WasmFXCert) + modular reasoning — adjacent to our WASM leg; possible anchor for pinning DCont
+  op semantics (M5).
+- Compiling with continuations, correctly (ICFP'21, CertiCoq L6 CPS proof): verified CPS via
+  step-indexed logical relations — precedent for verified continuations in the Gallina chain.
+- Bahr, Calculating Certified Compilers for Non-Deterministic Languages: Coq framework for
+  soundness+completeness of nondeterministic-language compilers — precedent for T8/T9 shape.
+- Antoy & Jost, The Fair Scheme (LOPS'13): deterministic compilation strategy for functional-logic
+  rewriting with hand proofs of correctness AND optimality — closest FLP precedent for T5/T8;
+  unmechanized, no machine-control layer. Cite.
+- Omnisemantics (MIT PLV): set-of-outcomes Coq semantics; forward compiler-correctness proofs for
+  nondeterminism — vocabulary precedent for Denotation.v.
+- github.com/paul-snively/verse (2022-23, project owner's own prior work): Coq experiments on VC;
+  conjecture that VC uses the "LOW" reduction strategy (Biernacka et al., ICFP'22 Zoo of strategies)
+  and ambition to prove confluence. Personal intellectual lineage; this project is the machinery
+  that can finally answer it.
+
+Claim boundaries — legitimately ours (paper-defensible phrasing):
+1. Verified SPECIALIZATION of a search language: a certified Gallina kernel for Verse-lineage
+   semantics whose specialization theorems (out-of-order soundness T5, straight-line Clight
+   adequacy T6, no-context-call T7) machine-check "non-naive", with machine control effects
+   permitted only where a theorem licenses them (T12). No verified pipeline for a natively
+   nondeterministic (functional-logic) language carries such reordering/specialization/
+   effect-freeness theorems; CompCertFX verifies stack switching as the handler mechanism, not
+   its provable absence from determinate fragments; Fair Scheme proves strategy correctness by
+   hand only, unmechanized.
+2. First mechanization of TIMBDA-0 proper (the OPLSS'26 candidate-set denotation, paper still
+   unwritten) incl. the ctrees weak-bisimulation bridge to candidate-set equality; plus
+   mechanizing what the papers explicitly leave unformalized: evaluation-strategy adequacy (VC
+   sec. 3.7) and mechanized diamonds/confluence for restricted classes (VC's confluence proof is
+   hand-written). Time-sensitive: the Verse team's own denotational paper is forthcoming.
+3. Method: one TimbdaRule/ContextExtern record table generating BOTH halves of the pipeline —
+   DRR passes, Rocq Rew constructors + soundness skeletons, pdll tests, and FFI/annotation
+   emission (convergent etc.) — with an auditable paper-rule coverage claim; and a proven Gallina
+   kernel lowered to two control models (native C via CertiRocq+clang; Wasm via DCont/stack
+   switching). Related (verify): Pottier's verified-rewriting-engine case study; CompCert validated
+   checkers; Rhino (generated verified rewriting engines).
+
+NOT claimable: inventing search-as-data (VC's thesis); Gallina->C compilation (CertiCoq/CertiRocq);
+verified compilation to stack switching (CompCertFX, Iris-WasmFX); a verified Verse runtime
+(openverse); verified rewriting engines in general; differential-testing method generally.
+
+Standing watch-items: openverse's proof scope and any Rocq activity in it; the Verse team's
+forthcoming denotational-semantics paper — if the Verse team mechanizes Timbda-0 alongside it,
+claim 2 narrows to evaluation-strategy adequacy plus the compilation half: a complementary
+division of labor rather than a collision; CompCertFX publication status; Rhino citation check.
+Claims become real only when the M0-M3 artifacts exist; until then this is a well-positioned
+proposal.
