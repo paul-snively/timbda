@@ -1,0 +1,40 @@
+# M-1 trivial dialect stub; build API mirrors the in-tree MLIR bazel overlay.
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
+
+package(default_visibility = ["//visibility:public"])
+
+td_library(
+    name = "TimbdaDialectTdFiles",
+    srcs = ["Timbda.td"],
+    includes = ["."],
+    deps = ["@llvm-project//mlir:OpBaseTdFiles"],
+)
+
+gentbl_cc_library(
+    name = "TimbdaDialectIncGen",
+    tbl_outs = {
+        "TimbdaDialect.h.inc": ["-gen-dialect-decls"],
+        "TimbdaDialect.cpp.inc": ["-gen-dialect-defs"],
+    },
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "Timbda.td",
+    deps = [":TimbdaDialectTdFiles"],
+)
+
+cc_library(
+    name = "TimbdaDialect",
+    srcs = ["TimbdaDialect.cpp"],
+    hdrs = ["TimbdaDialect.h"],
+    deps = [
+        ":TimbdaDialectIncGen",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
+    ],
+)
+
+cc_test(
+    name = "timbda_dialect_test",
+    srcs = ["timbda_dialect_test.cpp"],
+    deps = [":TimbdaDialect"],
+)

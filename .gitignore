@@ -1,2 +1,19 @@
-# OpenCode session state (plan stubs, etc.) — canonical plan lives in docs/PLAN.md
+# Bazel workspace links
+/bazel-*
+# Bazel local caches
+/.bazelrc.local
+# Rocq build artifacts
+*.vo
+*.vok
+*.vos
+*.glob
+*.aux
+.vo.compiled
+# misc
+*.log
+
+# OpenCode harness state
 .opencode/
+
+# nix build result links
+/result*

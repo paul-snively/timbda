@@ -1,0 +1,35 @@
+name: consistency
+# M-1 DoD: pin check + trivial Bazel/Rocq/Haskell stubs green.
+# TODO(M-2): nightly DCont-drift job (reapply patch series onto upstream main, non-blocking).
+on:
+  push: {}
+  pull_request: {}
+
+jobs:
+  pins:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 tools/pins/pins.py check
+
+  bazel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bazelisk (respects .bazelversion)
+        run: |
+          curl -fsSL -o /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
+          chmod +x /usr/local/bin/bazelisk
+      - run: bazelisk test //dialect:timbda_dialect_test --test_output=all
+
+  nix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - run: nix flake check -L

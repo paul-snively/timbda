@@ -1,0 +1,6 @@
+# Timbda-0 Bazel config. Bazel version is pinned by .bazelversion (see tools/pins).
+common --enable_workspace=false
+common --enable_platform_specific_config=true
+# Local job cap for the from-source MLIR build (CI machines differ).
+build --jobs=8
+test --test_output=errors

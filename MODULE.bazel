@@ -1,0 +1,26 @@
+# Timbda-0 Bazel graph (C++ lane). Pin source of truth: tools/pins/pins.toml;
+# CI asserts table == this file == .bazelversion == flake.lock.
+
+module(
+    name = "timbda",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "rules_cc", version = "0.2.25")
+bazel_dep(name = "rules_shell", version = "0.8.0")
+bazel_dep(name = "platforms", version = "1.1.0")
+
+# hermetic-llvm (hermeticbuild/hermetic-llvm via BCR): hermetic clang toolchains
+# + LLVM/MLIR built from the pinned source archive. Pins LLVM_VERSION = 23.1.2.
+bazel_dep(name = "llvm", version = "0.8.27")
+
+llvm = use_extension("@llvm//extensions:llvm.bzl", "llvm")
+
+# M-1: trivial dialect at hermetic-llvm's default vintage (LLVM/MLIR 23.1.2).
+# M-2 (watch-out #1): switch to the DCont-vintage llvm-project fork commit
+# (tools/pins/pins.toml [llvm_project].dcont_vintage_commit) via
+#   llvm.from_git(remote = "https://github.com/byeongjee/llvm-project.git", commit = ...)
+# only after re-running the WasmSSA API vintage probe against that commit.
+use_repo(llvm, "llvm-project")
+
+register_toolchains("@llvm//toolchain:all")

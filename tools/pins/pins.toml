@@ -1,0 +1,124 @@
+# Timbda-0 pin table -- the single source of truth (docs/PLAN.md sec. 6).
+# CI asserts: this table == MODULE.bazel == .bazelversion == flake.lock
+# and == the nixpkgs-provided tool versions used by flake checks.
+# Any PR touching a compiler-adjacent pin must touch this table.
+
+[nixpkgs]
+input = "github:NixOS/nixpkgs"
+branch = "nixos-26.05"
+rev = "b349185bb79c7cf7ad8ea8c097931730bf473c71"
+note = "chosen for compcert 3.17 + rocq 9.1 window (PLAN pin matrix)"
+
+[bazel]
+version = "9.3.2"
+note = "= .bazelversion; hermetic-llvm v0.8.27 pins 9.3.2; bazelisk in devShell"
+
+[hermetic_llvm]
+source = "github:hermeticbuild/hermetic-llvm"
+bcr_module = "llvm"
+bcr_version = "0.8.27"
+llvm_default_version = "23.1.2"
+ref_tag = "v0.8.27"
+note = "M-1 builds MLIR 23.1.2 from the module's default source archive"
+
+[llvm_project]
+# Watch-out #1: our dialect <-> DCont fork <-> llvm-project commit must share
+# ONE MLIR API vintage.
+m1_source = "hermetic-llvm default source archive (llvm-project-23.1.2.src)"
+dcont_vintage_repo = "https://github.com/byeongjee/llvm-project.git"
+dcont_vintage_commit = "67772838e389c548f68c5513a0d417c0534ac9c7"
+dcont_vintage_date = "2026-02-15"
+dcont_vintage_msg = "[MLIR][WasmSSA] Add global_set and ref_null support"
+probe_note = "llvmorg-23.1.2 WasmSSA lacks RefNullOp+GlobalSetOp; llvm main lacks RefNullOp (probe 2026-11). M-2 wires llvm.from_git(above) and re-probes."
+
+[dcont]
+flake_input = "mlir-wasm-dialect"
+# out-of-tree Wasm/DCont dialect repo; we will fork it (PLAN sec. 6.3)
+upstream = "github:CMUAbstract/mlir-wasm-dialect"
+branch = "main"
+rev = "6be18d00a0c1472a4415f24deb9ba72101c8132e"
+rev_date = "2026-05-30"
+
+[formal.rocq]
+# nixpkgs-provided versions; assert against flake's nixpkgs at eval time
+# note: nixos-26.05 has no rocqPackages.coq attr; rocq-core is the core package
+nixpkgs_attr = "rocqPackages.rocq-core"
+version = "9.1.1"
+
+[formal.compcert]
+nixpkgs_attr = "compcert"
+version = "3.17"
+note = "ccomp lane is license-gated (later milestone); build-time lib dep only for now"
+
+[formal.stdpp]
+nixpkgs_attr = "rocqPackages.stdpp"
+version = "1.13.0"
+
+[formal.equations]
+nixpkgs_attr = "coqPackages.equations"
+version = "1.3.1+9.1"
+
+[formal.ctrees]
+flake_input = "ctrees"
+repo = "github:vellvm/ctrees"
+branch = "dev"
+rev = "cabcf9bf24b0f459204a7da19ac01b7697ff04e3"
+note = "deps itrees(inc. RelationAlgebra)/extlib/coinduction pinned above; equations+stdpp from nixpkgs; local mkRocqDerivation in M-2"
+
+[formal.itrees]
+flake_input = "interaction-trees"
+repo = "github:DeepSpec/InteractionTrees"
+branch = "master"
+rev = "284d42248a3c5517cff9f582e335fcee2f6bdc1f"
+
+
+[formal.extlib]
+flake_input = "coq-ext-lib"
+repo = "github:rocq-community/coq-ext-lib"
+branch = "master"
+rev = "c5cdb83d48786ca2680c6d817c19bb99f68d4ca3"
+
+[formal.relation_algebra]
+nixpkgs_attr = "rocqPackages.relation-algebra"
+version = "1.8.0"
+
+[formal.coinduction]
+flake_input = "coinduction"
+repo = "github:damien-pous/coinduction"
+branch = "master"
+rev = "07d2a09f9cb971209683298e9f5b3f5031d98b3f"
+
+[formal.certirocq]
+flake_input = "certirocq"
+repo = "github:CertiRocq/CertiRocq"
+branch = "main"
+rev = "943b52ae654708130f241ccf8a50ecb95a7956e2"
+
+[formal.veriffi]
+flake_input = "veriffi"
+repo = "github:CertiRocq/VeriFFI"
+branch = "main"
+rev = "7e8cd8e7b631be066407f86c82ff60b6fc63ae0b"
+
+[haskell.verse_semantics]
+flake_input = "verse-semantics"
+repo = "github:augustss/verse-semantics"
+branch = "main"
+rev = "d0eababfb7a5662f40bc7de45a596cb925445b8d"
+note = "built with nixpkgs Haskell infra from M-3; cabal dep set pinned then"
+
+[haskell.ghc]
+nixpkgs_attr = "haskell.compiler.ghc912"
+version = "9.12.3"
+
+[runtime.wasmtime]
+nixpkgs_attr = "wasmtime"
+version = "45.0.2"
+note = "record WAMI stack-switching engine flags per harness when WAMI leg lands (watch-out #4)"
+
+[tooling.lit]
+nixpkgs_attr = "lit"
+version = "18.1.8"
+
+[deferred]
+note = "opam switch pin set + cabal package set + flocq/menhirLib/boost.context pins are generated from this table at their milestone; none needed for M-1"
