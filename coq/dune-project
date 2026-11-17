@@ -1,0 +1,19 @@
+(lang dune 3.21)
+(using coq 0.7)
+(name timbda-kernel)
+(warnings (deprecated_coq_lang disabled))
+
+; Timbda-0 Gallina kernel (M0).  Deps mirror tools/pins/pins.toml: the pinned
+; opam switch provides Coinduction / RelationAlgebra / ExtLib / ITree / Stdlib,
+; and the pinned vendored ctrees (coq/deps/ctrees, installed into the switch by
+; tools/ctrees-sync.sh) provides the logical path CTree.
+(package
+ (name timbda-kernel)
+ (depends
+  (rocq-core (>= 9.0))
+  (rocq-stdlib (>= 9.0))
+  (coq-ext-lib (>= 0.11.3))
+  (rocq-coinduction (>= 1.21))
+  (rocq-relation-algebra (>= 1.8.0))
+  (coq-itree (>= 5.0))
+  rocq-ctree))

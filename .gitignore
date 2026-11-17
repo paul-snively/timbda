@@ -2,7 +2,11 @@
 /bazel-*
 # Bazel local caches
 /.bazelrc.local
+# Vendored pinned deps (synced by tools/ctrees-sync.sh from pins.toml)
+/deps/
 # Rocq build artifacts
+/_build/
+/coq/_build/
 *.vo
 *.vok
 *.vos

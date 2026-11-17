@@ -1,0 +1,8 @@
+; Kernel theory `Timbda` (coq/*.v).  Logical deps mirror the pinned Coq
+; libraries (see dune-project); CTree is provided by the vendored ctrees pinned
+; in tools/pins/pins.toml (deps/ctrees, installed into the opam switch by
+; tools/ctrees-sync.sh).
+(coq.theory
+ (name Timbda)
+ (package timbda-kernel)
+)
