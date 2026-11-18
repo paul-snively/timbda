@@ -65,10 +65,15 @@
 
           # Locks every pinned source repo on day one (PLAN sec. 6 "lock day one"):
           # a cheap derivation that just exposes the fetched source trees.
+          # (Note: '' strings don't process \n — line breaks here are real.)
           pin-sources = pkgs.runCommand "timbda-pin-sources" { }
-            ('' mkdir -p $out\n''
+            (''
+                mkdir -p $out
+              ''
               + nixpkgs.lib.concatMapStrings (name:
-                  ''ln -s ${inp."${name}".outPath} $out/${name}\n''
+                  ''
+                    ln -s ${inp."${name}".outPath} $out/${name}
+                  ''
                 ) srcInputNames);
         });
 
