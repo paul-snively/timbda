@@ -63,6 +63,19 @@ Pat   ::= Wild | Lit k | VarP n | DefP e | AnnP ty | TupP (list pat) | ApP pat p
        |  ChoiceP pat pat | SemiP pat pat | WhereP pat pat | ColonP pat pat? ... (Fig. 14/15 patterns, M3)
 ```
 
+Kernel encoding **as implemented** in `coq/Syntax.v` (the mapping the M1 audit diff uses;
+`docs/DESIGN-NOTES.md` § 1 has the index conventions):
+
+| § 0 name | Implemented constructor | Note |
+|---|---|---|
+| `Var n` | `VVar : nat -> Val` in the *value* layer | locals are only meaningful as values (`v ::= x`, Fig. 6 line 325); `Expr` has no bare `Var` constructor, so every occurrence is `Ret (VVar n)` |
+| `Lam ty e` | `VLam : Ty -> Expr -> Val` | Core-Verse lambdas are values (line 326 `λx.b`) |
+| `Delay e` | `VDelay : Expr -> Val` | `delay{e}` is a value; it is also how the kernel stores a *not-yet-evaluated* heap binding (see below) |
+| `Tup (list e)` | `VTup : list Val -> Val` *and* `TupE : list Expr -> Expr` | the paper's `op[a1, a2]` argument lists (line 452) and the Fig. 13 `cons [...]` right-hand sides hold **open expressions**, so the kernel needs an expression-level tuple; when all entries are `Ret`, `TupE` *is* the value tuple |
+| `Def (list (pat × expr)) e` | `Block : list (Ty * option Val) -> Expr -> Expr` | one constructor for `block{∃X{hp}. e}`: the slot list is `X` (with `hp` entries as `Some v`); a `def(x := e)` binding whose `e` is not yet a value is written `Some (VDelay e)` — the paper's `x = e` heap-binding form, which the `Subst`/promote rules turn into a value binding, is kept *literally* as a `None` slot plus `x = e` in the body (rules `beta-l`/`beta-t`/`subst`) |
+| `Get`/`Put`/`Select`/`Match` | no constructor in M0 | `Select` is `Choice`; `Get`/`Put` event carriers exist in `coq/Semantics.v` but are unused until M4/T12; `Match` is Tier-2 (Figs. 14–15) |
+| `Pat` | no kernel type in M0 | pattern rows are the Fig. 14/15 audit records (M3) |
+
 Kernel deviation from the paper, recorded in the audit: the paper's heap entries bind
 *values* (`hp ::= x1 v1 … xn vn`, line 336); the kernel's `Def` binds *expressions*
 (`x := e`) — Core-Verse `def` syntax only distinguishes them at normalization, and the
@@ -246,6 +259,40 @@ to the Essential tier boundary; `typeof` in the Timbda-0 AST (PLAN § 4.1) is th
 projection of `▷` and gets a kernel constructor only with M3's typeof typing rules
 (Tier-3 stub in M0, admitted: "typeof e returns e's static type when defined").
 
+## 4.1 Verification rules (Fig. 17, lines 638–664) and open lambdas (Fig. 18, lines
+668–671) — Tier-2/3 audit records, `IsEssential = 1`, no M0 kernel constructor
+
+These are the paper's **solver-side** rules (proof contexts `P ::= ∃X{hp}. Q`,
+`Q ::= □ | e = Q | Q = e | e; Q | Q; e | e[Q] | Q[e] | iter(ic){Q}{e}`, line 638-639)
+and its *incomplete* open-lambda rules. Timbda-0 implements neither `verify` nor open
+lambdas (PLAN § 4.1: no `verify`/`olam` in the Core-Verse type/opcode table), so every
+row below is an audit record with `IsEssential = 1` that the Core-Verse legality checker
+**rejects**, and none gets a `Rew` constructor or a DRR pattern before M3+. They are
+listed because the coverage claim is against the paper's rule list.
+
+| Fig. 17 rule | Paper form (transcribed) | Tier | M0 status |
+|---|---|---|---|
+| solver | `verify(R; A){b} ⟶ ⟨⟩  if R; A ⊨ inconsistent` | 3 | no ctor; `Verify_Solver` row, admitted |
+| v-val | `verify(R; A){B[v]} ⟶ ⟨⟩` | 3 | `Verify_Val` |
+| v-choice | `verify(R; A){P[e1 e2]} ⟶ verify(R; A){P[e1]}; verify(R; A){P[e2]}` | 3 | `Verify_Choice` |
+| v-fail | `verify(R; A){P[fail]} ⟶ ⟨⟩` | 3 | `Verify_Fail` |
+| split-val | `verify(R; A){P[r = gv; e]} ⟶ verify(R; A, r = gv){P[e]}; verify(R; A, r ≠ gv){P[fail]}` | 3 | `Verify_SplitVal` |
+| split-op | `verify(R; A){P[op[gv]]} ⟶ verify(R, r; A, r = op[gv]){P[r]}; verify(R; A, ¬op[gv]){P[fail]}  if r ∉ R` | 3 | `Verify_SplitOp` |
+| split-tup | `verify(R; A){P[r = ⟨v1…vn⟩; e]} ⟶ verify(R, r1…rn; A, r = ⟨r1…rn⟩){P[r1 = v1; …; rn = vn; e]}; verify(R; A, r ≠ ⟨ , …, ⟩){P[fail]}` | 3 | `Verify_SplitTup` |
+| split-app | `verify(R; A){P[f[gv]]} ⟶ verify(R, r; A, r = AP[f, gv]){P[r]}  if f ∈ R, r ∉ R` | 3 | `Verify_SplitApp` |
+| split-appf | `verify(R; A){P[f[λx.e]]} ⟶ verify(R, r; A){P[r]}  if f ∈ R, r ∉ R` | 3 | `Verify_SplitAppF` |
+| v-some | `verify(R; A){P[e1 ▷⟨ω⟩ e2]} ⟶ verify(R, r; A){∃x. x = e2[r]; P[x]}; verify(R; A){∃x. x = e2[r]; P[fail]};  if r ∉ R and fvs(v) # bvs(P)` | 3 | `Verify_Some` |
+
+| Fig. 18 rule | Paper form (transcribed) | Tier | M0 status |
+|---|---|---|---|
+| u-olam | `olam(z1, v1) = olam(z2, v2); e ⟶ ∃z3. z1 = olam(z3, v2); z2 = olam(z3, v1); e` | 3 | `Olam_Unify` (paper marks Fig. 18 **incomplete**) |
+| app-olam | `(olam(z, v1))[v2] ⟶ ∃x. x = z[v2]; x = v1[v2]; x` | 3 | `Olam_App` |
+| exi-app | `∃z. e ⟶ e[(λx. ∃y. y)/z]  if z occurs in e only as z[v]` | 3 | `Olam_ExiApp` |
+
+Skolem variables (`r`, `gv` = global value) have no kernel constructor: the kernel's
+`Root`/`Val` taxonomy has no Skolem case, which is what makes these rows *records*
+rather than rules (docs/RULES-AUDIT.md `IsEssential` column).
+
 ## 5. Strategy groups (Fig. 19–25 vocabulary)
 
 The paper's strategy evaluation (Fig. 25 total order, lecture-3 notes) enumerates
@@ -308,8 +355,10 @@ EqTup2, EqFail (5); Add, Gt1, Gt2, IsInt1, IsInt2, Cons, DotDot (7); BetaL, Beta
 BetaT0 (3); IterFail, IterChoice, IterIf, IterAll, IterFor (5) — **33 constructors**,
 covering the paper's 26 named rules + 7 kernel-side extensions (BetaT0 base case,
 PromoteR explicit, Gc split, cons2 primop helper recorded separately). Tier-2 matching
-rows (Fig. 14–15: 18) and Essential-verse rows (Fig. 16 + `oftype`: 4) complete the
-audit corpus at **55 records**; every record maps to a `TimbdaRule`/`TimbdaExtern`
+rows (Fig. 14–15: 18), Essential-verse rows (Fig. 16 + `oftype`: 4), verification rows
+(Fig. 17: 10) and open-lambda rows (Fig. 18: 3) complete the audit corpus at **68
+records** (the reconciliation of the earlier 55-record seed, which omitted Fig. 17–18, so
+the M1 diff has a single arithmetic); every record maps to a `TimbdaRule`/`TimbdaExtern`
 record in `dialect/Timbda.td` (M1), and the audit diff must be non-zero only for the
 documented kernel-side extensions (this section is the record of that deviation —
 PLAN § 11.2 deviation #2 is *rejected*, so extensions appear here, in the transcribed
