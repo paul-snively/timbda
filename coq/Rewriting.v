@@ -156,12 +156,33 @@ Definition root_eqb (r1 r2 : Root) : bool :=
 Definition stuck_root (r : Root) : bool :=
   match r with RLam | RootOther => true | _ => false end.
 
+(* Pairs with NO unification rule at all: a bare variable on either side
+   (`x = x` is "stuck until x gets a value", line 444-445), or lambdas on both
+   sides (lines 441-442).  Everything else with different root shapes is eqfail
+   (line 437), which includes lambda-vs-literal: the note's stuck exemption is
+   the *same-root* case only.  Recorded in docs/DESIGN-NOTES.md. *)
+Definition no_eq_rule_pair (r1 r2 : Root) : bool :=
+  match r1, r2 with
+  | RootOther, _ => true
+  | _, RootOther => true
+  | RLam, RLam => true
+  | _, _ => false
+  end.
+
 Definition root_mismatch (v1 v2 : Val) : bool :=
   let r1 := root_of v1 in
   let r2 := root_of v2 in
-  negb (stuck_root r1) && negb (stuck_root r2) && negb (root_eqb r1 r2).
+  negb (no_eq_rule_pair r1 r2) && negb (root_eqb r1 r2).
 
 Definition is_int_val (v : Val) : bool := match v with VInt _ => true | _ => false end.
+
+(* eqk1/eqk2 quantify over literals k (line 432-433; Fig. 6 line 320: unit,
+   true, false, integer).  Helper for the kernel-side literal generalization. *)
+Definition is_lit_val (v : Val) : bool :=
+  match v with
+  | VUnit | VTrue | VFalse | VInt _ => true
+  | _ => false
+  end.
 
 (* ---------- slot access / body->slot reindexing (subst, promote) ----------
    `slot_value_at slots p` is the heap entry of slot p (None = declared only).
@@ -233,13 +254,18 @@ Definition promote_hp_ok (slots : list (Ty * option Val)) (p : nat) : bool :=
 Inductive Rew : Expr -> Expr -> Type :=
 
 (* ---------- Fig. 9 (lines 432-437): unification ---------- *)
-| RewEqK1 : forall z : Z,
-    Rew (Unify (Ret (VInt z)) (Ret (VInt z))) (Ret (VInt z))
-    (* audit: EqK1 | fig:9 | tier:1 | k = k -> k *)
-| RewEqK2 : forall z1 z2 : Z,
-    z1 <> z2 ->
-    Rew (Unify (Ret (VInt z1)) (Ret (VInt z2))) Fail
-    (* audit: EqK2 | fig:9 | tier:1 | k1 = k2 -> fail if k1 <> k2 *)
+| RewEqK1 : forall v : Val,
+    is_lit_val v = true ->
+    Rew (Unify (Ret v) (Ret v)) (Ret v)
+    (* audit: EqK1 | fig:9 | tier:1 | k = k -> k (line 432; k ranges over the
+       literals unit/true/false/int — the kernel states the literal-general form,
+       recorded in docs/RULES-AUDIT.md; eqtup1 handles tuples, eqfail the rest) *)
+| RewEqK2 : forall v1 v2 : Val,
+    is_lit_val v1 = true ->
+    is_lit_val v2 = true ->
+    v1 <> v2 ->
+    Rew (Unify (Ret v1) (Ret v2)) Fail
+    (* audit: EqK2 | fig:9 | tier:1 | k1 = k2 -> fail if k1 <> k2 (line 433) *)
 | RewEqTup1 : forall vs ws : list Val,
     length vs = length ws ->
     Rew (Unify (Ret (VTup vs)) (Ret (VTup ws))) (eq_seq vs ws (Ret (VTup vs)))
@@ -252,7 +278,8 @@ Inductive Rew : Expr -> Expr -> Type :=
     root_mismatch v1 v2 = true ->
     Rew (Unify (Ret v1) (Ret v2)) Fail
     (* audit: EqFail | fig:9 | tier:1 | hnf1 = hnf2 -> fail if different root shapes;
-       NO rule when either root is RLam/RootOther (lines 441-445): those stay stuck *)
+        NO rule when either side is a bare variable or both are lambdas
+        (no_eq_rule_pair, lines 441-445): those stay stuck *)
 
 (* ---------- Fig. 10 (lines 452-459): primitive operations ----------
    Canonical primop application: `op[a1, a2]` = App (Ret (VPrim op)) (TupE [...]).
