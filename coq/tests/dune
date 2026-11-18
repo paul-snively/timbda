@@ -1,0 +1,6 @@
+; Kernel test theory: exercises the discharged RewSound_* lemmas and the br2
+; laws at the weak-bisimulation level (docs/PLAN.md § 3 T1/T2, M0 gate).
+; Private to the timbda-kernel project; depends on the Timbda theory.
+(coq.theory
+ (name TimbdaTests)
+ (theories Timbda))

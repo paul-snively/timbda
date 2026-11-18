@@ -11,8 +11,8 @@
 
    ---------- Position conventions (docs/DESIGN-NOTES.md § 1) ----------
    * A rule is stated as a pair of kernel terms at ONE position; the rule does not
-     say anything about the surrounding term, so the context closure (rwd_ctx /
-     rwd_blk below) is what the paper's `C[ ]` and `B[ ]` provide.
+     say anything about the surrounding term, so the context closure (rw_ctx /
+     rw_blk below) is what the paper's `C[ ]` and `B[ ]` provide.
    * The paper's block context `B[ ] = block{∃X{hp}. □}` is written `Block X inner`,
      where `inner` is read at the block's INNER position.  Both sides of a rule then
      mention the same `Block X -` subterm, and because the quantified inner terms are
@@ -243,13 +243,15 @@ Definition promote_hp_ok (slots : list (Ty * option Val)) (p : nat) : bool :=
    `Rew lhs rhs` : a Core-Verse one-step rewrite at the root of a term.
    It is a *data* type (not a Prop) so that a rule value carries the rule
    identity into the audit tables and into the soundness lemmas
-   (`RewSound_<Rule>` in Rewriting.v / Denotation.v).  Context closure lives in
-   `rwd` at the end of this file.
+   (`RewSound_<Rule>` in Denotation.v).  Context closure lives in `rw_step` /
+   `rewrites` at the end of this file.
 
-   Tier labels follow docs/VERSE-RULES.md: Tier 1 = fully proved soundness;
-   Tier 2 = constructor + soundness statement, admitted until M3/T1 (they are
-   the rules whose RHS rewrites the *evolving heap*, i.e. promote-l/r and
-   float, plus the paper's `hp[v/x]` sub-step that the M0 statements omit).
+   Tier labels follow docs/VERSE-RULES.md and classify the *statement*: Tier 2 =
+   the constructor's own statement needs the evolving-heap machinery the M0
+   statements omit (promote-l/r's `hp[v/x]` sub-step, float's C-general form);
+   Tier 1 = everything else.  Per-ctor proof status (discharged at M0 / deferred,
+   with reason class) is the table in docs/RULES-AUDIT.md section 1: tier is not
+   status, and a deferred row carries no statement rather than an admitted one.
    ===================================================================== *)
 Inductive Rew : Expr -> Expr -> Type :=
 

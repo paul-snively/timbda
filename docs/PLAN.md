@@ -165,8 +165,9 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
 - M-1 (first action): build-infra skeleton, per sec. 0 + sec. 6.
 - M0: semantics spike. Syntax.v, Semantics.v, Rewriting.v; T1 for ~12 core rules, T2; extracted
   evaluator + T8 draft; differential harness vs augustss REPL. Transcribe rules from the SPJ
-  "Supporting Figures" paper — fetch pages 9-12 first (the rewrite-rule pages: unification,
-  primops/delta, beta, iteration/choice, matching; the only chunk not yet read in full):
+  "Supporting Figures" paper (done: Figs. 6-18, lines 319-671, transcribed in docs/VERSE-RULES.md;
+  the rewrite-rule pages 9-12 — unification, primops/delta, beta, iteration/choice — fed the
+  M0 gate: 15 discharged T1 ctors + the br2 algebra, per-rule status in docs/RULES-AUDIT.md):
   cs.uoregon.edu/research/summerschool/summer26/_lectures/SPJ_Verse-figures.pdf.
   Timbda-0's ZF-flavored denotation ported predicatively in Rocq (stdpp gsets as candidate sets;
   universe stratification).

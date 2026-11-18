@@ -24,8 +24,11 @@ our kernel naming. This file is the feed for three artifacts that must stay 1:1 
 ## Formalization calibration (PLAN § 4.4)
 
 - **Tier 1** — proved in this repo or in the pinned ctrees stdlib, audit row links the
-  Gallina lemma. Every rule below that has `Tier 1` gets a kernel constructor with a
-  discharged `RewSound_*` lemma (M0 gate: ≥ 10 full proofs).
+  Gallina lemma. Every `Tier 1` rule targets a kernel constructor with a discharged
+  `RewSound_*` lemma, but the M0 gate is the core-rule subset only (≥ 10 full proofs —
+  met with 15 discharged ctors + 2 partial schema ctors); tier-1 rows beyond the gate
+  carry a *deferral with reason class* in `docs/RULES-AUDIT.md` § 1/3 instead of an
+  admitted statement (audit § 6).
 - **Tier 2** — Gallina statement + proof sketch (forward-simulation lemma stated,
   per-rule `RewSound_*` admitted where the full proof needs the evolving-heap model;
   M3/T1 completes them).
@@ -208,7 +211,7 @@ our judgment.
 | Rule | Paper form | Kernel constructor | Tier |
 |---|---|---|---|
 | IterFail | `iter(ic){B[C[fail]]}{e} ⟶ e` | `RewIterFail : Rew (Iter ic (fillB (fillC Fail)) e) e` | 1 |
-| IterChoice | `iter(ic){B[C[b1 b2]]}{e} ⟶ iter(ic){B[C[block{b1}]]}{iter(ic){B[C[block{b2}]]}{e}}  if leftChoiceFree(C)` — the paper's *candidate-splitting* rule; kernel `Choice` = `Select` op; side condition `leftChoiceFree(C)` is the kernel function of § 1 | `RewIterChoice` | 1 (T2 algebra: = `bind/br2` interchange, proved in ctrees) |
+| IterChoice | `iter(ic){B[C[b1 b2]]}{e} ⟶ iter(ic){B[C[block{b1}]]}{iter(ic){B[C[block{b2}]]}{e}}  if leftChoiceFree(C)` — the paper's *candidate-splitting* rule; kernel `Choice` = `Select` op; side condition `leftChoiceFree(C)` is the kernel function of § 1 | `RewIterChoice` | 1 (T2 algebra: = `bind/br2` interchange — **not** a ctrees lemma: the vendored ctrees carries the br2 laws and the up-to-bind machinery (`bind_chain_gen`), not this distributivity; tracked as the iter/choice corner in `docs/RULES-AUDIT.md` § 3-4) |
 | IterIf | `iter(if){B[delay{e1}]}{e2} ⟶ block{B[e1]}` | `RewIterIf` | 1 |
 | IterAll | `iter(all){B[v]}{e} ⟶ cons[B[v], e]` | `RewIterAll` | 1 |
 | IterFor | `iter(for){B[v]}{e} ⟶ block{∃x{}. cons2[⟨x, B[v]⟩, e]}` | `RewIterFor` (`cons2` = kernel pair-cons primop) | 1 |
@@ -224,10 +227,11 @@ These rules define the *matching function* `u ⇝w t` (the semantics of Essentia
 patterns; `w = (bb, dr, vx)` the four-way mode, `𝒟w⟦t⟧` the desugaring). For Timbda-0
 they fix the semantics of the canonicalizer `match` op and are the M3 obligation
 "the 14 matching rules become lowering patterns, each proven correct wrt the ctrees
-candidate-set model" (PLAN § 5.2 M3). They are **not** `Rew` constructors in M0 — they
-are Gallina *functions* in `coq/Semantics.v` (`match_pat`) whose equations audit as rows
-(`Match_*`), proven in M3 (Tier 2; kernel function exists in M0 as the definitional
-basis, unproven):
+candidate-set model" (PLAN § 5.2 M3). They are **not** `Rew` constructors in M0 — they are
+meant to be Gallina *functions* in `coq/Semantics.v` (`match_pat`) whose equations audit
+as rows (`Match_*`), proven in M3 (Tier 2; **DEV-1**: no `match_pat` function and no
+`Match` node exist at M0, so even the definitional basis is an M3 obligation —
+`docs/RULES-AUDIT.md` § 2):
 
 | Rule (Fig. 14) | Gloss |
 |---|---|
@@ -257,7 +261,8 @@ constructor, no dialect lowering pattern in Timbda-0 (rejected by the legality c
 `moftype`'s Core-Verse fragment (`u ⇝w t1 ▷ t2` desugarings, lines 602–609) is deferred
 to the Essential tier boundary; `typeof` in the Timbda-0 AST (PLAN § 4.1) is the runtime
 projection of `▷` and gets a kernel constructor only with M3's typeof typing rules
-(Tier-3 stub in M0, admitted: "typeof e returns e's static type when defined").
+(**DEV-2**: at M0 it is a Tier-3 audit record only — no constructor and no admitted stub
+exist in `coq/Syntax.v`; `docs/RULES-AUDIT.md` § 2).
 
 ## 4.1 Verification rules (Fig. 17, lines 638–664) and open lambdas (Fig. 18, lines
 668–671) — Tier-2/3 audit records, `IsEssential = 1`, no M0 kernel constructor

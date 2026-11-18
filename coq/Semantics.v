@@ -193,9 +193,15 @@ Definition prim_sres (r : PrimResult) : SResult :=
      candidate agrees (mfor unpacks the pair accumulator); Tier-2 audit corner
      for the M2 differential harness.
    - application: a lambda binds its (closed) argument value (beta); a primitive
-     head goes through prim_total; anything else - literal, tuple, open variable,
-     delay - is just stuck (Fig. 10 line 463; no delay-app rule in Red.hs).
-     The `v[]` argument is the empty tuple VTup [].
+     head unpacks the tuple operand into the prim_total argument list (kernel
+     `op[a1..an]` = App (Ret (VPrim p)) (TupE args), decision 5); a non-tuple
+     operand becomes the singleton list.  An empty-tuple function FAILS without
+     forcing its operand: RewBetaT0 (`<>[e] -> fail`, Fig. 11 line 475) is a
+     rewrite rule that discards e, so strict evaluation would leak e's
+     stuckness into the rule's denotation; the App-arm short-circuit is the
+     documented exemption (audit corner for the M2 differential harness).
+     Lambda/delay/value/delay application shapes with no rule are stuck
+     (Fig. 10 line 463).
    Fuel (decision 2): every recursive call gets a predecessor, so evaluation is
    total; budget exhaustion yields SStuck.  Choice is br2; stuck/fail propagate
    through sequential positions but survive per-branch inside a choice (a stuck
@@ -233,11 +239,15 @@ Fixpoint denE (rho : env) (e : Expr) (f : nat) : ctree void1 B2 SResult :=
         denE rho e1 n >>= fun r1 =>
         match r1 with
         | SOk v1 =>
-            denE rho e2 n >>= fun r2 =>
-            match r2 with
-            | SOk v2 => apply_c rho n v1 v2
-            | SFail => sret SFail
-            | SStuck => sret SStuck
+            match v1 with
+            | VTup nil => sret SFail          (* beta-t0: fail without forcing e *)
+            | _ =>
+                denE rho e2 n >>= fun r2 =>
+                match r2 with
+                | SOk v2 => apply_c rho n v1 v2
+                | SFail => sret SFail
+                | SStuck => sret SStuck
+                end
             end
         | SFail => sret SFail
         | SStuck => sret SStuck
@@ -263,7 +273,11 @@ with apply_c (rho : env) (f : nat) (fn arg : Val) : ctree void1 B2 SResult :=
   | 0 => sret SStuck
   | S n => match fn with
     | VLam _ body => denE (arg :: rho) body n
-    | VPrim p => sret (prim_sres (prim_total p [arg]))
+    | VPrim p =>
+        sret (prim_sres
+          (match arg with
+           | VTup vs => prim_total p vs        (* decision 5: unpack the operand list *)
+           | v => prim_total p [v] end))
     | VDelay _ => sret SStuck             (* forcing only via iter-if *)
     | _ => sret SStuck                    (* ill-typed application, line 463 *)
     end

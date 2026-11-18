@@ -116,3 +116,39 @@ At the pinned nixpkgs
 - Only the legacy `coqPackages` namespace provides `equations` (`1.3.1+9.1`).
 - No ghc/cabal on PATH: the Haskell golden tests run through nix only
   (`tests/golden/run.sh`, `haskell.compiler.ghc912` = 9.12.3).
+
+## 6. T1 proof machinery (M0, measured)
+
+Batch probes under `/tmp/opencode` (`probes8/9/10.py`, `p11*.v`, `p12_axioms.v`); the
+per-rule status table is `docs/RULES-AUDIT.md` § 1.  The findings that shaped
+`coq/Denotation.v`:
+
+- Applying a ctrees `~` (sbisim) lemma to an `≈` goal fails outright - sbisim and
+  wbisim are different greatest fixed points ("gfp (sb eq) … vs gfp wb …").  Bridge
+  with `sbisim_wbisim_subrelation` / `equ_wbisim_subrelation`.
+- `bind` is a cofixpoint (`CTree.subst`): `bind (sret x) k = k x` is *not* provable by
+  `cbv`/`reflexivity`.  Every computation lemma transports the goal to `≅` (equ),
+  rewrites `bind_ret_l` there (`setoid_rewrite`), and closes with `reflexivity`.
+- cbn on rocq 9: fixpoints like `negb`/`andb`/`rev`/`app`/`length` reduce **only when
+  they are in the delta list**; `Z.eqb`/`Z.ltb` must stay OUT of it, otherwise the
+  hypothesis-driven rewrites lose their match.  Two vocabularies: `t1_norm` (unfold
+  `prim_total`) and `t1_fold` (keep `prim_total p [...]` folded for rows whose
+  hypothesis is an equation about it).  Boolean hypotheses go through reflection
+  lemmas (`zeqb_self_true`, `prim_total_PGt_true/_false`, `prim_total_PIsInt_fail`),
+  never goal-side `inversion`.
+- Ltac `;` semantics: a tactic chain terminated by `.` leaves only one live goal -
+  the siblings are shelved - producing "Attempt to save an incomplete proof" / "No
+  such goal".  Each row's full per-case discharge lives in ONE `;` chain (see
+  `RewSound_EqK1/EqK2/EqTup2`).  Identifiers are resolved at Ltac *definition* time:
+  `apply Hne` inside an Ltac body is "The reference Hne was not found"; match the
+  hypothesis pattern instead.  `Show` is likewise unavailable inside Ltac bodies.
+- `Print Assumptions` (build-time): every discharged `≈`-level lemma - and ctrees'
+  own lemmas, e.g. `Probe.v`'s `ex_br2_commut` - prints exactly one axiom,
+  `Eqdep.Eq_rect_eq.eq_rect_eq`, inherited from ctrees' Program-generated definitions;
+  `closeV_lit`/`closeV_map_VInt` print "Closed under the global context".  Audit:
+  `docs/RULES-AUDIT.md` § 6.
+- `Stdlib.Bool`'s level-40 `&&&` notation clashes hard with the ctrees chain notation
+  table (level 59): do not import Bool directly; it arrives transitively via
+  `Timbda.Syntax`.
+- Comment hazard: a substring like `…/Eq/*` inside a `(* … *)` header terminates the
+  comment early ("illegal begin of vernac").
