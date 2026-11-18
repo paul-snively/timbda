@@ -1,0 +1,331 @@
+# Timbda-0 differential corpus, M0 slice (docs/PLAN.md sec. 6 "Differential harness").
+#
+# This file is the harness's single specification: one case = one closed kernel
+# expression, the head-table rule its root must select, and the normal form the
+# evaluator must reach.  Two corners read this file independently and must agree:
+#   - tools/corpus/corpus.py  reads it and emits the Coq corner: Coq's own
+#     `Timbda.Eval.norm` / `head_redex` asserted by `reflexivity`;
+#   - tools/corpus/driver.ml  reads it a second time, independently, and runs the
+#     *extracted* OCaml evaluator (tools/extract/extract.v -> timbda_eval.ml).
+# The `norm` expectations below were derived by hand from the paper rules (Figs.
+# 9-13, transcribed in docs/VERSE-RULES.md) in the kernel's documented evaluation
+# order.  See tools/corpus/README.md for the strategy, and for what this corpus
+# does and does not establish.
+#
+# Grammar (canonical, no sugar; the desugaring table is in tools/corpus/README.md):
+#   expr := (ret val) | (glob POS) | (app expr expr) | (tup expr ...)
+#         | (seq expr expr) | (unify expr expr) | (choice expr expr) | fail
+#         | (block (slot ...) expr) | (iter comb expr expr)
+#   slot := (ty) | (ty val)                     # declared-only, or filled
+#   val  := unit | true | false | INT | (primv prim) | (tupv val ...)
+#         | (lam ty expr) | (delay expr) | (var N)
+#   ty   := tunit | tbool | tint | (arr ty ty) | tany
+#   comb := iall | iif | ifor
+# INT is a Z literal and may be negative; (var N) is a nat index; (glob POS) is
+# a positive literal (Syntax.v: ident := positive, Glob : ident -> Expr).
+
+defaults fuel 24
+
+# ---------- Fig. 12: structural / normalization rows ---------------------------
+
+case seq_ret
+  head r_seq
+  expr (seq (ret unit) (ret 1))
+  norm (ret 1)
+  why "Seq: seq of a value drops the left component (RewSound_Seq)."
+
+case norm5_reassoc
+  head r_norm5
+  expr (seq (seq fail fail) fail)
+  norm (seq fail (seq fail fail))
+  why "Norm5 re-associates a nested seq; the re-associated root has no rule (neither side is a value), so the one-pass structural rebuild is the normal form."
+
+case norm1_value_through_seq
+  head r_norm1
+  expr (unify (ret unit) (seq fail fail))
+  norm (seq fail (unify (ret unit) fail))
+  why "Norm1 pushes a value through a seq; `unify unit fail` has no row (the right side is not a value)."
+
+case norm2_distribution
+  head r_norm2
+  expr (unify (ret unit) (unify fail fail))
+  norm (seq (unify (ret unit) fail) (unify (ret unit) fail))
+  why "Norm2 distributes a value over a nested unify (distribution is a seq of unifications, not a unify)."
+
+case norm3_seq_left
+  head r_norm3
+  expr (unify (seq fail fail) fail)
+  norm (seq fail (unify fail fail))
+  why "Norm3 pulls the left seq out of a unify."
+
+case norm4_nested_unify_value
+  head r_norm4
+  expr (unify (unify (ret unit) fail) fail)
+  norm (seq (unify (ret unit) fail) (unify (ret unit) fail))
+  why "Norm4: value on the left of a nested unify - same distribution shape as Norm2."
+
+case norm1_then_seq_drops_the_value
+  head r_norm1
+  expr (unify (ret 3) (seq (ret unit) fail))
+  norm (unify (ret 3) fail)
+  why "Norm1 pushes the value through the seq, giving `unit ; (3 = fail)`; the head position IS re-visited (head steps consume fuel one at a time), so R_Seq then drops the `ret unit`, and `3 = fail` takes no row because its right side is not a value. Contrast eqtup1_single_element, where the rebuild happens in the structural pass and is therefore not re-visited."
+
+# ---------- Fig. 9: unification taxonomy --------------------------------------
+
+case eqk1_int
+  head r_eqk1
+  expr (unify (ret 42) (ret 42))
+  norm (ret 42)
+  why "EqK1: equal literals unify to the literal."
+
+case eqk1_unit
+  head r_eqk1
+  expr (unify (ret unit) (ret unit))
+  norm (ret unit)
+  why "EqK1 for unit (is_lit_val covers unit/true/false/int, Fig. 6 line 320)."
+
+case eqk2_int_unequal
+  head r_eqk2
+  expr (unify (ret 1) (ret 2))
+  norm fail
+  why "EqK2: unequal literals are fail, not stuck."
+
+case eqk2_unit_vs_int
+  head r_eqk2
+  expr (unify (ret unit) (ret 3))
+  norm fail
+  why "unit vs 3 is a *literal* pair (both sides take the EqK1/EqK2 branch), not EqFail - the same distinction KernelTest.v documents."
+
+case eqtup1_single_element
+  head r_eqtup1
+  expr (unify (ret (tupv unit)) (ret (tupv unit)))
+  norm (seq (ret unit) (ret (tupv unit)))
+  why "EqTup1 builds `x=x ; angle-bracket-v` (eq_seq, line 435); the inner unify reduces in the structural pass and the outer seq needs a further fuel pass (README sec. 3)."
+
+case eqtup1_two_elements
+  head r_eqtup1
+  expr (unify (ret (tupv 1 2)) (ret (tupv 1 2)))
+  norm (seq (ret 1) (seq (ret 2) (ret (tupv 1 2))))
+  why "EqTup1 on a 2-element tuple: two elementwise unifications chained over the re-built tuple."
+
+case eqtup2_length_mismatch
+  head r_eqtup2
+  expr (unify (ret (tupv unit)) (ret (tupv unit 2)))
+  norm fail
+  why "EqTup2: tuples of different lengths fail before any element is compared."
+
+case eqfail_unit_vs_lam
+  head r_eqfail
+  expr (unify (ret unit) (ret (lam tany (glob 1))))
+  norm fail
+  why "EqFail: a literal against a lambda. The Fig. 9 no-rule exemption (lines 441-445) is the *same-root* case only."
+
+case stuck_lam_vs_lam
+  head none
+  expr (unify (ret (lam tany (glob 1))) (ret (lam tany (glob 1))))
+  norm (unify (ret (lam tany (glob 1))) (ret (lam tany (glob 1))))
+  why "lambda vs lambda has no row at all (Fig. 9 lines 441-442): stuck, not fail."
+
+case stuck_var_vs_var
+  head none
+  expr (unify (ret (var 0)) (ret (var 0)))
+  norm (unify (ret (var 0)) (ret (var 0)))
+  why "`x = x` is stuck until x gets a value (lines 444-445)."
+
+case stuck_var_vs_value
+  head none
+  expr (unify (ret (var 0)) (ret 3))
+  norm (unify (ret (var 0)) (ret 3))
+  why "A bare variable on either side takes no Eq row (no_eq_rule_pair); binding `x` is the Fig. 8 promote/subst rows, which the head table defers to M2."
+
+case eqfail_primhead_vs_int
+  head r_eqfail
+  expr (unify (ret (primv padd)) (ret 1))
+  norm fail
+  why "EqFail: prim head against a literal (different roots)."
+
+case stuck_primhead_vs_primhead
+  head none
+  expr (unify (ret (primv padd)) (ret (primv psub)))
+  norm (unify (ret (primv padd)) (ret (primv psub)))
+  why "same-root exemption on prim heads (Fig. 10 note, line 463): no row, stuck."
+
+case eqfail_delay_vs_int
+  head r_eqfail
+  expr (unify (ret (delay fail)) (ret 1))
+  norm fail
+  why "EqFail on a delay against a literal; `delay` vs `delay` is the same-root stuck case."
+
+# ---------- Fig. 11: beta / bind rows ----------------------------------------
+
+case betat0_empty_tuple
+  head r_betat0
+  expr (app (ret (tupv)) fail)
+  norm fail
+  why "BetaT0 base case: applying an empty tuple fails (RewBetaT0)."
+
+case betal_declares_slot
+  head r_betal
+  expr (app (ret (lam tany (glob 1))) (ret unit))
+  norm (block ((tany)) (seq (unify (ret (var 0)) (ret unit)) (glob 1)))
+  why "BetaL: the lambda body keeps its indices (de Bruijn), the *argument* is lifted by the new binder; `x = unit` waits for the Fig. 8 promote rows."
+
+case betal_body_is_slot_variable
+  head r_betal
+  expr (app (ret (lam tany (ret (var 0)))) (ret 7))
+  norm (block ((tany)) (seq (unify (ret (var 0)) (ret 7)) (ret (var 0))))
+  why "BetaL with a body that is already a variable reference: after the beta step `var 0` names the freshly declared slot."
+
+case betat_single_candidate
+  head r_betat
+  expr (app (ret (tupv unit)) (ret 3))
+  norm (block ((tany)) (seq (unify (ret (var 0)) (ret 3)) (block () (seq (unify (ret (var 0)) (ret 0)) (ret unit)))))
+  why "BetaT (line 469): one candidate per tuple element (beta_t_cands index 0); a one-element candidate list is that candidate (choice_list), i.e. no spurious choice node."
+
+case betat_two_candidates
+  head r_betat
+  expr (app (ret (tupv 1 2)) (ret 7))
+  norm (block ((tany)) (seq (unify (ret (var 0)) (ret 7)) (choice (block () (seq (unify (ret (var 0)) (ret 0)) (ret 1))) (block () (seq (unify (ret (var 0)) (ret 1)) (ret 2))))))
+  why "BetaT with a 2-element tuple: choice_list folds the two candidates into one choice node - the candidate bag the denotation reads as br2 (T2)."
+
+# ---------- Fig. 10: primops via the schema rows -----------------------------
+
+case prim_add_two_args
+  head r_prim
+  expr (app (ret (primv padd)) (tup (ret 7) (ret 35)))
+  norm (ret 42)
+  why "add (line 452), dispatched by the Prim2 schema row (R_Prim stands in for the named rows Add/Gt1/IsInt1/Cons/DotDot, Eval.v head table)."
+
+case prim_neg_bare_operand
+  head r_prim
+  expr (app (ret (primv pneg)) (ret 3))
+  norm (ret -3)
+  why "A bare `ret v` operand unpacks to the one-element list (Semantics.v decision 5), matching the denotation's apply_c unpacking."
+
+case prim_ppls_identity
+  head r_prim
+  expr (app (ret (primv ppls)) (ret 9))
+  norm (ret 9)
+  why "pls is the identity on an integer."
+
+case prim_ppls_not_int
+  head r_primfail
+  expr (app (ret (primv ppls)) (ret unit))
+  norm fail
+  why "PPls has a catch-all fail row for a non-integer single argument."
+
+case prim_gt_left_operand
+  head r_prim
+  expr (app (ret (primv pgt)) (tup (ret 5) (ret 2)))
+  norm (ret 5)
+  why "gt1 (line 453): the guard holds and the prim returns its left operand."
+
+case prim_gt_guard_fails
+  head r_primfail
+  expr (app (ret (primv pgt)) (tup (ret 2) (ret 5)))
+  norm fail
+  why "gt2 (line 454): the guard fails, so the primop fails."
+
+case prim_pneq_equal
+  head r_primfail
+  expr (app (ret (primv pneq)) (tup (ret 4) (ret 4)))
+  norm fail
+  why "PNEq fails when the operands are equal (its `a != b` guard)."
+
+case prim_isint_on_bool
+  head r_primfail
+  expr (app (ret (primv pisint)) (tup (ret true)))
+  norm fail
+  why "isInt2 (line 456)."
+
+case prim_isbool_passthrough
+  head r_prim
+  expr (app (ret (primv pisbool)) (ret true))
+  norm (ret true)
+  why "isBool returns the boolean it checked."
+
+case prim_cons_tuple
+  head r_prim
+  expr (app (ret (primv pcons)) (tup (ret unit) (ret (tupv 1 2))))
+  norm (ret (tupv unit 1 2))
+  why "cons (line 457) prepends onto a tuple value."
+
+case prim_dotdot_range
+  head r_prim
+  expr (app (ret (primv pdotdot)) (tup (ret 1) (ret 3)))
+  norm (ret (tupv 1 2 3))
+  why "dotdot (paper line 459) is inclusive on both ends: `dotdot[ki1,ki2] -> ki1 (ki1+1) .. ki2`. Syntax.v materialises the range with seq_z, whose guard is `lo <= hi` and whose fuel is |hi-lo|+1 - exactly the inclusive length. This expectation is what caught an off-by-one in the kernel (docs/DESIGN-NOTES.md sec. 8)."
+
+case prim_dotdot_single_element
+  head r_prim
+  expr (app (ret (primv pdotdot)) (tup (ret 2) (ret 2)))
+  norm (ret (tupv 2))
+  why "A one-point range `2..2` is the single element 2: the guard is `lo <= hi`, not `lo < hi`."
+
+case prim_dotdot_descending_empty
+  head r_prim
+  expr (app (ret (primv pdotdot)) (tup (ret 5) (ret 2)))
+  norm (ret (tupv))
+  why "A descending range is empty, and an empty tuple is a value (RTup of zero elements), so the row still fires. The pinned oracle agrees: Haskell `[5..2] = []`."
+
+case prim_arrlen
+  head r_prim
+  expr (app (ret (primv parrlen)) (tup (ret (tupv unit true 5))))
+  norm (ret 3)
+  why "arrLen reports the tuple length as an integer."
+
+case prim_div_zero_is_stuck
+  head none
+  expr (app (ret (primv pdiv)) (tup (ret 7) (ret 0)))
+  norm (app (ret (primv pdiv)) (tup (ret 7) (ret 0)))
+  why "Division by zero is PStuck: no row fires and the term stays as it is. The pinned oracle has no Div clause for j = 0 either (Red.hs:1346)."
+
+case prim_div_negative_floor
+  head r_prim
+  expr (app (ret (primv pdiv)) (tup (ret -7) (ret 2)))
+  norm (ret -4)
+  why "Z.div floors toward -infinity (-7 / 2 = -4, remainder 1); the pinned oracle uses Haskell `div`, which floors the same way (Red.hs:1347). Fig. 10 line 452 states `ki1 / ki2` without fixing the rounding for negative operands, so this case pins the kernel to the oracle."
+
+case prim_add_wrong_value_shape
+  head none
+  expr (app (ret (primv padd)) (tup (ret unit) (ret 1)))
+  norm (app (ret (primv padd)) (tup (ret unit) (ret 1)))
+  why "PAdd has no row for a non-integer operand, so this is PStuck, not PFail: arity *and* value shape gate the row."
+
+case prim_operand_not_a_value_tuple
+  head none
+  expr (app (ret (primv pmul)) (tup (ret 2) (seq (ret 2) (ret 3))))
+  norm (app (ret (primv pmul)) (tup (ret 2) (ret 3)))
+  why "prim_operand_vals rejects an operand list that is not `ret v` all the way down, so no row fires at this visit; the structural pass does normalize the operand (`seq 2 3` -> 3), and the now-fireable mul row waits for the next fuel pass (README sec. 3)."
+
+# ---------- choice, blocks, and the deferred rows ----------------------------
+
+case choice_has_no_row_but_normalizes_inside
+  head none
+  expr (choice (app (ret (primv padd)) (tup (ret 7) (ret 35))) (ret 1))
+  norm (choice (ret 42) (ret 1))
+  why "Candidate bags have no rewrite row in Figs. 9-12 (choice is the denotation's br2, T2), but the head table normalizes inside the branches."
+
+case block_slots_are_untouched
+  head none
+  expr (block ((tint) (tany unit)) (seq (ret true) fail))
+  norm (block ((tint) (tany unit)) fail)
+  why "No row fires at a Block root (HpAlpha/LamAlpha never fire: de Bruijn renames trivially); the body normalizes and the slot list is left alone."
+
+case iter_rows_never_selected
+  head none
+  expr (iter iall (ret (tupv 1)) (ret 2))
+  norm (iter iall (ret (tupv 1)) (ret 2))
+  why "Every Fig. 13 row matches `Iter ic (Block slots ...) e` - the body has to be a block - and Eval.v defers all of them anyway (they need the CtxC context-hole matcher; their soundness is the admitted family, docs/RULES-AUDIT.md sec. 5). Here the head table selects nothing and the branches are values, so the term is its own normal form."
+
+case iter_all_shape_matches_but_deferred
+  head none
+  expr (iter iall (block ((tint)) (ret 1)) (ret 2))
+  norm (iter iall (block ((tint)) (ret 1)) (ret 2))
+  why "This shape is exactly RewIterAll's left-hand side (iter(all){B[v]}{e} -> cons[B[v], e], Fig. 13 line 512), but the head table defers the whole iter family: those rows need the CtxC context-hole matcher, so the kernel selects no redex here and the term is its own normal form. The slot list is untouched by normalization (Block's slots are not subterms the evaluator descends into)."
+
+case iter_if_value_operand_is_stuck
+  head none
+  expr (iter iif (ret 1) (ret 2))
+  norm (iter iif (ret 1) (ret 2))
+  why "Same deferral, with a value on the iter body: RewIterIf matches the `if x = delay ...` shape only, and no iter row is in Eval.v's head table at all, so nothing fires anywhere in this term."

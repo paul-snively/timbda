@@ -75,6 +75,17 @@ Example ctor_Cons     : Rew (prim_app PCons [Ret VTrue; Ret (VTup [VUnit])])
 Example ctor_DotDot   : Rew (prim_app PDotDot [Ret (VInt 1); Ret (VInt 3)])
                             (Ret (VTup (map VInt (seq_z 1 3)))) :=
   @RewDotDot 1 3.
+(* The row above cannot see the range's endpoints, so pin the materialisation
+   itself: `lo..hi` is inclusive (paper line 459; pinned Red.hs:1384 `[i <-
+   [l..h]]`) and empty when lo > hi.  Found by the corpus corner - see
+   docs/DESIGN-NOTES.md sec. 8. *)
+Example dotdot_range_inclusive :
+  prim_total PDotDot [VInt 1; VInt 3] = PRes (VTup [VInt 1; VInt 2; VInt 3]) :=
+  eq_refl.
+Example dotdot_single_element :
+  prim_total PDotDot [VInt 2; VInt 2] = PRes (VTup [VInt 2]) := eq_refl.
+Example dotdot_descending_empty :
+  prim_total PDotDot [VInt 5; VInt 2] = PRes (VTup (@nil Val)) := eq_refl.
 Example ctor_Prim     : Rew (prim_app PAdd [Ret (VInt 7); Ret (VInt 35)]) (Ret (VInt 42)) :=
   @RewPrim PAdd [VInt 7; VInt 35] (VInt 42) eq_refl.
 Example ctor_PrimFail : Rew (prim_app PIsInt [Ret VTrue]) Fail :=

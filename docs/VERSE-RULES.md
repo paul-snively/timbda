@@ -145,7 +145,7 @@ the generic `RewPrim` schema. Ill-typed application is **stuck**, not `fail` (li
 | IsInt1 | `isInt[ki] ⟶ ki` | `RewIsInt1` | 1 |
 | IsInt2 | `isInt[v] ⟶ fail  if v not an integer` | `RewIsInt2` | 1 |
 | Cons | `cons[v0, ⟨v1..vn⟩] ⟶ ⟨v0, v1, …, vn⟩` | `RewCons` | 1 |
-| DotDot | `dotdot[ki1, ki2] ⟶ ki1 (ki1+1) … ki2` | `RewDotDot` (range literal `Range ki1 ki2` as value, per paper line 459) | 1 |
+| DotDot | `dotdot[ki1, ki2] ⟶ ki1 (ki1+1) … ki2` | `RewDotDot` (range materialised as the value tuple `VTup (map VInt (seq_z ki1 ki2))`; `seq_z` is **inclusive** on `hi` and `nil` when `ki1 > ki2` — see the range note at the end of § 3) | 1 |
 | Prim-schema | `op[gv…] ⟶ result-of-host-eval` or stuck | `RewPrim : prim_total op gvs = Some v → Rew (App (Prim op) (Tup gvs)) (Ret v)` — total-part function mirrors `Expr.hs primOpCanFail/PreCond` | 1 (schema), table Tier 1 |
 
 `Mul Div Neg Pls Lt GEq LEq NEq ArrLen ArrApp ArrMap ArrMap…` audit note: no paper
@@ -153,6 +153,21 @@ figure rule; kernel `prim_total` defines them (Int arithmetic where defined; `Di
 `ArrApp` out-of-bounds = partial → **stuck** per Fig. 10 note line 463; the host
 primops from `Expr.hs` (`ChkFails ChkSucceeds ChkDecides …`) are Essential-Verse —
 Tier 2 records, no M0 constructor).
+
+**Range note (`DotDot`, line 459).** `ki1 (ki1+1) … ki2` is inclusive on `ki2` and yields the
+empty tuple when `ki1 > ki2`. The kernel materialises it as `seq_z lo hi` (`coq/Syntax.v`), whose
+guard is `lo <= hi` and whose internal fuel is `|hi-lo|+1` — i.e. exactly `hi-lo+1` elements. The
+guard used to be `lo < hi`, which silently produced a one-element-short range (`dotdot[1,3]` →
+`⟨1,2⟩`); the corpus case `prim_dotdot_range` caught it, and `KernelTest.v` now pins all three
+shapes (`dotdot_range_inclusive`, `dotdot_single_element`, `dotdot_descending_empty`). The pinned
+oracle agrees independently: `verse-semantics/reduction/Red.hs:1384` enumerates `i <- [l..h]`
+(Haskell's inclusive `enumFromTo`, empty when `l > h`), and its tests use it inclusively
+(`tests/tests.versetest`: `all{1..4}` → `array{1,2,3,4}`, `for(1..4){7}` → 4 elements).
+
+**Division rounding.** Line 452's `ki1 / ki2` does not fix the rounding for negative operands.
+The kernel uses `Z.div` (floors toward −∞: `(-7)/2 = -4`) and the pinned oracle uses Haskell `div`
+(`Red.hs:1347`), which floors the same way; `prim_div_zero_is_stuck` and `prim_div_negative_floor`
+pin both halves of that reading (`Div 0` = stuck, not `fail`).
 
 ## 3.1. Beta reduction (Fig. 11, lines 468–469)
 

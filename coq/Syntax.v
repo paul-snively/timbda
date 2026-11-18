@@ -316,10 +316,20 @@ Definition root_of (v : Val) : Root :=
    when ki1 > ki2). PDiv on 0 and out-of-shape arguments are PStuck (Div is not
    among Fig. 10's named rules; pinned verse-semantics treats it partial). *)
 
+(* `lo .. hi` in Core Verse is INCLUSIVE on both ends: paper Fig. 10 line 459
+   `dotdot[ki1,ki2] -> ki1 (ki1+1) .. ki2` (docs/VERSE-RULES.md sec. 3), the
+   pinned oracle `verse-semantics/reduction/Red.hs:1384` (`[IntE i | i <- [l..h]]`,
+   Haskell's inclusive `enumFromTo`), and its tests (`tests/tests.versetest`:
+   `for(x:=1..3){x}` = `(1,2,3)`, `for(i := 1..4){i+1}` -> 4 elements).  The guard
+   is therefore `lo <= hi`: `seq_z lo hi` has exactly `hi - lo + 1` elements for
+   `lo <= hi`, which is exactly the fuel `Z.abs (hi - lo) + 1` below, and `nil`
+   when `lo > hi` (Haskell's `[l..h] = []` there too).
+   Found by the corpus corner: with the previous `Z.ltb` guard `1..3` materialised
+   as ⟨1,2⟩.  See docs/DESIGN-NOTES.md sec. 8. *)
 Fixpoint seq_z_go (fuel : nat) (lo hi : Z) : list Z :=
   match fuel with
   | 0 => @nil Z
-  | S f => if Z.ltb lo hi then lo :: seq_z_go f (Z.succ lo) hi else @nil Z
+  | S f => if Z.leb lo hi then lo :: seq_z_go f (Z.succ lo) hi else @nil Z
   end.
 Definition seq_z (lo hi : Z) : list Z :=
   seq_z_go (Z.to_nat (Z.abs (hi - lo)) + 1) lo hi.

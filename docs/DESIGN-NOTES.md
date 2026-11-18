@@ -98,6 +98,7 @@ python3 tools/pins/pins.py check                          # pins.toml == MODULE.
 nix build .#checks.x86_64-linux.version-consistency       # nixpkgs tool versions == pin table
 nix build .#checks.x86_64-linux.coq-load-chain            # every kernel logical dep resolves on nix
 nix build .#packages.x86_64-linux.timbda-kernel           # M0 kernel + its Print Assumptions audit
+nix build .#checks.x86_64-linux.corpus-differential       # two-corner differential corpus (tools/corpus/README.md)
 nix develop .#rocq                                        # or .#all: Rocq + GHC + bazelisk, all flake-provided
 cd coq && dune build                                      # the in-shell kernel build
 ```
@@ -284,3 +285,92 @@ ctrees side (no Bool import); `coq/Semantics.v`, `coq/Eval.v`, `coq/Syntax.v` ta
 Bool side and never import `WBisim`; `coq/tests/KernelTest.v` omits Bool deliberately.
 Bool reaches `Denotation.v` transitively through `Timbda.Syntax` (gH1 shows that does not
 replay the level-40 table).
+
+## 8. Extraction + the corpus corner (measured 2026-11-18)
+
+The M0 tail is PLAN § 5's "extracted evaluator" plus the differential-corpus half of
+PLAN § 6.  Layout and the claims it backs are in `tools/corpus/README.md`; the numbers
+below are from the pinned toolchain (rocq-core 9.1.1, OCaml 4.14.4, pins `[toolchain.extraction]`).
+
+### 8.1 Extraction on rocq 9.1 (measured)
+
+- `Extraction` is a **plugin**: the bare keyword is a syntax error (`Error: Syntax error:
+  illegal begin of vernac.`) until the theories file that carries
+  `Declare ML Module "rocq-runtime.plugins.extraction"` is Required.  On 9.1 that file is
+  `lib/coq/theories/extraction/Extraction.v` and its glob reads `FCorelib.extraction.Extraction`,
+  so the import is `From Corelib.extraction Require Import Extraction.`.
+- `Set Extraction Output Directory "."` + `Extraction "timbda_eval.ml" …` writes beside the
+  compilation unit.  Without it rocq 9.1 warns and defaults to the compilation dir; in a nix
+  build that *is* the build dir (nix mounts it at `/build`), which is why the first probe's
+  output was found in `$PWD`.
+- Extracted from `Timbda.Eval.norm`, `Timbda.Eval.head_redex`, `Timbda.Eval.selected_rows`:
+  one self-contained 1094-line `.ml` (no external findlib dependency), `Print Assumptions
+  Timbda.Eval.norm` prints **`Closed under the global context`**, and the extracted type
+  shapes the driver must construct are: `nat = O | S`, `positive = XI | XO | XH`,
+  `z = Z0 | Zpos | Zneg`, `'a list = Nil | Cons`, `'a option = Some | None`,
+  `('a,'b) prod = Pair`, `iterComb = IAll | IIf | IFor`, `val0`/`expr` (with `Fail` as a
+  nullary constructor of `expr`), `primResult = PRes | PFail | PStuck`, and `ruleID` with all
+  27 row names (the head table only ever returns 16 of them - `Eval.v`'s `selected_rows`).
+- `Extraction "timbda_eval.ml"` also emits `timbda_eval.mli`, so the build compiles the interface
+  first (`ocamlc -c timbda_eval.mli`) and then `ocamlc -o corpus-run timbda_eval.ml driver.ml`.  That
+  is not ceremony: the driver is then type-checked against the extracted signature, so a kernel change
+  that changes the extracted shape breaks the build instead of silently changing what gets compared.
+- `rocq compile` (no dune) resolves `Require Import Timbda.*` only if the kernel package's
+  `lib/coq/9.1/user-contrib` is on `ROCQPATH`.  nixpkgs' setup hooks add the *library* packages, not
+  our own kernel derivation, so both corner build phases export it explicitly.
+- Harness wiring in `flake.nix`: packages `timbda-corpus-coq-corner` (corpus → generated
+  `corner.v` → `rocq compile`) and `timbda-corpus-ocaml-corner` (extract → compile → run), plus
+  the check `checks.corpus-differential`, which builds both corners, requires both to accept
+  every case and the case counts each corner sees to be equal, and writes `$out/report.txt`.
+  All of it lives in `tools/` + `tests/`, so `dune build` over `coq/` and the § 6 axiom gate
+  are untouched by harness work.
+
+### 8.3 Corners write a status file; the check reads it (design rule, measured)
+
+The first version of these corners "passed" while running nothing.  Two causes, both worth
+remembering: (i) the corpus and driver files were untracked, and a flake whose `src = ./.` sits in a
+git repo exposes only tracked files, so the corner build dirs were missing their inputs; (ii) `rocq c`
+on an *empty* `corner.v` exits 0, so "the Coq corner compiled" was vacuously true.  Each corner now
+writes a `status.txt` and the check reads it:
+
+```
+coq corner:      reader_rc=0  reader_cases=49  corner_lines=315  rocq_rc=0  marker=corner_cases = 49
+extracted corner: extract_rc=0  extracted_lines=1094  mli_rc=0  ocamlc_rc=0  driver_rc=0
+                  corpus corner: 49 cases, all agree with the extracted evaluator
+```
+
+The check fails on any non-zero status, on `reader_cases = 0`, on a generated corner of `<= 100`
+lines, on an extraction of `<= 200` lines, and on a case-count disagreement between the corners.
+Rule to keep: **a differential corner must fail on vacuity, not only on mismatch** — the cheap failure
+mode of a generated-test harness is generating nothing.
+
+### 8.2 Corpus findings (49 cases; 37 fire a row, 12 assert `head none`)
+
+- **`seq_z` was off by one (kernel fix).**  Fig. 10 line 459 (`dotdot[ki1, ki2] ⟶
+  ki1 (ki1+1) … ki2`) is inclusive, and the pinned oracle agrees with it
+  (`verse-semantics/reduction/Red.hs:1384`: `[Res (IntE i) | i <- [l..h]]`; its own tests,
+  e.g. `for(x:=1..3){x}` → `(1,2,3)`).  `coq/Syntax.v` gated the range on `Z.ltb lo hi`, so
+  `1..3` materialised as `⟨1,2⟩`: the corpus case `prim_dotdot_range` disagreed with what the
+  kernel itself computed, and the guard is now `Z.leb lo hi` (whose fuel
+  `|hi-lo|+1` is then exactly the inclusive length, and `lo > hi` gives `nil`, matching
+  Haskell's `[l..h] = []`).  `KernelTest.v` pins the boundary cases (`dotdot_range_inclusive`,
+  `dotdot_single_element`, `dotdot_descending_empty`) so it cannot drift back.
+  Consequence for the proofs: none of them reduced `seq_z` concretely - `RewSound_DotDot`
+  rewrites with `closeV_map_VInt` and keeps `map VInt (seq_z a b)` symbolic on both sides -
+  so the definition change needed no proof edit; the kernel rebuild re-ran the § 6 gate.
+- **Division rounding is now pinned, not assumed.**  Fig. 10 line 452 states `ki1 / ki2`
+  without giving the rounding for negative operands.  The kernel uses `Z.div` (floors:
+  `(-7)/2 = -4`), the oracle uses Haskell `div` (`Red.hs:1347`, also floors), and the corpus
+  case `prim_div_negative_floor` records that agreement, and both corners confirm it independently
+  (the Coq corner discharges `norm … = (Ret (VInt (-4)))`, the extracted corner computes the
+  same `-4`), so a later change on either side shows up as a corner failure rather than as a drift
+  in a comment.
+- **`norm`'s two behaviours are separate claims.**  Head steps repeat (fuel decrements per
+  step: `unify 3 (seq unit fail)` → Norm1 → `seq unit (unify 3 fail)` → `Seq`-of-a-value →
+  `unify 3 fail`), while a stuck head rebuilds its children bottom-up with the same fuel and
+  is **not** re-tried (`eqtup1_single_element`'s normal form is the half-rebuilt
+  `seq (ret unit) (ret (tupv unit))` at any fuel).  Expectations that mixed these up were the
+  two initial corner failures; both were resolved on the corpus side, not on the kernel side.
+- Coverage note: 11 of the 27 `RuleID`s are never exercised (`R_Subst`, `R_Gc1`,
+  `R_PromoteL/R`, `R_Iter*`, `R_HpAlpha`, `R_LamAlpha`) because `Eval.v`'s head table defers
+  them (M2/M3 items) - `corpus.py --summary` prints that list rather than hiding it.

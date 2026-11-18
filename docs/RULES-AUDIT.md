@@ -175,6 +175,19 @@ diff must expect 72, not 68.
   M0 practice (this file) records *deferrals with reason classes* instead.  The
   calibration's "M0 gate: ≥ 10 full proofs" is met with 15 discharged ctors + 2
   partials + the T2 algebra.
+* Extracted-corner evidence (`tools/extract/extract.v`, compiled by the corpus corner): `Print
+  Assumptions` on `Timbda.Eval.norm`, `Timbda.Eval.head_redex` and `Timbda.Eval.selected_rows`
+  prints **`Closed under the global context`** for all three.  The Gallina evaluator the C++ side
+  will eventually inherit carries no axiom at all — unlike the `≈`-level lemmas above, whose
+  `eq_rect_eq` footprint comes from the ctrees layer.
+* One corpus case has already changed a kernel *definition*: `RewDotDot`'s range materialisation
+  (`Syntax.v`'s `seq_z`) was guarded `Z.ltb lo hi` and is now `Z.leb lo hi` — paper line 459 is
+  inclusive on both ends and the pinned oracle agrees (`verse-semantics/reduction/Red.hs:1384`,
+  `i <- [l..h]`).  `KernelTest.v`'s `dotdot_range_inclusive` / `dotdot_single_element` /
+  `dotdot_descending_empty` pin the boundary, and the 49-case corpus (`tests/corpus/m0.texpr`,
+  gated by `checks.corpus-differential`) is what caught it.  No discharged proof needed editing:
+  `RewSound_DotDot` rewrites with `closeV_map_VInt` and keeps `map VInt (seq_z a b)` symbolic on
+  both sides.
 
 ## 7. M1 reconciliation checklist (`tools/rules-audit.py`)
 

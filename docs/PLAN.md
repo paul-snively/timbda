@@ -180,6 +180,22 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   formulation was probed and dropped on 2026-11-18: `gset` needs `Countable`/`EqDecision` for the
   kernel's own mutual Val/Expr (instance search fails out of the box) and drags Stdlib `Bool`,
   which clashes with the ctrees notation table.  Evidence: docs/DESIGN-NOTES.md § 7.
+  The differential half of M0 is now a build gate, not a plan (measured 2026-11-18): one spec file
+  `tests/corpus/m0.texpr` — 49 cases, every expectation derived by hand from docs/VERSE-RULES.md
+  *before* looking at what the evaluator produces — is read independently by two corners.
+  `tools/corpus/corpus.py` emits 98 Coq `reflexivity` assertions about Gallina `Eval.norm` /
+  `head_redex` (one `head` and one `norm` per case, 315 lines of generated `.v`, all discharged by
+  `rocq`); `tools/corpus/driver.ml` parses the same
+  file a second time and runs the OCaml that `Extraction` produced from that same Gallina function
+  (`tools/extract/extract.v` → 1094 lines, `Print Assumptions` = closed under the global context).
+  `checks.corpus-differential` cross-checks them: both corners must accept every case, both must
+  report the same case count, and anti-vacuity guards (non-empty corpus, non-trivial generated
+  corner, non-truncated extraction) keep a green build from meaning "nothing ran".  It paid for
+  itself on the first run: `dotdot[1,3]` materialised as `⟨1,2⟩` because `Syntax.v`'s `seq_z`
+  guarded on `Z.ltb`, while paper line 459 and the pinned oracle (`Red.hs:1384`, `i <- [l..h]`) are
+  inclusive — the guard is now `Z.leb`, pinned by three `KernelTest.v` examples.  All harness
+  scaffolding stays in `tools/` + `tests/`, so the kernel gate (zero `Admitted`, exactly one axiom)
+  is untouched by it.  Details: tools/corpus/README.md, docs/DESIGN-NOTES.md § 8.
 - M1: dialect + generator. Timbda.td, DRR rewriters, tblgen-rocq backend, pdll tests, paper-rule
   coverage audit (every paper rule => a record + an MLIR pattern + a Rocq ctor — the audit IS the
   completeness claim).
@@ -283,17 +299,28 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
   timbda-canonicalize binary, (c) the Haskell tester; assert candidate-set equality — a bag
   comparison on the harness side, whose Coq-side reading is Wbisim over br2 (sec. 3.8). It is the
   only place all three ecosystems touch at runtime — keep it small and paranoid.
+- Two of those three legs already exist as `packages.timbda-corpus-coq-corner` +
+  `packages.timbda-corpus-ocaml-corner`, gated by `checks.corpus-differential` (sec. 5 M0). The
+  corpus lives at `tests/corpus/m0.texpr` and is deliberately *hand*-derived so that a corner
+  disagreement is evidence about the kernel rather than about the harness. The augustss `tester`
+  leg joins as the third corner at M3 rather than now: its cabal dependency set
+  (megaparsec, mtl, optparse-applicative, scientific, containers, …) is a build-infra project of
+  its own, and until it is in place the pinned oracle is consulted by hand, case by case — as it
+  was for the `dotdot` range (Red.hs:1384 + its `tests.versetest` cases) and for `Div` rounding
+  (Red.hs:1347).
 
 ### Flake outputs (sketch)
 
     inputs:    nixpkgs, haskell deps, dcont-fork, ctrees, certirocq, veriffi, verse-semantics
                (compcert/stdpp from nixpkgs)
-    packages:  timbda-kernel(coq) | certirocq+runtime | verse-semantics |
+    packages:  timbda-kernel(coq) | timbda-corpus-{coq,ocaml}-corner | certirocq+runtime |
+               verse-semantics |
                bazel-built driver binaries (bazel builds, nix checks consume as prebuilt)
     devShells: cpp(bazel + repo tooling) | rocq(withPackages + lsp) | hs(ghc+cabal)
                | all(+wasmtime, llvm-lit, clang-format)
-    checks:    coq-kernel-tests . bazel-{native,wasm32-cross}-tests . tblgen-rocq-golden .
-               dialect-lit-tests . differential-triangle . certirocq-e2e (Gallina->Clight->clang->run) .
+    checks:    coq-kernel-tests . corpus-differential . bazel-{native,wasm32-cross}-tests .
+               tblgen-rocq-golden . dialect-lit-tests . differential-triangle .
+               certirocq-e2e (Gallina->Clight->clang->run) .
                version-consistency (pin table <-> MODULE.bazel <-> flake.lock) .
                [license-gated] ccomp-lane rerun
 
@@ -335,6 +362,14 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
    optional and license-gated.
 5. (This file) Commit to M-1 skeleton-first: flake.nix + MODULE.bazel + pin table + consistency CI,
    ~300 lines, both graphs green, before any C++/Rocq code.
+6. (2026-11-18) Differential corpus shape: ONE hand-derived spec file (`tests/corpus/*.texpr`), read
+   by two independent readers — generated Coq `reflexivity` assertions (native Gallina evaluator) and
+   an OCaml driver over the `Extraction`'d evaluator — gated by `checks.corpus-differential`, which
+   also requires the two corners to see the same case count and blocks vacuous passes (empty corpus,
+   empty generated corner, truncated extraction). Harness scaffolding lives outside `coq/` so adding
+   cases never touches the kernel's axiom/`Admitted` gate; the augustss `tester` becomes the third
+   corner at M3. Evidence: 49/49 green on both corners, and the `seq_z` inclusive-range kernel fix it
+   produced (docs/DESIGN-NOTES.md § 8, tools/corpus/README.md § 6).
 
 ## 9. Known reference anchors
 
