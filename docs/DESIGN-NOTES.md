@@ -86,11 +86,40 @@ induction over syntax.
 
 ## 4. Build / dev-shell workflow
 
+Toolchain contract (docs/PLAN.md § 6 "Formalization side": *Nix-native Rocq; opam
+secondary*): the host provides **nix only**.  Rocq, Python 3, GHC, Bazel/bazelisk, git —
+everything else — arrives from the flake; nothing else on the host is load-bearing.
+Canonical loop:
+
 ```sh
-tools/ctrees-sync.sh                                  # vendored ctrees + opam pin
-cd coq && opam exec --switch RP.2026.02.0~9.1~2026.01 -- dune build
-python3 tools/pins/pins.py check                      # pins.toml == MODULE.bazel == flake.lock
+python3 tools/pins/pins.py check                          # pins.toml == MODULE.bazel == flake.lock
+nix build .#checks.x86_64-linux.version-consistency       # nixpkgs tool versions == pin table (ran clean 2026-11-18)
+nix develop .#all                                         # bazelisk/git/python3 + Rocq + GHC, all flake-provided
 ```
+
+**DEV-3 — the single current exception, transitional.**  The full M0 kernel theory
+(Syntax/Semantics/Rewriting/Denotation/Eval + tests) still builds against a
+host-installed opam switch (`coqc`/`dune` from `~/.opam/RP.2026.02.0~9.1~2026.01`,
+Rocq 9.1): nixpkgs supplies rocq-core 9.1.1 + stdpp + relation-algebra but not
+ctrees / interaction-trees / coinduction / coq-ext-lib (§ 5), and the flake has not yet
+defined their `mkRocqDerivation`s (PLAN § 6, M-2 work).  `tools/ctrees-sync.sh` vendors
+`deps/ctrees` at the pinned rev (feeding both worlds) and pins it into the switch as
+`rocq-ctree` unless run with `TIMBDA_OPAM_PIN=0`:
+
+```sh
+tools/ctrees-sync.sh                                                    # vendor ctrees (+ switch pin, transitional)
+cd coq && opam exec --switch RP.2026.02.0~9.1~2026.01 -- dune build    # the DEV-3 build
+```
+
+Verified 2026-11-18: `nix build .#checks.x86_64-linux.version-consistency` and
+`nix build .#packages.x86_64-linux.timbda-kernel` both ran clean — KernelStub.v compiles
+under nixpkgs' Rocq 9.1.1 with zero host toolchain beyond nix.  DEV-3 covers exactly
+the four packages nixpkgs lacks (sec. 5).
+
+Exit path: the four `mkRocqDerivation`s land at M-2; `dune build` then runs inside
+`nix develop .#rocq`, any editor-convenience switch lives *inside* the devShell
+generated from the pin table (PLAN § 6: "never the reverse"), and the host-installed
+switch is removed.  `coq/dune`'s dependency comments carry the same DEV-3 marker.
 
 Dune facts learned the hard way (all recorded in `coq/dune-project`):
 

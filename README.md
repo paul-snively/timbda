@@ -33,5 +33,9 @@ switch is deliberately deferred to M-2.
 
 ## Dev shells
 
-`nix develop .#all` (cpp / rocq / hs variants), or bazelisk + a local opam
-switch for the Rocq stub (`coq/KernelStub.v`).
+Host toolchain requirement: **nix, and only nix** (see `docs/DESIGN-NOTES.md` § 4).
+`nix develop .#all` (cpp / rocq / hs variants) supplies Bazel/bazelisk, Python, GHC and
+Rocq from the pin table. One transitional exception (DEV-3): until M-2 packages
+ctrees / coinduction / interaction-trees / coq-ext-lib as flake derivations, the full
+M0 Coq theory builds against a temporary host-installed opam switch; the KernelStub
+itself is built by the flake (`nix build .#packages.x86_64-linux.timbda-kernel`).

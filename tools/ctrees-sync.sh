@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Sync the vendored ctrees checkout (deps/ctrees) to the revision pinned in
-# tools/pins/pins.toml [formal.ctrees], and point the opam switch's rocq-ctree
-# pin at it.  Idempotent: re-running only fetches/advances.
+# tools/pins/pins.toml [formal.ctrees].  Idempotent: re-running only fetches/advances.
 #
-# Why vendored-and-gitignored: the flake (M-2) builds ctrees from the same pinned
-# input via a local mkRocqDerivation; the opam dev shell needs the identical
-# source tree so that `dune build` in coq/ and `nix build` see the same library.
+# The vendored tree is the primary deliverable: coq/'s dune build compiles CTree from
+# it.  The opam-switch pin below is the transitional fallback for DEV-3
+# (docs/DESIGN-NOTES.md sec. 4) — run with TIMBDA_OPAM_PIN=0 to skip it.  From M-2 the
+# flake devShell provides CTree via a local mkRocqDerivation on the same pinned input
+# (the host provides nix, nothing else).
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -47,9 +48,9 @@ mkdir -p "$DEST"
 rsync -a --delete --exclude '.git' --exclude '_build' "$TMP/ctrees/" "$DEST/"
 echo "vendored $(git -C "$TMP/ctrees" rev-parse HEAD) into $DEST"
 
-if ! command -v opam >/dev/null; then
-  echo "opam not on PATH: skipping switch pin (dune build will still work with an"
-  echo "installed CTree, e.g. the one provided by the nix devShell)." >&2
+if [[ "${TIMBDA_OPAM_PIN:-1}" == 0 ]] || ! command -v opam >/dev/null; then
+  echo "switch pin skipped (TIMBDA_OPAM_PIN=0 or no opam): CTree comes from the vendored" >&2
+  echo "deps/ctrees + the nix devShell (DEV-3 exit path, docs/DESIGN-NOTES.md sec. 4)." >&2
   exit 0
 fi
 

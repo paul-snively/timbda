@@ -3,10 +3,11 @@
 (name timbda-kernel)
 (warnings (deprecated_coq_lang disabled))
 
-; Timbda-0 Gallina kernel (M0).  Deps mirror tools/pins/pins.toml: the pinned
-; opam switch provides Coinduction / RelationAlgebra / ExtLib / ITree / Stdlib,
-; and the pinned vendored ctrees (coq/deps/ctrees, installed into the switch by
-; tools/ctrees-sync.sh) provides the logical path CTree.
+; Timbda-0 Gallina kernel (M0).  Deps mirror tools/pins/pins.toml.  Today they come
+; from the transitional opam switch (DEV-3, docs/DESIGN-NOTES.md sec. 4): Coinduction /
+; RelationAlgebra / ExtLib / ITree / Stdlib from the switch, CTree from the vendored
+; deps/ctrees via tools/ctrees-sync.sh.  At M-2 the four unpinned ones become flake
+; mkRocqDerivation's and nix develop .#rocq supplies them directly.
 (package
  (name timbda-kernel)
  (depends
