@@ -63,10 +63,12 @@ induction over syntax.
 
 ## 3. ctrees / itree layer
 
-- Vendored at `deps/ctrees` = `github:vellvm/ctrees@cabcf9bf24b0f459204a7da19ac01b7697ff04e3`
-  (branch `dev`, pins.toml `[formal.ctrees]`).  Upstream package name is
-  `rocq-ctree` (version `2.0-dev`), Coq logical path `CTree`; the checkout needs
-  no local patches — `tools/ctrees-sync.sh` reproduces it from pins.toml.
+- Pinned as `github:vellvm/ctrees@cabcf9bf24b0f459204a7da19ac01b7697ff04e3` (branch `dev`,
+  pins.toml `[formal.ctrees]`).  Upstream package name is `rocq-ctree` (version `2.0-dev`),
+  Coq logical path `CTree`; the flake builds it from that input (`nix build
+  .#packages.x86_64-linux.timbda-ctrees`) with **no local patches**.  The same revision can be
+  materialised as a read-only working copy under `deps/ctrees` via `tools/ctrees-sync.sh`, which
+  is what the `deps/ctrees/theories/...` line citations below point into.
 - Import ladder used by the kernel (mirrors `deps/ctrees/examples/ImpBr/ImpBr.v`):
   `From CTree Require Import CTree Eq.` pulls `Equ`/`Trans`/`SBisim`/`SSim`/
   `CSSim` and the up-to coinduction tactics (`coinduction`, `step`, `play`,
@@ -93,39 +95,50 @@ Canonical loop:
 
 ```sh
 python3 tools/pins/pins.py check                          # pins.toml == MODULE.bazel == flake.lock
-nix build .#checks.x86_64-linux.version-consistency       # nixpkgs tool versions == pin table (ran clean 2026-11-18)
-nix develop .#all                                         # bazelisk/git/python3 + Rocq + GHC, all flake-provided
+nix build .#checks.x86_64-linux.version-consistency       # nixpkgs tool versions == pin table
+nix build .#checks.x86_64-linux.coq-load-chain            # every kernel logical dep resolves on nix
+nix build .#packages.x86_64-linux.timbda-kernel           # M0 kernel + its Print Assumptions audit
+nix develop .#rocq                                        # or .#all: Rocq + GHC + bazelisk, all flake-provided
+cd coq && dune build                                      # the in-shell kernel build
 ```
 
-**DEV-3 — the single current exception, transitional.**  The full M0 kernel theory
-(Syntax/Semantics/Rewriting/Denotation/Eval + tests) still builds against a
-host-installed opam switch (`coqc`/`dune` from `~/.opam/RP.2026.02.0~9.1~2026.01`,
-Rocq 9.1): nixpkgs supplies rocq-core 9.1.1 + stdpp + relation-algebra but not
-ctrees / interaction-trees / coinduction / coq-ext-lib (§ 5), and the flake has not yet
-defined their `mkRocqDerivation`s (PLAN § 6, M-2 work).  `tools/ctrees-sync.sh` vendors
-`deps/ctrees` at the pinned rev (feeding both worlds) and pins it into the switch as
-`rocq-ctree` unless run with `TIMBDA_OPAM_PIN=0`:
+**DEV-3 closed (2026-11-18).**  `flake.nix`'s `coqStack` builds the libraries nixpkgs does not
+ship — `coq-ext-lib`, `paco`, `rocq-coinduction` (tag `v1.21`), `coq-itree`, `rocq-ctree` —
+from the locked flake inputs (pins.toml `[formal.*]`; each also exposed as
+`nix build .#packages.x86_64-linux.timbda-{extlib,paco,coinduction,itrees,ctrees}`), and
+relation-algebra / equations / Stdlib come from nixpkgs.  So `cd coq && dune build` runs inside
+`nix develop .#rocq` with **nix only** on the host; the transitional switch is retired (it held
+rocq-coinduction 1.21, coq-ext-lib 0.13.0, coq-itree dev@284d4224, coq-paco dev@d0561bf,
+rocq-ctree 2.0-dev, dune 3.21.0 — all now reproduced by the flake from the pin table).
+Verified 2026-11-18 on the pinned toolchain: kernel build clean (8 `.vo` modules, 12m58s),
+load-chain clean, version-consistency clean, golden-test clean.
 
-```sh
-tools/ctrees-sync.sh                                                    # vendor ctrees (+ switch pin, transitional)
-cd coq && opam exec --switch RP.2026.02.0~9.1~2026.01 -- dune build    # the DEV-3 build
-```
+The kernel build *is* the axiom gate: `timbda-kernel`'s `buildPhase` fails if `Admitted`
+appears in dune's output, or if the `Print Assumptions` blocks (§ 6, RULES-AUDIT § 6) name
+anything other than exactly one axiom, `Eqdep.Eq_rect_eq.eq_rect_eq`.
 
-Verified 2026-11-18: `nix build .#checks.x86_64-linux.version-consistency` and
-`nix build .#packages.x86_64-linux.timbda-kernel` both ran clean — KernelStub.v compiles
-under nixpkgs' Rocq 9.1.1 with zero host toolchain beyond nix.  DEV-3 covers exactly
-the four packages nixpkgs lacks (sec. 5).
-
-Exit path: the four `mkRocqDerivation`s land at M-2; `dune build` then runs inside
-`nix develop .#rocq`, any editor-convenience switch lives *inside* the devShell
-generated from the pin table (PLAN § 6: "never the reverse"), and the host-installed
-switch is removed.  `coq/dune`'s dependency comments carry the same DEV-3 marker.
+`tools/ctrees-sync.sh` survives only as a way to read the pinned ctrees source locally (the
+notes above quote `deps/ctrees/theories/...` line anchors); its opam-switch pinning mode is
+removed, and CTree reaches the build through the flake input instead.
 
 Dune facts learned the hard way (all recorded in `coq/dune-project`):
 
 - `(lang dune 3.21)` must be the **first** line of `dune-project`.
-- `(using coq 0.7)` — `0.11` breaks the `Stdlib` logical path under rocq 9.1;
-  silence the resulting lint with `(warnings (deprecated_coq_lang disabled))`.
+- `(using coq 0.7)` is load-bearing, not taste.  coq lang ≥ 0.8 makes dune compile with
+  `coqc -boot`, and `-boot` switches off rocq 9.1's implicit loadpath: because nixpkgs ships
+  the Stdlib as a *package* (`rocqPackages.stdlib` → `user-contrib/Stdlib`) rather than as
+  rocq-core theories, `From Stdlib Require …` and bare `ZArith`/`BinPos` then fail — that was
+  every 0.8-mode failure measured in extlib/ctrees on 2026-11-18.  coq lang 0.7 is dune's
+  "implicit bootstrap": no `-boot`, rocq keeps its loadpath.  `(using rocq 0.11)` (the new RBL)
+  is not an option yet: dune's rocq mode needs the RBL-era package layout nixpkgs' 9.1 doesn't ship.
+- coq lang 0.7 also **rejects** installed theories in `(theories CTree …)` ("Theory CTree not
+  found in the current scope. Upgrade to coq lang 0.8"), which is why `coq/dune` carries no
+  `(theories …)`/`(deps …)`: logical deps resolve through rocq's loadpath.  nixpkgs' rocq hook
+  exports ROCQPATH only, dune 3.21's coq-mode theory DB scans COQPATH only, so the flake mirrors
+  one into the other (its own `setupHook` + `export COQPATH="$ROCQPATH…"` in each buildPhase).
+- dune's coq mode calls `coqc`/`coqdep`/`coqdoc`; nixpkgs' rocq 9.1 ships only `rocq`, so
+  `flake.nix` provides `rocq-shims` (`rocq c` / `rocq dep` / `rocq doc`).
+- silence the deprecated-coq-lang lint with `(warnings (deprecated_coq_lang disabled))`.
 - The project name and the package name must match (`timbda-kernel`), and
   `(coq.theory (name Timbda) (package timbda-kernel))` has **no** `(deps …)`
   field: logical dependencies come from the installed libraries.
@@ -138,11 +151,19 @@ At the pinned nixpkgs
 
 - `rocqPackages.rocq-core` = `9.1.1`, `rocqPackages.stdpp` = `1.13.0`,
   `rocqPackages.relation-algebra` = `1.8.0`;
-  `rocqPackages` has **no** ctrees / coinduction / coq-ext-lib / coq-itree, so
-  M-2 builds those from the locked flake inputs with a local `mkRocqDerivation`
-  (they already exist in the opam dev switch: `rocq-coinduction` 1.21,
-  `coq-ext-lib` 0.13.0, `coq-itree` dev, `rocq-ctree` 2.0-dev pinned).
+  `rocqPackages` has **no** ctrees / coinduction / coq-ext-lib / coq-itree / paco, so
+  `flake.nix`'s `coqStack` builds them from the locked inputs (all built clean 2026-11-18:
+  `coq-ext-lib` 0.13.0-dev, `coq-paco` 4.4-dev, `rocq-coinduction` 1.21, `coq-itree`
+  5.2.1-dev, `rocq-ctree` 2.0-dev).  Two pins moved to get there: coinduction master needs
+  rocq ≥ 9.2 (retargeted to tag `v1.21`), and interaction-trees needs `Paco.paco`
+  (`[formal.paco]` added) — see the pins.toml notes.
+- Two upstream build quirks needed patching: extlib's `dune-project` says `using coq 0.8`
+  (retargeted to 0.7 by `postPatch`), and paco's `src/Makefile` still invokes the retired
+  `coq_makefile` binary (`rocq makefile -f`).
 - Only the legacy `coqPackages` namespace provides `equations` (`1.3.1+9.1`).
+- Coinduction ships a findlib plugin (`lib/ocaml/4.14.4/site-lib/rocq-coinduction/plugin.cmxs`),
+  loaded by `From Coinduction Require Import all`; findlib's hook puts it on OCAMLPATH.  Outside a
+  derivation (`nix shell`) no setup hooks run, so ROCQPATH/COQPATH/OCAMLPATH have to be set by hand.
 - No ghc/cabal on PATH: the Haskell golden tests run through nix only
   (`tests/golden/run.sh`, `haskell.compiler.ghc912` = 9.12.3).
 

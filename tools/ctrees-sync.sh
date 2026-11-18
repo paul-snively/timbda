@@ -2,16 +2,15 @@
 # Sync the vendored ctrees checkout (deps/ctrees) to the revision pinned in
 # tools/pins/pins.toml [formal.ctrees].  Idempotent: re-running only fetches/advances.
 #
-# The vendored tree is the primary deliverable: coq/'s dune build compiles CTree from
-# it.  The opam-switch pin below is the transitional fallback for DEV-3
-# (docs/DESIGN-NOTES.md sec. 4) — run with TIMBDA_OPAM_PIN=0 to skip it.  From M-2 the
-# flake devShell provides CTree via a local mkRocqDerivation on the same pinned input
-# (the host provides nix, nothing else).
+# What the vendored copy is for now: a *source* tree at the pinned revision, so the
+# upstream line citations in docs/DESIGN-NOTES.md sec. 3 can be opened locally.  CTree
+# for the build no longer comes from here: flake.nix's coqStack builds rocq-ctree from
+# the same pinned input, and `cd coq && dune build` runs inside `nix develop .#rocq`.
+# (DEV-3, the transitional opam-switch fallback, was closed 2026-11-18.)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$REPO_ROOT/deps/ctrees"
-SWITCH="${TIMBDA_OPAM_SWITCH:-RP.2026.02.0~9.1~2026.01}"
 
 read_pin() { # dotted section key, key
   python3 - "$REPO_ROOT/tools/pins/pins.toml" "$1" "$2" <<'PY'
@@ -47,13 +46,3 @@ git -C "$TMP/ctrees" checkout -q --detach "$REV"
 mkdir -p "$DEST"
 rsync -a --delete --exclude '.git' --exclude '_build' "$TMP/ctrees/" "$DEST/"
 echo "vendored $(git -C "$TMP/ctrees" rev-parse HEAD) into $DEST"
-
-if [[ "${TIMBDA_OPAM_PIN:-1}" == 0 ]] || ! command -v opam >/dev/null; then
-  echo "switch pin skipped (TIMBDA_OPAM_PIN=0 or no opam): CTree comes from the vendored" >&2
-  echo "deps/ctrees + the nix devShell (DEV-3 exit path, docs/DESIGN-NOTES.md sec. 4)." >&2
-  exit 0
-fi
-
-opam exec --switch "$SWITCH" -- opam pin add --no-action --yes \
-  rocq-ctree "file://$DEST" >/dev/null
-opam exec --switch "$SWITCH" -- opam install --yes rocq-ctree

@@ -34,8 +34,9 @@ switch is deliberately deferred to M-2.
 ## Dev shells
 
 Host toolchain requirement: **nix, and only nix** (see `docs/DESIGN-NOTES.md` § 4).
-`nix develop .#all` (cpp / rocq / hs variants) supplies Bazel/bazelisk, Python, GHC and
-Rocq from the pin table. One transitional exception (DEV-3): until M-2 packages
-ctrees / coinduction / interaction-trees / coq-ext-lib as flake derivations, the full
-M0 Coq theory builds against a temporary host-installed opam switch; the KernelStub
-itself is built by the flake (`nix build .#packages.x86_64-linux.timbda-kernel`).
+`nix develop .#all` (cpp / rocq / hs variants) supplies Bazel/bazelisk, Python, GHC and Rocq
+from the pin table — including the Coq libraries nixpkgs does not ship (extlib, paco,
+coinduction, interaction-trees, ctrees), which the flake builds from pinned inputs. So
+`cd coq && dune build` builds the full M0 kernel with no host toolchain beyond nix;
+`nix build .#packages.x86_64-linux.timbda-kernel` builds it (with its `Admitted`/axiom gate)
+outside a shell too. The transitional opam switch (DEV-3) is closed as of 2026-11-18.

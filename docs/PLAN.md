@@ -243,10 +243,11 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
   rev x llvm-project commit x hermetic-llvm BCR version x dcont fork rev x bazel version x ghc version.
 - OPAM: an opam switch available in the Rocq devShell for editor/ocaml-ecosystem convenience,
   generated FROM the same pin table, never the reverse. Nix is the source of truth.
-  Host contract (clarified 2026-11-18): the host provides **nix alone** — Rocq, Python 3, GHC,
-  Bazel all come from the flake. Transitional gap DEV-3 (docs/DESIGN-NOTES.md sec. 4): the M0 kernel
-  currently builds against a host-installed switch because the flake has not yet packaged
-  ctrees/interaction-trees/coinduction/ext-lib; the four mkRocqDerivation's retire that switch at M-2.
+  Host contract (clarified 2026-11-18, closed same day): the host provides **nix alone** — Rocq,
+  Python 3, GHC, Bazel all come from the flake. The DEV-3 gap (docs/DESIGN-NOTES.md sec. 4) is shut:
+  flake.nix builds extlib/paco/coinduction/interaction-trees/ctrees from the locked inputs, so
+  `cd coq && dune build` runs inside `nix develop .#rocq` and no host opam switch is load-bearing.
+  Any convenience switch an editor wants must be generated *inside* the devShell from pins.toml.
 
 ### Haskell side
 

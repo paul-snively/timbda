@@ -20,17 +20,17 @@
     "coinduction": {
       "flake": false,
       "locked": {
-        "lastModified": 1793644272,
-        "narHash": "sha256-T97KvMjq7U6BCvCBIVT0u/6vEfINqocgv1O65ui3Vl0=",
+        "lastModified": 1758090858,
+        "narHash": "sha256-S/stL5bpJsJt+bvOg4F2b/WaEt5IDOop3ruBIbde9GI=",
         "owner": "damien-pous",
         "repo": "coinduction",
-        "rev": "07d2a09f9cb971209683298e9f5b3f5031d98b3f",
+        "rev": "a88f0f4f170dcb9b24e3d470c76801a765423598",
         "type": "github"
       },
       "original": {
         "owner": "damien-pous",
         "repo": "coinduction",
-        "rev": "07d2a09f9cb971209683298e9f5b3f5031d98b3f",
+        "rev": "a88f0f4f170dcb9b24e3d470c76801a765423598",
         "type": "github"
       }
     },
@@ -118,6 +118,23 @@
         "type": "github"
       }
     },
+    "paco": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1738199413,
+        "narHash": "sha256-ldUjNd5daUu2B3v4tk20/iXFgyUuW4XHlbubTInpwcs=",
+        "owner": "snu-sf",
+        "repo": "paco",
+        "rev": "d0561bf7f0a96cac486ba3bd8ca0b72ce01fb9cf",
+        "type": "github"
+      },
+      "original": {
+        "owner": "snu-sf",
+        "repo": "paco",
+        "rev": "d0561bf7f0a96cac486ba3bd8ca0b72ce01fb9cf",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "certirocq": "certirocq",
@@ -127,6 +144,7 @@
         "interaction-trees": "interaction-trees",
         "mlir-wasm-dialect": "mlir-wasm-dialect",
         "nixpkgs": "nixpkgs",
+        "paco": "paco",
         "veriffi": "veriffi",
         "verse-semantics": "verse-semantics"
       }

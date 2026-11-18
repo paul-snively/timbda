@@ -70,13 +70,19 @@ flake_input = "interaction-trees"
 repo = "github:DeepSpec/InteractionTrees"
 branch = "master"
 rev = "284d42248a3c5517cff9f582e335fcee2f6bdc1f"
-
+note = "the revision the transitional switch pinned (coq-itree dev@284d4224); dune lang coq 0.2; builds clean on nix rocq 9.1.1 with extlib + paco in scope"
 
 [formal.extlib]
 flake_input = "coq-ext-lib"
 repo = "github:rocq-community/coq-ext-lib"
 branch = "master"
 rev = "c5cdb83d48786ca2680c6d817c19bb99f68d4ca3"
+note = "dune lang coq 0.8 -> coqc -boot, which drops rocq 9.1's implicit Stdlib loadpath; the flake derivation re-pins the project to lang 0.7 (postPatch), the mode our own coq/dune-project uses. Verified on nix rocq 9.1.1 (2026-11-18)."
+
+[formal.coq_stdlib]
+nixpkgs_attr = "rocqPackages.stdlib"
+version = "9.0.0"
+note = "provides the Stdlib logical tree (From Stdlib Require ...) that rocq 9.1 splits out of rocq-core; nixpkgs ships it as a package, not as core theories"
 
 [formal.relation_algebra]
 nixpkgs_attr = "rocqPackages.relation-algebra"
@@ -85,8 +91,16 @@ version = "1.8.0"
 [formal.coinduction]
 flake_input = "coinduction"
 repo = "github:damien-pous/coinduction"
+tag = "v1.21"
+rev = "a88f0f4f170dcb9b24e3d470c76801a765423598"
+note = "M-2 retarget: master (07d2a09f) requires rocq >= 9.2 and fails on rocq 9.1.1 (theories/lattice.v:40 parse error); v1.21 is the DEV-3-proven 9.1 line (opam rocq-coinduction 1.21: rocq-core >= 9.0 < 9.3, no Elpi dep)."
+
+[formal.paco]
+flake_input = "paco"
+repo = "github:snu-sf/paco"
 branch = "master"
-rev = "07d2a09f9cb971209683298e9f5b3f5031d98b3f"
+rev = "d0561bf7f0a96cac486ba3bd8ca0b72ce01fb9cf"
+note = "implicit dep of interaction-trees (theories/Interp/RecursionFacts.v requires Paco.paco; Props/* + Core/* use pacotac); same dev revision the switch pinned"
 
 [formal.certirocq]
 flake_input = "certirocq"
@@ -120,5 +134,15 @@ note = "record WAMI stack-switching engine flags per harness when WAMI leg lands
 nixpkgs_attr = "lit"
 version = "18.1.8"
 
+[tooling.dune]
+nixpkgs_attr = "dune"
+version = "3.21.1"
+note = "coq.theory build of coq/ (lang coq 0.7); dune >= 3.24 removes the Coq build language, so the flake pins it explicitly"
+
+[tooling.ocaml_for_rocq]
+nixpkgs_attr = "rocqPackages.rocq-core.ocamlPackages.ocaml"
+version = "4.14.4"
+note = "the OCaml ABI rocq 9.1.1 plugins compile against; plugins live in lib/ocaml/4.14.4/site-lib (findlib), theories in lib/coq/9.1/user-contrib"
+
 [deferred]
-note = "opam switch pin set + cabal package set + flocq/menhirLib/boost.context pins are generated from this table at their milestone; none needed for M-1"
+note = "cabal package set + flocq/menhirLib/boost.context pins are generated from this table at their milestone.  The DEV-3 opam-switch fallback is closed (M-2, 2026-11-18): the flake builds the whole Coq stack from these pins."

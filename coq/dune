@@ -1,8 +1,9 @@
-; Kernel theory `Timbda` (coq/*.v).  Logical deps mirror the pinned Coq
-; libraries (see dune-project); CTree is provided by the vendored ctrees pinned
-; in tools/pins/pins.toml (deps/ctrees).  Until M-2 (DEV-3, docs/DESIGN-NOTES.md sec. 4)
-; it is built against the transitional opam switch via tools/ctrees-sync.sh; from M-2
-; the flake devShell provides CTree from the same pinned input.
+; Kernel theory `Timbda` (coq/*.v).  Logical deps are the pinned Coq libraries of
+; tools/pins/pins.toml (CTree, ITree, Coinduction, ExtLib, RelationAlgebra, Stdlib, Paco),
+; built by flake.nix's coqStack from the same lockfile — so no (theories ...)/(deps ...)
+; field here: with dune's coq lang 0.7 they resolve through rocq's loadpath (ROCQPATH,
+; mirrored into COQPATH), which `nix develop .#rocq` sets up.
+; Build: nix develop .#rocq && cd coq && dune build.
 (coq.theory
  (name Timbda)
  (package timbda-kernel)
