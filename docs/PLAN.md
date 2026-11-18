@@ -96,11 +96,14 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
     |                    tblgen-rocq/ backend
     |- coq/              the Gallina kernel
     |  |- Syntax.v       inductive Expr/Pat/Ty (generated + hand-glued)
-    |  |- Semantics.v    [[ _ ]] : Expr -> CTree unit Val  (ctrees; events Get/Put/Primop)
-    |  |- Denotation.v   stdpp gsets candidate model; M-law equalities up to weak bisim
+    |  |- Semantics.v    denote : Expr -> nat -> ctree void1 B2 SResult  (ctrees; the events
+    |  |                 Get/Put/Primop signature arrives with the M2/M3 block-slot layer)
+    |  |- Denotation.v   candidate model = ctrees br2 branching; RewSound_* + the br2 algebra,
+    |  |                 stated up to weak bisim (carrier decision: sec. 5 + DESIGN-NOTES § 7)
     |  |- Rewriting.v    Inductive Rew (one ctor per TimbdaRule record)
     |  |- Checks.v       determinacy checker + CompCert-style certified validator
-    |  |- Eval.v         scheduler over CTree (explicit work queue, fair select)
+    |  |- Eval.v         head-redex table + fuel-bounded norm (Gallina corner of the differential
+    |  |                 triangle); the fair work-queue scheduler is the M2/M3 step
     |  |- Lower.v        determinate fragments -> Clight; general -> CPS calls back into Eval
     |  |- Ffi.v          VeriFFI extern specs
     |  |- Compile.v      CertiRocq wiring; optional CompCert composition
@@ -126,8 +129,10 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
    CompCert's Clight semantics (library dep — see sec. 4).
 7. T7 No-context-call theorem: det_check e = true -> no_switch (lower e) — structural induction
    on the Gallina lowering function. The anti-naivety guarantee verbatim.
-8. T8 Evaluator adequacy: eval_candidates e = candidate_set (sem e); the Gallina scheduler is
-   strategy-complete (fair for select), incl. match-first as special case.
+8. T8 Evaluator adequacy: candidate_set (eval_run e) = candidate_set (sem e), where the candidate
+   model is ctrees `br2` branching and `=` is weak bisimilarity — i.e. Wbisim (denote (Eval.norm
+   fuel e) f') (denote e f) under the uniform-fuel accounting of coq/Denotation.v.  The Gallina
+   scheduler is strategy-complete (fair for select), incl. match-first as special case.
 9. T9 End-to-end refinement: composition T6/T8 x CertiRocq (x optional CompCert): extracted C
    refines the Timbda-0 denotation; kernel ships as certified C linked into the thin C++ driver.
 10. T10 Type discipline: MLIR verifier rejection <-> Rocq typing judgment;
@@ -169,8 +174,12 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   the rewrite-rule pages 9-12 — unification, primops/delta, beta, iteration/choice — fed the
   M0 gate: 15 discharged T1 ctors + the br2 algebra, per-rule status in docs/RULES-AUDIT.md):
   cs.uoregon.edu/research/summerschool/summer26/_lectures/SPJ_Verse-figures.pdf.
-  Timbda-0's ZF-flavored denotation ported predicatively in Rocq (stdpp gsets as candidate sets;
-  universe stratification).
+  Timbda-0's ZF-flavored denotation ported predicatively in Rocq: the candidate-set model is the
+  ctrees `br2` branching read up to weak bisimilarity — the free commutative-idempotent-monad
+  reading of the paper's "or", all inside `Type` with no Set/Type jump.  The "stdpp gsets"
+  formulation was probed and dropped on 2026-11-18: `gset` needs `Countable`/`EqDecision` for the
+  kernel's own mutual Val/Expr (instance search fails out of the box) and drags Stdlib `Bool`,
+  which clashes with the ctrees notation table.  Evidence: docs/DESIGN-NOTES.md § 7.
 - M1: dialect + generator. Timbda.td, DRR rewriters, tblgen-rocq backend, pdll tests, paper-rule
   coverage audit (every paper rule => a record + an MLIR pattern + a Rocq ctor — the audit IS the
   completeness claim).
@@ -225,22 +234,38 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
 
 ### Formalization side (Nix-native Rocq; opam secondary)
 
-- nixpkgs rocqPackages + mkRocqDerivation (coqPackages merging into it). DevShell via
-  rocq.withPackages (ps: [ctrees stdpp equations certirocq compcert ... kernel]) with
-  rocq-lsp / vsrocq-language-server INSIDE the same withPackages call (separate installs won't see
-  the packages).
-- Packaged in nixpkgs: compcert (3.17 for the Rocq 8.15-9.1 window; external Flocq/MenhirLib;
-  -clightgen; wrapped ccomp; per-arch target selection), stdpp (1.12.0 for 8.19-9.1), equations,
-  flocq, MenhirLib. Verify interaction-trees/extlib packaging status on first flake write.
-- NOT packaged -> local pkgs/rocq/ derivations via mkRocqDerivation on pinned flake inputs:
-  ctrees (vellvm/ctrees; Rocq 9.0 compat; deps InteractionTrees, Equations, Coinduction,
-  RelationAlgebra, Extlib; namespace CTree), CertiRocq (ship its C runtime — gc_stack.o, FFI glue
-  — as a package output so the driver links exactly the certified runtime blob), VeriFFI
-  (CertiRocq/VeriFFI).
-- Pin matrix (lock day one; single generated table consumed by MODULE.bazel, flake inputs, and a
-  printed pins.toml): rocq 9.0/9.1 x compcert 3.17+ x stdpp 1.12 x ctrees pinned rev x
-  interaction-trees/equations/coinduction/RelationAlgebra/extlib revs x verse-semantics (Haskell)
-  rev x llvm-project commit x hermetic-llvm BCR version x dcont fork rev x bazel version x ghc version.
+- nixpkgs-provided formal deps (namespace `rocqPackages`, with legacy `coqPackages` for what has not
+  merged yet) at the pinned nixpkgs `b349185b…`: `rocq-core` 9.1.1, `stdlib` 9.0.0,
+  `relation-algebra` 1.8.0, `equations` 1.3.1+9.1 (legacy namespace only), `stdpp` 1.13.0,
+  `compcert` 3.17 (license-gated, built only when the C leg starts).  `rocqPackages` provides no
+  ctrees / interaction-trees / coq-ext-lib / paco at all, and coinduction's `master` branch needs
+  rocq ≥ 9.2 — so the kernel's own dependency cone cannot come from nixpkgs alone.
+- Built in the flake from the locked inputs, in `flake.nix`'s `coqStack`/`mkRocqLib` (each exported
+  as `.#timbda-<lib>`, and each with a setup hook that mirrors rocq's ROCQPATH into dune's COQPATH):
+  coq-ext-lib 0.13.0-dev, coq-paco 4.4-dev, rocq-coinduction 1.21 (tag `v1.21`; master needs rocq
+  ≥ 9.2), coq-itree 5.2.1-dev, rocq-ctree 2.0-dev.  Two upstream quirks patched: extlib's
+  dune-project declares `using coq 0.8` (retargeted to 0.7), paco's Makefile invokes the retired
+  `coq_makefile` (`rocq makefile -f`).  CertiRocq and VeriFFI remain unpinned-until-needed (M2/M3:
+  ship their C runtime — gc_stack.o, FFI glue — as package outputs).
+- Coq-mode dune 3.21.1 also comes from nixpkgs.  `coq/dune-project` pins `using coq 0.7`, and CI
+  keeps every Coq-mode stanza in the repo on that version (coq lang ≥ 0.8 compiles with `coqc -boot`,
+  which drops the Stdlib package from the loadpath — DESIGN-NOTES § 5).
+- `stdpp` 1.13.0 is pinned but deliberately **not** in `rocqDeps`: nothing in `coq/` imports it, and
+  the pinned ctrees rev references `stdpp` zero times (`theories/` included).  It stays pinned
+  because the M2/M3 candidate-bag layer may want a finite-set carrier, and because the carrier probe
+  (DESIGN-NOTES § 7) measured exactly what importing stdpp would cost — `Countable` over the kernel's
+  mutual Val/Expr, and a `Bool` × ctrees notation collision.  A pin no build consumes has to carry
+  that reason in pins.toml, which it now does.
+- DevShell (`nix develop .#rocq`, and `.#all` for the cross-stack shell): `rocqDeps` + coq-mode dune
+  + the `rocq c`/`rocq dep`/`rocq doc` shims + ocaml/findlib (for the coinduction findlib plugin) +
+  vsrocq-language-server, with `COQPATH` mirrored from `ROCQPATH`.
+- Pin matrix (single table of record `tools/pins/pins.toml`; `tools/pins/pins.py check` asserts
+  pins.toml == MODULE.bazel == .bazelversion == flake inputs == flake.lock, and
+  `checks.version-consistency` asserts pins.toml == the nixpkgs attribute versions): rocq 9.1.1 x
+  compcert 3.17 x stdpp 1.13.0 x equations 1.3.1+9.1 x stdlib 9.0.0 x relation-algebra 1.8.0 x
+  ctrees/interaction-trees/coinduction/extlib/paco pinned revs x verse-semantics rev x llvm-project
+  commit x hermetic-llvm BCR version x dcont fork rev x bazel 9.3.2 x ghc 9.12.3 x dune 3.21.1 x
+  ocaml-for-rocq 4.14.4.
 - OPAM: an opam switch available in the Rocq devShell for editor/ocaml-ecosystem convenience,
   generated FROM the same pin table, never the reverse. Nix is the source of truth.
   Host contract (clarified 2026-11-18, closed same day): the host provides **nix alone** — Rocq,
@@ -255,8 +280,9 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
   (cabal2nix or haskell-flake cabalProject). Expose the tester and repl binaries as flake packages.
 - The golden triangle is a FLAKE CHECK, not a shell habit: tests/differential/<corpus> (generated
   from the .td records) runs against (a) the Gallina-extracted evaluator, (b) the bazel-built
-  timbda-canonicalize binary, (c) the Haskell tester; assert candidate-set equality. It is the only
-  place all three ecosystems touch at runtime — keep it small and paranoid.
+  timbda-canonicalize binary, (c) the Haskell tester; assert candidate-set equality — a bag
+  comparison on the harness side, whose Coq-side reading is Wbisim over br2 (sec. 3.8). It is the
+  only place all three ecosystems touch at runtime — keep it small and paranoid.
 
 ### Flake outputs (sketch)
 
@@ -293,6 +319,9 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
    implements (later) native control flow; annotations emitted from MLIR/TableGen source, never
    handwritten; no Isabelle/Lean; practical framing, prove non-naive out-of-order reduction to
    straight C without unnecessary context switches.
+   1a. (amended 2026-11-18) "stdpp semantics" narrowed: the candidate-set semantics is read through
+   ctrees `br2` up to weak bisimilarity, not through stdpp `gset`; stdpp stays pinned and available
+   but is not in the kernel's dependency cone (sec. 6, DESIGN-NOTES § 7).
 2. "Prove over runtime contract" principle => determinacy analysis in the Gallina kernel; strategy
    execution = Gallina evaluator; boost.context demoted to provably-mapped M4 optimization;
    Tier-3 conjectures non-blocking; formalization calibrated to the papers (Tier 1/2/3).

@@ -53,6 +53,7 @@ note = "ccomp lane is license-gated (later milestone); build-time lib dep only f
 [formal.stdpp]
 nixpkgs_attr = "rocqPackages.stdpp"
 version = "1.13.0"
+note = "pinned but used by no build: nothing in coq/ imports stdpp and it is deliberately NOT in flake.nix's rocqDeps.  Kept for a possible M2/M3 candidate-bag layer.  Measured 2026-11-18: candidate sets stay ctrees br2 read up to wbisim, not gset - gset needs Countable/EqDecision for the mutually recursive Val/Expr/SResult domain (probe gB1: 'Could not find an instance for EqDecision SResult'), listset only speaks up to setoid equality (probe gC2), and stdpp's re-exported Stdlib.Bool level-40 '&&&' collides with RelationAlgebra's level-59 '&&&' that CTree.Eq.WBisim pulls (probes gE/gE2/gG1-gG9).  See docs/DESIGN-NOTES.md sec. 7."
 
 [formal.equations]
 nixpkgs_attr = "coqPackages.equations"
@@ -63,7 +64,7 @@ flake_input = "ctrees"
 repo = "github:vellvm/ctrees"
 branch = "dev"
 rev = "cabcf9bf24b0f459204a7da19ac01b7697ff04e3"
-note = "deps itrees(inc. RelationAlgebra)/extlib/coinduction pinned above; equations+stdpp from nixpkgs; local mkRocqDerivation in M-2"
+note = "deps itrees(inc. RelationAlgebra)/extlib/coinduction pinned above; equations from nixpkgs; no stdpp in its buildInputs (measured 2026-11-18: the pinned ctrees sources reference stdpp zero times, and declare no '&&&' notation); local mkRocqDerivation in M-2"
 
 [formal.itrees]
 flake_input = "interaction-trees"

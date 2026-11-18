@@ -197,8 +197,90 @@ per-rule status table is `docs/RULES-AUDIT.md` § 1.  The findings that shaped
   `Eqdep.Eq_rect_eq.eq_rect_eq`, inherited from ctrees' Program-generated definitions;
   `closeV_lit`/`closeV_map_VInt` print "Closed under the global context".  Audit:
   `docs/RULES-AUDIT.md` § 6.
-- `Stdlib.Bool`'s level-40 `&&&` notation clashes hard with the ctrees chain notation
-  table (level 59): do not import Bool directly; it arrives transitively via
-  `Timbda.Syntax`.
+- The lazy-and notation is owned twice: `Stdlib/Bool/Bool.v:919-920` declares
+  `a &&& b` (left assoc) at **level 40** in `lazy_bool_scope`, and
+  `RelationAlgebra/common.v:28` declares `a &&& b` (right assoc) at **level 59**.
+  Loading both in one compilation unit is a hard load-time error in either order; the
+  ctrees side arrives through `CTree/Eq/WBisim.v:55-56`
+  (`From RelationAlgebra Require Export rel srel monoid kat kat_tac rewriting
+  normalisation`) → `monoid.v:6` `Require Export lattice` → `lattice.v` imports
+  `common`.  Rule and probes: § 7.3.
 - Comment hazard: a substring like `…/Eq/*` inside a `(* … *)` header terminates the
   comment early ("illegal begin of vernac").
+
+## 7. Candidate sets: br2/`≈`, not stdpp `gset` (measured 2026-11-18)
+
+`docs/PLAN.md` § 5 once said candidate sets would be "stdpp `gset`s".  Measured against
+the pinned toolchain (rocq-core 9.1.1, stdpp 1.13.0, Stdlib 9.0.0, relation-algebra
+1.8.0, ctrees 2.0-dev; nixpkgs `b349185bb79c7cf7ad8ea8c097931730bf473c71`; kernel
+`/nix/store/llqcq9lhppbnkdm4xmxlkap02xsfwn8v-timbda-kernel-0.1.0`) that carrier is not
+available at the cost PLAN implied.  Probes: `/tmp/opencode/stdpp-probe` (`nix build
+--no-link .#probe-*`, reports at `$out/gX-report.txt`).
+
+### 7.1 What a `gset` carrier would need
+
+| Probe | Configuration | Measured result |
+|---|---|---|
+| gA1 | `From stdpp Require Import base sets gmap countable.`; carrier `gset nat` (`list_to_set [1; 2; 2]`); AC/unit laws stated up to `≡`, closed by `set_solver` | 5/5 closed |
+| gA2 | same carrier, AC laws stated as Leibniz equalities (`=`) over `gset nat` - the shape a `T8`-style candidate-bag lemma wants; closed via `gset_leibniz` (`gmap.v:639`) / `set_eq` (`sets.v:571`) + `elem_of_union`, or `set_solver` | 4/4 closed.  So Leibniz *is* available for `gset` - the gate is `Countable`, not the equality |
+| gB1 | `coq/Syntax.v`'s AST pasted verbatim (`ident := positive`, mutual `Val`/`Expr`, `SResult`), then `Goal Countable SResult. Proof. apply _. Qed.` | **`Error: Could not find an instance for "EqDecision SResult"`** – `gset K = mapset (gmap K)` (`gmap.v:599`) requires `Countable K`, and `Countable` carries `EqDecision` (`countable.v:12-16`).  `SResult`/`Val`/`Expr` are mutually recursive with `Z`, `positive`, `list` and binder-bearing ctors (`VLam Ty Expr`), so both `EqDecision` and `Countable` must be hand-written; there is no stock instance |
+| gB2 | same AST, carrier `listset SResult` (`Listset [SOk (VInt 1); SFail; SStuck]`) - no `Countable` needed | 5/5 closed up to `≡` – but see gC2 |
+| gC | `listset Outcome` (`Record Outcome := MkOutcome { outcome_of : option (option Z) }`); AC laws via the `IdemP`/`Comm`/`Assoc` `SemiSet` instances `listset.v` provides | 4/4 closed |
+| gC2 | `listset Outcome` Leibniz attempt: `x ∪ y = y ∪ x` via `unfold_leibniz; apply (comm _)` | **fails**: `Error: Could not find an instance for "Comm eq union"`.  `listset` (`listset.v:6`, a `Record` over `list` with `SemiSet` instances only, `base.v:1536`/`1546`) has no `LeibnizEquiv` instance, so the Leibniz-gated `union_*_L` laws (`sets.v:590-598`) do not apply: `listset` only speaks up to `≡` (setoid), not up to `=` |
+| gD | `From stdpp Require Import base sets listset.` + `Require Import Timbda.Syntax` (kernel package) | 5/5 closed - no clash: stdpp re-exports the *same* `Stdlib.Bool` notation, and `Timbda.Syntax` does not pull `CTree.Eq.WBisim` |
+| gE | stdpp first, then `CTree`/`Eq`/`WBisim` + `Timbda.Syntax Rewriting Semantics Denotation` | **fails**: `Notation "_ &&& _" is already defined at level 40 … while it is now required to be at level 59` |
+| gE2 | same stack, stdpp last | **fails**, mirrored error: `… already defined at level 59 … now required to be at level 40` |
+| gE5 | `From Stdlib Require Import ZArith Bool List.` + `CTree`/`Eq`/`WBisim`, **no stdpp** | **fails** with the level-40 error - the collision is kernel-side and stdpp-independent |
+| gE3 (control) | `CTree`/`Eq`/`WBisim` + the four kernel modules, no stdpp, no Bool import; `Print Assumptions` | compiles; `denote` closed, `Br2_Commut_W`/`Br2_Assoc_W` print exactly `Eqdep.Eq_rect_eq.eq_rect_eq` |
+| gF (control) | `From Stdlib Require Import ZArith List.` + `CTree`/`Eq`/`WBisim` (no Bool) | clean |
+
+### 7.2 Decision
+
+**Candidate sets stay ctrees `br2` branchings read up to weak bisimilarity (`≈`)** -
+`denote : Expr -> fuel -> ctree void1 B2 SResult`, `T1`/`T2`/`T8` stated at the `≈`
+level (`docs/PLAN.md` § 3, § 5).  Consequences measured above:
+
+- A `gset` carrier is *possible*: Leibniz-level AC reasoning works out of the box once the
+  key type is `Countable` (gA1/gA2).  The cost is the instance work - hand-written
+  `EqDecision` + `Countable` for the mutually-recursive `Val`/`Expr`/`SResult` domain (gB1) -
+  and the `listset` shortcut around that domain only reaches `≡`, not `=` (gC2).
+- `listset` would make candidate equality setoid-level (`≡`), which weakens `T8`'s
+  statement (the trace-equality claim needs `≈` on ctrees anyway).
+- The notation collision (7.3) makes any single file that wants *both* stdpp's set
+  layer and ctrees' `WBisim` layer a build breaker, in either import order (gE/gE2), so a
+  stdpp candidate-bag layer would have to live in its own compilation units behind a
+  hand-managed import boundary.  That collision is not stdpp's fault: `Stdlib.Bool` +
+  `CTree.Eq.WBisim` alone trips it (gE5), which is why `coq/Denotation.v` already avoids a
+  direct Bool import.
+- Therefore: `br2`/`≈` is the carrier for M0-M1.  stdpp stays pinned
+  (`tools/pins/pins.toml [formal.stdpp]`, note added) for a possible M2/M3
+  candidate-bag/ownership layer, and is deliberately **not** in `flake.nix`'s
+  `rocqDeps` because nothing in `coq/` imports it.  Pinned ctrees sources contain no
+  `&&&` and no stdpp reference (checked against
+  `/nix/store/v24v7rhqmijml7hvqckq7yvq15qgnmxc-timbda-pin-sources`).
+
+### 7.3 Notation-attribution probes (gG1-gG9, gH1-gH2)
+
+`rocq compile` + `Locate "&&&"`, one layer per compilation unit.  (Every probe that loads
+ctrees also prints the upstream `_ ° _` / `_ ~ 1` `notation-incompatible-prefix` warnings and
+the `COQPATH` deprecation notice; both are noise from the pinned deps, not from Timbda.)
+
+| Probe | Loaded | `Locate "&&&"` / error |
+|---|---|---|
+| gG1 | nothing | `Unknown notation` |
+| gG2 | `From Stdlib Require Import Bool.` | `(from Stdlib.Bool.Bool)` – level 40, left assoc, `lazy_bool_scope` |
+| gG8 | `From stdpp Require Import base sets listset.` | the **same** entry, `(from Stdlib.Bool.Bool)` – stdpp re-exports, does not define its own |
+| gG7 | `From CTree Require Import CTree Eq.` | `Unknown notation` (core+Eq alone does not put level 59 in scope) |
+| gG4 | `From CTree Require Import CTree Eq.` + `From CTree.Eq Require Import WBisim.` | `(from RelationAlgebra.common)` – level 59, right assoc |
+| gG6 | `From RelationAlgebra Require Import common.` then `From Stdlib Require Import Bool.` | level 59 entry, then **`Error: Notation "_ &&& _" is already defined at level 59 … while it is now required to be at level 40`** - the minimal repro, no ctrees and no stdpp involved |
+| gG5 | kernel chain (`CTree` + `Eq` + `WBisim`) then `From Stdlib Require Import ZArith Bool List.` | same clash, roles swapped |
+| gH2 | `From Stdlib Require Import ZArith Bool List.` + `From CTree Require Import CTree Eq.` (no `WBisim`) | level 40 entry only - this is today's `Timbda.Semantics` configuration, clean |
+| gG9 | `From stdpp Require Import base sets listset.` + `From CTree Require Import CTree Eq.` | compiles; level 40 entry only - stdpp coexists with ctrees core/Eq, not with `WBisim` |
+| gH1 | `Timbda.Syntax Rewriting Semantics Denotation` in one unit | `Unknown notation` - notation tables of transitively-loaded modules are not replayed |
+
+**Rule to keep the kernel buildable:** a compilation unit may directly import the ctrees
+`Eq`/`WBisim` layer *or* `Stdlib.Bool`/stdpp, never both.  `coq/Denotation.v` takes the
+ctrees side (no Bool import); `coq/Semantics.v`, `coq/Eval.v`, `coq/Syntax.v` take the
+Bool side and never import `WBisim`; `coq/tests/KernelTest.v` omits Bool deliberately.
+Bool reaches `Denotation.v` transitively through `Timbda.Syntax` (gH1 shows that does not
+replay the level-40 table).
