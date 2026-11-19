@@ -119,6 +119,13 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
    (CTrees equational theory), mirroring the paper's candidate-set claims.
 3. T3 delta-primop agreement: for each primop, Gallina primop_eval agrees with int63/Clight
    evaluation of the constant the delta-rule produces. The hinge of "straight C code" fidelity.
+   One obligation is already open and unclosed, and it is recorded rather than assumed: integer
+   division.  The kernel floors (`Z.div`, `(-7)/2 = -4`) and agrees there with the pinned Haskell
+   oracle (`Red.hs:1346-1347`: `j /= 0` then `i \`div\` j`; `Core/Expr.hs:623`/`645-647` make
+   "divisor nonzero" a *precondition* even though `primOpCanFail Div = False`), but the C++ side's
+   rounding was never verified - no C++ runtime source (`Value.h`) exists in this repo, its bazel
+   externals, or on this host - so the C++ lowering is a T3 obligation to be discharged against real
+   upstream source, not a measured fact (`docs/VERSE-RULES.md` § 3 DEV-5, tools/corpus/README.md § 6).
 4. T4 Determinacy soundness: det_check e = true -> exists v s', sem e = ret (v, s')
    (single candidate, total, no control effects). Checker lives in Gallina (decision), so no
    MLIR-side pass is trusted; CompCert-style certified validator on the MLIR side.
@@ -180,22 +187,29 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   formulation was probed and dropped on 2026-11-18: `gset` needs `Countable`/`EqDecision` for the
   kernel's own mutual Val/Expr (instance search fails out of the box) and drags Stdlib `Bool`,
   which clashes with the ctrees notation table.  Evidence: docs/DESIGN-NOTES.md § 7.
-  The differential half of M0 is now a build gate, not a plan (measured 2026-11-18): one spec file
-  `tests/corpus/m0.texpr` — 49 cases, every expectation derived by hand from docs/VERSE-RULES.md
-  *before* looking at what the evaluator produces — is read independently by two corners.
-  `tools/corpus/corpus.py` emits 98 Coq `reflexivity` assertions about Gallina `Eval.norm` /
-  `head_redex` (one `head` and one `norm` per case, 315 lines of generated `.v`, all discharged by
-  `rocq`); `tools/corpus/driver.ml` parses the same
-  file a second time and runs the OCaml that `Extraction` produced from that same Gallina function
-  (`tools/extract/extract.v` → 1094 lines, `Print Assumptions` = closed under the global context).
-  `checks.corpus-differential` cross-checks them: both corners must accept every case, both must
-  report the same case count, and anti-vacuity guards (non-empty corpus, non-trivial generated
-  corner, non-truncated extraction) keep a green build from meaning "nothing ran".  It paid for
-  itself on the first run: `dotdot[1,3]` materialised as `⟨1,2⟩` because `Syntax.v`'s `seq_z`
-  guarded on `Z.ltb`, while paper line 459 and the pinned oracle (`Red.hs:1384`, `i <- [l..h]`) are
-  inclusive — the guard is now `Z.leb`, pinned by three `KernelTest.v` examples.  All harness
-  scaffolding stays in `tools/` + `tests/`, so the kernel gate (zero `Admitted`, exactly one axiom)
-  is untouched by it.  Details: tools/corpus/README.md, docs/DESIGN-NOTES.md § 8.
+  The differential half of M0 is a build gate, not a plan (measured 2026-11-19): one spec file
+  `tests/corpus/m0.texpr` — 64 cases, every expectation derived by hand from docs/VERSE-RULES.md
+  *before* looking at what the evaluator produces, 7 of them also asserting a candidate bag — is read
+  independently by two corners.  `tools/corpus/corpus.py` emits 135 Coq `reflexivity` assertions about
+  Gallina `Eval.norm` / `head_redex` / `cand_bag` (one `head` and one `norm` per case plus one per
+  candidate-bag claim, 421 lines of generated `.v`, all discharged by `rocq`); `tools/corpus/driver.ml`
+  parses the same file a second time with its own reader and runs the OCaml that `Extraction` produced
+  from those same Gallina functions (`tools/extract/extract.v` → 1465 lines, `Print Assumptions` =
+  closed under the global context for all four extracted names).  `checks.corpus-differential`
+  cross-checks them: both corners must accept every case, both must report the same case *and*
+  candidate-bag counts, and anti-vacuity guards (non-empty corpus, non-trivial generated corner,
+  non-truncated extraction, and each corner asserting its own recorded exit codes) keep a green build
+  from meaning "nothing ran".  It paid for itself on the first run: `dotdot[1,3]` materialised as
+  `⟨1,2⟩` because `Syntax.v`'s `seq_z` guarded on `Z.ltb`, while paper line 459 and the pinned oracle
+  (`Red.hs:1384`, `i <- [l..h]`) are inclusive — the guard is now `Z.leb`, pinned by three
+  `KernelTest.v` examples.  M0's closing step selected the Fig. 8 rows (`R_Subst`, `R_PromoteL`,
+  `R_PromoteR` via `Eval.v`'s `body_walk`; `Gc1` deliberately not selected), which is what makes the
+  decision-3 divergence reachable instead of latent (docs/RULES-AUDIT.md § 3 C1, docs/DESIGN-NOTES.md
+  § 9).  All harness scaffolding stays in `tools/` + `tests/`, so the kernel gate (zero `Admitted`,
+  exactly one axiom) is untouched by it.  Details: tools/corpus/README.md, docs/DESIGN-NOTES.md § 8.
+  Build memory is a build-infrastructure fact, not an aside: `coq/dune-workspace` pins `(jobs 2)` and
+  `tools/build/coq-build.sh` runs the build inside a verified cgroup envelope with an artifact check
+  (docs/DESIGN-NOTES.md § 4.2).
 - M1: dialect + generator. Timbda.td, DRR rewriters, tblgen-rocq backend, pdll tests, paper-rule
   coverage audit (every paper rule => a record + an MLIR pattern + a Rocq ctor — the audit IS the
   completeness claim).
@@ -362,15 +376,33 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
    optional and license-gated.
 5. (This file) Commit to M-1 skeleton-first: flake.nix + MODULE.bazel + pin table + consistency CI,
    ~300 lines, both graphs green, before any C++/Rocq code.
-6. (2026-11-18) Differential corpus shape: ONE hand-derived spec file (`tests/corpus/*.texpr`), read
-   by two independent readers — generated Coq `reflexivity` assertions (native Gallina evaluator) and
-   an OCaml driver over the `Extraction`'d evaluator — gated by `checks.corpus-differential`, which
-   also requires the two corners to see the same case count and blocks vacuous passes (empty corpus,
-   empty generated corner, truncated extraction). Harness scaffolding lives outside `coq/` so adding
-   cases never touches the kernel's axiom/`Admitted` gate; the augustss `tester` becomes the third
-   corner at M3. Evidence: 49/49 green on both corners, and the `seq_z` inclusive-range kernel fix it
-   produced (docs/DESIGN-NOTES.md § 8, tools/corpus/README.md § 6).
-
+6. (2026-11-18, closed 2026-11-19) Differential corpus shape: ONE hand-derived spec file
+   (`tests/corpus/*.texpr`), read by two independent readers — generated Coq `reflexivity` assertions
+   (native Gallina evaluator) and an OCaml driver over the `Extraction`'d evaluator — gated by
+   `checks.corpus-differential`, which also requires the two corners to see the same case count *and*
+   candidate-bag count and blocks vacuous passes (empty corpus, empty generated corner, truncated
+   extraction, a corner ignoring its own recorded `rc`).  Harness scaffolding lives outside `coq/` so
+   adding cases never touches the kernel's axiom/`Admitted` gate; the augustss `tester` becomes the
+   third corner at M3.  Evidence: 64/64 green on both corners (7 candidate-bag groups), the `seq_z`
+   inclusive-range kernel fix it produced, and the Fig. 8 row selection (`R_Subst`/`R_PromoteL`/
+   `R_PromoteR`) that close-out added.  Docs: docs/DESIGN-NOTES.md § 8-9, tools/corpus/README.md § 6.
+7. (2026-11-19) Build memory is infrastructure, not an aside, and it has two halves.  The **dev-shell**
+   build is containable: `(jobs 2)` (`coq/dune-workspace`) plus a *verified* systemd cgroup envelope with
+   a host watchdog (`tools/build/coq-build.sh`, which refuses to run uncapped, reads back its own
+   `memory.max`, asserts its expected `.vo` set, and aborts the build when host `MemAvailable` or swap
+   headroom collapses).  The **nix gate chain is not cappable from an unprivileged session**: the daemon
+   runs builds as root in a cgroup with `MemoryMax=infinity` (Determinate Nix 3.24.2 / nix 2.35.3,
+   `/nix/store` not
+   user-writable) and `max-jobs = 20`, so a user-scope cap around `nix build` is a placebo; the guard
+   there is a preflight refusal plus `--max-jobs 1` (`tools/build/nix-gate.sh`).  Measured reason this is
+   not theoretical: an uncapped gate chain coincided with 30 `earlyoom` SIGTERMs in 10 minutes, 28 of
+   them the model server at 41-47 GiB each.  Also measured: warm and cold builds are different numbers
+   (647 MiB warm; `coq/Denotation.v` alone over 3.5 GiB cold, stalling rather than failing under a 3 GiB
+   and a 3.6 GiB cap) - and the 53.9 GiB peak that started this was one unprovable `Example`
+   (fuel-24 `vm_compute` over the ctrees denotation), not the kernel.  Follow-up, M1-side: bound the
+   cost of `Ltac t1_norm` (`coq/Denotation.v:100`), whose `repeat (setoid_rewrite …; kernel_cbn)` loop
+   is the candidate explanation for the cold cost, and give the nix sandbox an envelope root-side
+   (`tools/build/README.md`, not applied).  Docs: docs/DESIGN-NOTES.md § 4.2-4.3, tools/build/README.md.
 ## 9. Known reference anchors
 
 - Verse papers: simon.peytonjones.org/oplss-26/ ; OPLSS authoritative lecture PDFs at

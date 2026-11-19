@@ -11,9 +11,16 @@ reader and runs the *extracted* OCaml evaluator: the spec is read by two readers
 and executed by two pipelines (Coq native, Rocq extraction).
 
 Usage:
-  corpus.py --emit-coq CORPUS   write the Coq corner to stdout
-  corpus.py --summary  CORPUS   case count and which head-table rows fire
-  corpus.py --count    CORPUS   number of cases (harness cross-check)
+  corpus.py --emit-coq CORPUS    write the Coq corner to stdout
+  corpus.py --summary  CORPUS    case count, which head-table rows fired, how many
+                                 cases also assert a candidate bag
+  corpus.py --count    CORPUS    number of cases (harness cross-check)
+  corpus.py --count-cands CORPUS number of cases with a `cands` field
+
+Case fields: `head`, `expr`, `norm`, `why`, `fuel`, and optionally `cands` (the
+candidate bag `Timbda.Eval.cand_bag` must return for the normal form) plus
+`cands_why` for why that bag has that shape.  Both readers - this one and
+tools/corpus/driver.ml - accept exactly the same field set.
 
 Corpus grammar and desugaring table: tools/corpus/README.md.
 """
@@ -170,6 +177,13 @@ class Reader:
         self.close()
         return (ty, val)
 
+    def expr_seq(self):
+        """Parse a whitespace-separated run of expressions (the `cands` field)."""
+        out = []
+        while self.peek() is not None:
+            out.append(self.expr())
+        return out
+
     def expr(self):
         if self.peek() != "(":
             tok = self.take()
@@ -249,7 +263,8 @@ def parse_corpus(path):
                 raise CorpusError(f"{where}: duplicate case name {name!r}")
             names.add(name)
             cur = {"name": name, "line": num, "fuel": fuel_default,
-                   "head": None, "expr": None, "norm": None, "why": ""}
+                   "head": None, "expr": None, "norm": None, "why": "",
+                   "cands": None, "cands_why": ""}
             cases.append(cur)
             continue
         if cur is None:
@@ -270,11 +285,22 @@ def parse_corpus(path):
             if len(rest) < 2 or rest[0] != '"' or rest[-1] != '"':
                 raise CorpusError(f"{ctx}: why must be a quoted string")
             cur["why"] = rest[1:-1].replace('\\"', '"')
+        elif key == "cands":
+            # Optional: the candidate bag the normal form must offer (cand_bag).
+            # A run of expressions, read by the same grammar `norm` uses.
+            cur["cands"] = Reader(rest, f"{ctx} cands").expr_seq()
+            if not cur["cands"]:
+                raise CorpusError(f"{ctx}: cands needs at least one expression "
+                                  "(cand_bag never returns an empty bag)")
+        elif key == "cands_why":
+            if len(rest) < 2 or rest[0] != '"' or rest[-1] != '"':
+                raise CorpusError(f"{ctx}: cands_why must be a quoted string")
+            cur["cands_why"] = rest[1:-1].replace('\\"', '"')
         elif key == "fuel":
             cur["fuel"] = as_int(rest, where)
         else:
             raise CorpusError(f"{ctx}: unknown field {key!r} "
-                               "(head/expr/norm/why/fuel)")
+                              "(head/expr/norm/cands/cands_why/why/fuel)")
     for c in cases:
         for field in ("head", "expr", "norm"):
             if c[field] is None:
@@ -377,8 +403,14 @@ Definition fired_rule (e : Expr) : option RuleID :=
 """
 
 
+def coq_expr_seq(es):
+    """The `cands` field as a Coq list - the order cand_bag returns them in."""
+    return "[" + "; ".join(coq_expr(e) for e in es) + "]"
+
+
 def emit_coq(cases, corpus_name):
     out = [COQ_HEADER % corpus_name]
+    n_cands = 0
     for c in cases:
         name = "c_" + c["name"]
         want = "None" if c["head"] == "none" else f"Some {c['head']}"
@@ -388,9 +420,16 @@ def emit_coq(cases, corpus_name):
         out.append(f"Example {name}_norm : norm {c['fuel']} {name} = "
                    f"{coq_expr(c['norm'])}.")
         out.append("Proof. reflexivity. Qed.")
+        if c["cands"] is not None:
+            n_cands += 1
+            out.append(f"Example {name}_cands : cand_bag (norm {c['fuel']} {name}) = "
+                       f"{coq_expr_seq(c['cands'])}.")
+            out.append("Proof. reflexivity. Qed.")
         out.append("")
     out.append(f"Definition corner_cases : nat := {len(cases)}.")
     out.append("Print corner_cases.")
+    out.append(f"Definition corner_cands : nat := {n_cands}.")
+    out.append("Print corner_cands.")
     return "\n".join(out) + "\n"
 
 
@@ -402,8 +441,9 @@ def summarize(cases):
             stuck += 1
         else:
             fired[c["head"]] = fired.get(c["head"], 0) + 1
+    n_cands = sum(1 for c in cases if c["cands"] is not None)
     lines = [f"cases: {len(cases)}   head row fires: {len(cases) - stuck}   "
-             f"no row (stuck): {stuck}"]
+             f"no row (stuck): {stuck}   candidate bags (cand_bag): {n_cands}"]
     for rule in RULE_COQ:
         if rule in fired:
             lines.append(f"  {rule:<12} {fired[rule]}")
@@ -414,7 +454,8 @@ def summarize(cases):
 
 
 def main(argv):
-    if len(argv) != 2 or argv[0] not in ("--emit-coq", "--summary", "--count"):
+    if len(argv) != 2 or argv[0] not in ("--emit-coq", "--summary", "--count",
+                                         "--count-cands"):
         print(__doc__)
         return 2
     mode, path = argv[0], argv[1]
@@ -427,6 +468,8 @@ def main(argv):
         sys.stdout.write(emit_coq(cases, Path(path).name))
     elif mode == "--count":
         print(len(cases))
+    elif mode == "--count-cands":
+        print(sum(1 for c in cases if c["cands"] is not None))
     else:
         print(summarize(cases))
     return 0

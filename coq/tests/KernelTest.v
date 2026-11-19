@@ -362,7 +362,201 @@ Example norm_seq_pair : norm 10 (Seq (Seq (Ret VUnit) (Ret VTrue)) Fail) = Fail.
 Proof. reflexivity. Qed.
 Example norm_beta_seq :
   norm 10 (App (Ret (VLam TAny (Glob xH))) (Ret VUnit))
-    = Block [(TAny, @None Val)] (Seq (Unify (Ret (VVar 0)) (Ret VUnit)) (Glob xH)).
+    = Block [(TAny, Some VUnit)] (Glob xH).
+Proof. reflexivity. Qed.
+
+(* ---------- D2. Fig. 8 slot completion at a Block root (Subst / PromoteL / R)
+   Every lhs/rhs pair below is the SAME pair section A proves as a constructor
+   instance, so the probe reads: the head table's chosen rewrite is that
+   constructor's rewrite - the walk through the body is the constructor's `S`/`C`
+   context, not a private variant of it.  `..._is_ctor` witnesses `rewrites`
+   (= rw_step, Rewriting.v) for the same pair. *)
+
+Example head_subst_probe :
+  head_redex (Block [(TAny, Some VUnit)] (Ret (VVar 0))) =
+    Some (R_Subst, Block [(TAny, Some VUnit)] (Ret VUnit)).
+Proof. reflexivity. Qed.
+
+Example head_subst_is_ctor :
+  rewrites (Block [(TInt, Some (VInt 5))] (Ret (VVar 0)))
+           (Block [(TInt, Some (VInt 5))] (Ret (VInt 5))) :=
+  @rw_here (Block [(TInt, Some (VInt 5))] (Ret (VVar 0)))
+           (Block [(TInt, Some (VInt 5))] (Ret (VInt 5)))
+           (@RewSubst [(TInt, Some (VInt 5))] 0 (VInt 5) HS_Hole eq_refl).
+
+Example head_subst_deep_probe :
+  head_redex (Block [(TInt, Some (VInt 5))] (Seq (Ret (VVar 0)) (Ret (VInt 1)))) =
+    Some (R_Subst,
+          Block [(TInt, Some (VInt 5))] (Seq (Ret (VInt 5)) (Ret (VInt 1)))).
+Proof. reflexivity. Qed.
+
+(* the walk descended through `S ; e`, i.e. k = HS_SeqR HS_Hole (Ret 1): *)
+Example head_subst_deep_is_ctor :
+  rewrites (Block [(TInt, Some (VInt 5))] (Seq (Ret (VVar 0)) (Ret (VInt 1))))
+           (Block [(TInt, Some (VInt 5))] (Seq (Ret (VInt 5)) (Ret (VInt 1)))) :=
+  @rw_here (Block [(TInt, Some (VInt 5))] (Seq (Ret (VVar 0)) (Ret (VInt 1))))
+           (Block [(TInt, Some (VInt 5))] (Seq (Ret (VInt 5)) (Ret (VInt 1))))
+           (@RewSubst [(TInt, Some (VInt 5))] 0 (VInt 5)
+                      (HS_SeqR HS_Hole (Ret (VInt 1))) eq_refl).
+
+Example head_promote_l_probe :
+  head_redex (Block [(TAny, @None Val)] (Unify (Ret (VVar 0)) (Ret VUnit))) =
+    Some (R_PromoteL, Block [(TAny, Some VUnit)] (Ret VUnit)).
+Proof. reflexivity. Qed.
+
+Example head_promote_l_is_ctor :
+  rewrites (Block [(TAny, @None Val)] (Unify (Ret (VVar 0)) (Ret VUnit)))
+           (Block [(TAny, Some VUnit)] (Ret VUnit)) :=
+  @rw_here (Block [(TAny, @None Val)] (Unify (Ret (VVar 0)) (Ret VUnit)))
+           (Block [(TAny, Some VUnit)] (Ret VUnit))
+           (@RewPromoteL [(TAny, @None Val)] 0 HC_Hole VUnit
+             ltac:(cbv; reflexivity) ltac:(cbv; reflexivity)
+             ltac:(cbv; reflexivity)).
+
+(* the walk descended through `C ; e`, i.e. k = HC_SeqR HC_Hole (Glob xH): *)
+Example head_promote_l_deep_probe :
+  head_redex (Block [(TAny, @None Val)]
+               (Seq (Unify (Ret (VVar 0)) (Ret VUnit)) (Glob xH))) =
+    Some (R_PromoteL, Block [(TAny, Some VUnit)] (Seq (Ret VUnit) (Glob xH))).
+Proof. reflexivity. Qed.
+
+Example head_promote_l_deep_is_ctor :
+  rewrites (Block [(TAny, @None Val)]
+             (Seq (Unify (Ret (VVar 0)) (Ret VUnit)) (Glob xH)))
+           (Block [(TAny, Some VUnit)] (Seq (Ret VUnit) (Glob xH))) :=
+  @rw_here (Block [(TAny, @None Val)]
+             (Seq (Unify (Ret (VVar 0)) (Ret VUnit)) (Glob xH)))
+           (Block [(TAny, Some VUnit)] (Seq (Ret VUnit) (Glob xH)))
+           (@RewPromoteL [(TAny, @None Val)] 0 (HC_SeqR HC_Hole (Glob xH)) VUnit
+             ltac:(cbv; reflexivity) ltac:(cbv; reflexivity)
+             ltac:(cbv; reflexivity)).
+
+Example head_promote_r_probe :
+  head_redex (Block [(TAny, @None Val)] (Unify (Ret VUnit) (Ret (VVar 0)))) =
+    Some (R_PromoteR, Block [(TAny, Some VUnit)] (Ret VUnit)).
+Proof. reflexivity. Qed.
+
+Example head_promote_r_is_ctor :
+  rewrites (Block [(TAny, @None Val)] (Unify (Ret VUnit) (Ret (VVar 0))))
+           (Block [(TAny, Some VUnit)] (Ret VUnit)) :=
+  @rw_here (Block [(TAny, @None Val)] (Unify (Ret VUnit) (Ret (VVar 0))))
+           (Block [(TAny, Some VUnit)] (Ret VUnit))
+           (@RewPromoteR [(TAny, @None Val)] 0 HC_Hole VUnit
+             ltac:(cbv; reflexivity) ltac:(cbv; reflexivity)
+             ltac:(cbv; reflexivity)).
+
+(* Guards, each of which blocks the row (and the walk then descends instead):
+     - promote needs `exists x{}`: a *valued* slot is not promotable, and the walk
+       descends to the Subst redex inside the same unification (Fig. 8 line 412);
+     - `promote_ok` (fvsol(v) # the block's own slots): `x = y` with both sides
+       locally bound has no row, the case the paper rules a swap out for (425-428);
+     - `promote_hp_ok` (the M0 identity restriction on hp[v/x]): slot 1's value
+       mentions slot 0, so binding slot 0 to 7 would change an existing entry. *)
+Example head_promote_blocked_by_valued_slot :
+  head_redex (Block [(TInt, Some (VInt 5))] (Unify (Ret (VVar 0)) (Ret (VInt 7)))) =
+    Some (R_Subst,
+          Block [(TInt, Some (VInt 5))] (Unify (Ret (VInt 5)) (Ret (VInt 7)))).
+Proof. reflexivity. Qed.
+
+Example head_promote_blocked_by_occurs :
+  head_redex (Block [(TAny, @None Val); (TAny, @None Val)]
+               (Unify (Ret (VVar 0)) (Ret (VVar 1)))) = None.
+Proof. reflexivity. Qed.
+
+Example head_promote_blocked_by_heap_refs :
+  head_redex (Block [(TAny, @None Val); (TInt, Some (VVar 0))]
+               (Unify (Ret (VVar 1)) (Ret (VInt 7)))) = None.
+Proof. reflexivity. Qed.
+
+(* A declared slot with nothing to bind is stuck, not failed: Subst needs `x v`. *)
+Example norm_declared_slot_stuck :
+  norm 10 (Block [(TAny, @None Val)] (Ret (VVar 0))) =
+    Block [(TAny, @None Val)] (Ret (VVar 0)).
+Proof. reflexivity. Qed.
+
+Example norm_subst_then_eqk2 :
+  norm 10 (Block [(TInt, Some (VInt 5))] (Unify (Ret (VVar 0)) (Ret (VInt 7)))) =
+    Block [(TInt, Some (VInt 5))] Fail.
+Proof. reflexivity. Qed.
+
+(* Two slots: body index 1 is slot 0 (declared), index 0 is slot 1 (valued).  The
+   promote fills slot 0; the Subst then reads slot 1 through its *new* body index. *)
+Example norm_promote_then_subst_two_slots :
+  norm 10 (Block [(TAny, @None Val); (TInt, Some (VInt 9))]
+            (Seq (Unify (Ret (VVar 1)) (Ret (VInt 7))) (Ret (VVar 0)))) =
+    Block [(TAny, Some (VInt 7)); (TInt, Some (VInt 9))] (Ret (VInt 9)).
+Proof. reflexivity. Qed.
+
+(* Adequacy corner the deferred rows used to sit in: beta now lands on a value under
+   a complete heap instead of stopping at `x = v`.  What M0 can actually check here is
+   the *evaluator's* shape, and that is what these two probes pin
+   (docs/RULES-AUDIT.md sec. 3, class C1).
+
+   The `denote`-level version of this claim is deliberately NOT asserted, because an
+   earlier version of this file asserted it wrongly.  The probe was
+   `denote e 24 = denote (norm 24 e) 24` for the term below, and three ways of proving
+   it were measured on the pinned toolchain (rocq 9.1.1, this file's own dependencies):
+     - `reflexivity`, fuel 24: 0.37 s, `Error: Unable to unify` the two `denote ... 24`
+       terms - so it is not a convertibility fact either;
+     - `vm_compute`, fuel 4: 3.3 s, `Attempt to save an incomplete proof` - the bytecode
+       machine cannot decide it;
+     - `vm_compute`, fuel 24: >300 s, pressed against a 1.2 GiB cgroup cap with 540,907
+       `memory.high` throttle events and never finished.  Run unbounded, this single
+       Example is what pushed the kernel compile to 54 GiB (measured: /usr/bin/time
+       maxrss 56,588,736 kB) before the OOM killer terminated it and displaced the
+       machine's other services.  See docs/DESIGN-NOTES.md sec. 4.1.
+   The cause is the fuel bookkeeping, not the beta step: `denote` is fuel-indexed, so
+   `denote e 24` still has to perform the evaluation that `norm 24 e` has already
+   performed - the two sides sit at different depths.  Adequacy is not an `=` between two
+   ctrees terms at equal fuel; it is `Wbisim (denote (norm k e) k') (denote e k)` with a
+   fuel transfer (docs/PLAN.md sec. 3, T8), and for BetaL/BetaT/Subst/PromoteL/PromoteR
+   that statement is exactly the C1-deferred obligation.  A failed computation here would
+   have been a fake proof, so it stays a deferral - with its measurement attached. *)
+
+Example norm_beta_is_value :
+  norm 10 (App (Ret (VLam TAny (Ret (VVar 0)))) (Ret (VInt 7))) =
+    Block [(TAny, Some (VInt 7))] (Ret (VInt 7)).
+Proof. reflexivity. Qed.
+
+Example norm_beta_body_constant :
+  norm 10 (App (Ret (VLam TAny (Ret (VInt 3)))) (Ret (VInt 7))) =
+    Block [(TAny, Some (VInt 7))] (Ret (VInt 3)).
+Proof. reflexivity. Qed.
+
+(* ---------- candidate bag of a normal form (choice = br2, no splitting under a
+   bind: docs/RULES-AUDIT.md sec. 3.4) ----------
+   Notation trap (measured): with `CTreeNotations` imported, the one-element list
+   `[ x ]` does NOT elaborate as a list - `[Block ...]` reads as a ctrees visible and
+   Coq answers `The term ... has type "Expr" while it is expected to have type
+   "car (tst ?n)"`.  Two-element bags `[a; b]` are fine, so this bites only on a
+   singleton bag.  One-element bags are therefore written `x :: @nil Expr` here.
+   (The generated corpus corner does not need this: corpus.py's header imports
+   `ListNotations` and no ctrees notations.) *)
+
+Example cand_bag_choice :
+  cand_bag (Choice (Ret (VInt 42)) (Ret (VInt 1))) = [Ret (VInt 42); Ret (VInt 1)].
+Proof. reflexivity. Qed.
+
+Example cand_bag_through_valued_block :
+  cand_bag (Block [(TAny, Some (VInt 7))] (Choice (Ret (VInt 3)) (Ret (VInt 1)))) =
+    [Block [(TAny, Some (VInt 7))] (Ret (VInt 3));
+     Block [(TAny, Some (VInt 7))] (Ret (VInt 1))].
+Proof. reflexivity. Qed.
+
+Example cand_bag_declared_block_is_a_leaf :
+  cand_bag (Block [(TAny, @None Val)] (Choice (Ret (VInt 3)) (Ret (VInt 1)))) =
+    Block [(TAny, @None Val)] (Choice (Ret (VInt 3)) (Ret (VInt 1))) :: @nil Expr.
+Proof. reflexivity. Qed.
+
+Example cand_bag_choice_under_seq_is_a_leaf :
+  cand_bag (Seq (Choice (Ret (VInt 3)) (Ret (VInt 1))) (Ret (VInt 7))) =
+    Seq (Choice (Ret (VInt 3)) (Ret (VInt 1))) (Ret (VInt 7)) :: @nil Expr.
+Proof. reflexivity. Qed.
+
+Example cand_bag_beta_candidate :
+  cand_bag (norm 10 (Choice (App (Ret (VLam TAny (Ret (VInt 3)))) (Ret (VInt 7)))
+                              (Ret (VInt 1)))) =
+    [Block [(TAny, Some (VInt 7))] (Ret (VInt 3)); Ret (VInt 1)].
 Proof. reflexivity. Qed.
 
 (* ---------- axiom audit (build-time evidence) ---------- *)

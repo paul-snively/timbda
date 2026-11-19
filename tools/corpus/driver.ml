@@ -40,6 +40,8 @@ type cspec = {
   mutable c_expr : cexpr;
   mutable c_norm : cexpr;
   mutable c_why : string;
+  mutable c_cands : cexpr list option;   (* Some bag = this case also checks cand_bag *)
+  mutable c_cands_why : string;
   mutable c_has_head : bool;
   mutable c_has_expr : bool;
   mutable c_has_norm : bool;
@@ -106,9 +108,10 @@ let is_number tok =
   && let ok = ref true in
   String.iter (fun c -> if c < '0' || c > '9' then ok := false) t; !ok
 
-(* Parse one form.  `ty`, `value`, `expr` and `slot` are mutually recursive, like
-   the corpus grammar they read. *)
-let read_form ctx line =
+(* Parse one form (`read_form`), or a whitespace-separated run of forms
+   (`read_forms ~multi`, the `cands` field).  `ty`, `value`, `expr` and `slot` are
+   mutually recursive, like the corpus grammar they read. *)
+let read_forms ?(multi = false) ctx line =
   let toks = Array.of_list (tokenize line) in
   let n = Array.length toks in
   let pos = ref 0 in
@@ -205,11 +208,30 @@ let read_form ctx line =
       else fail (ctx ^ ": unknown form " ^ head)
     end
   in
-  let out = expr () in
-  if peek () <> None then fail (ctx ^ ": trailing tokens in form");
-  out
+  (* the `cands` field: a run of forms, in the order the candidate bag must return *)
+  let rec more acc =
+    match peek () with
+    | None -> List.rev acc
+    | Some ")" -> fail (ctx ^ ": unexpected ) in a form list")
+    | Some _ -> more (expr () :: acc)
+  in
+  if multi then
+    match more [] with
+    | [] -> fail (ctx ^ ": expected at least one form")
+    | xs -> xs
+  else begin
+    let out = expr () in
+    if peek () <> None then fail (ctx ^ ": trailing tokens in form");
+    [ out ]
+  end
 
-(* ---------- corpus file: case blocks with head/expr/norm/why/fuel ---------- *)
+(* `expr`, `norm` and any other single-form field go through the same parser. *)
+let read_form ctx line =
+  match read_forms ctx line with
+  | [ e ] -> e
+  | _ -> fail (ctx ^ ": expected exactly one form")
+
+(* ---------- corpus file: case blocks with head/expr/norm/cands/cands_why/why/fuel *)
 
 let read_lines path =
   let ic = open_in path in
@@ -275,6 +297,7 @@ let parse_corpus path =
             fail (where ^ ": duplicate case name " ^ name);
           cur := Some { c_name = name; c_fuel = !fuel_default; c_head = H_none;
                         c_expr = Ce_fail; c_norm = Ce_fail; c_why = "";
+                        c_cands = None; c_cands_why = "";
                         c_has_head = false; c_has_expr = false; c_has_norm = false }
         end else begin
           match !cur with
@@ -289,9 +312,13 @@ let parse_corpus path =
               c.c_expr <- read_form (ctx ^ " expr") rest; c.c_has_expr <- true
             end else if key = "norm" then begin
               c.c_norm <- read_form (ctx ^ " norm") rest; c.c_has_norm <- true
-            end else if key = "why" then c.c_why <- quoted ctx rest
+            end else if key = "cands" then
+              (* Some bag = this case also checks cand_bag on its normal form *)
+              c.c_cands <- Some (read_forms ~multi:true (ctx ^ " cands") rest)
+            else if key = "cands_why" then c.c_cands_why <- quoted ctx rest
+            else if key = "why" then c.c_why <- quoted ctx rest
             else if key = "fuel" then c.c_fuel <- int_of_string rest
-            else fail (ctx ^ ": unknown field (head/expr/norm/why/fuel)")
+            else fail (ctx ^ ": unknown field (head/expr/norm/cands/cands_why/why/fuel)")
         end
     end) (read_lines path);
   (match !cur with Some c -> cases := c :: !cases | None -> ());
@@ -408,6 +435,9 @@ let row_name r =
 
 let rows_the_head_table_can_select = to_ocaml_list E.selected_rows
 
+(* A candidate bag printed the way the corpus writes one: alternatives separated by |. *)
+let bag_pp es = String.concat " | " (List.map expr_pp (to_ocaml_list es))
+
 let run_case c =
   let e = expr_of c.c_expr in
   let expected = expr_of c.c_norm in
@@ -420,13 +450,27 @@ let run_case c =
   let row_ok = got_row = want_row in
   let got = E.norm fuel e in
   let norm_ok = got = expected in
+  (* `cands` is a claim about cand_bag *on the normal form*, in order: the kernel's
+     candidate bag must offer exactly these trees and nothing else. *)
+  let cands_want = match c.c_cands with
+    | None -> None
+    | Some es -> Some (of_list (List.map expr_of es))
+  in
+  let cands_got = E.cand_bag got in
+  let cands_ok = match cands_want with
+    | None -> true
+    | Some w -> cands_got = w
+  in
   let row_in_head_table = match want_row with
     | None -> true
     | Some r -> List.exists (fun x -> x = r) rows_the_head_table_can_select
   in
-  if row_ok && norm_ok && row_in_head_table then begin
-    Printf.printf "ok    %-38s %s\n" c.c_name
-      (match want_row with None -> "no row" | Some r -> row_name r);
+  if row_ok && norm_ok && cands_ok && row_in_head_table then begin
+    Printf.printf "ok    %-38s %s%s\n" c.c_name
+      (match want_row with None -> "no row" | Some r -> row_name r)
+      (match c.c_cands with
+        | None -> ""
+        | Some es -> Printf.sprintf "   %d candidate(s)" (List.length es));
     true
   end else begin
     Printf.printf "FAIL  %s  (why: %s)\n" c.c_name c.c_why;
@@ -443,6 +487,15 @@ let run_case c =
       Printf.printf "      norm (fuel %d): got %s\n" c.c_fuel (expr_pp got);
       Printf.printf "                    want %s\n" (expr_pp expected)
     end;
+    (match cands_want with
+      | None -> ()
+      | Some w ->
+        if not cands_ok then begin
+          Printf.printf "      cand_bag: got  %s\n" (bag_pp cands_got);
+          Printf.printf "                want %s\n" (bag_pp w);
+          if c.c_cands_why <> "" then
+            Printf.printf "                (want this shape because: %s)\n" c.c_cands_why
+        end);
     false
   end
 
@@ -452,9 +505,13 @@ let () =
       prerr_endline "usage: corpus-run CORPUS.texpr"; exit 2
   | path :: _ ->
       let cases = parse_corpus path in
+      let n_cands = List.fold_left
+        (fun acc c -> match c.c_cands with Some _ -> acc + 1 | None -> acc) 0 cases in
       Printf.printf "timbda corpus corner (extracted evaluator): %s, %d cases\n"
         path (List.length cases);
       let ok = List.fold_left (fun acc c -> if run_case c then acc else false) true cases in
+      Printf.printf "cands corner: %d groups, %s\n" n_cands
+        (if ok then "all agree with cand_bag" else "see the cand_bag failures above");
       Printf.printf "corpus corner: %d cases, %s\n" (List.length cases)
         (if ok then "all agree with the extracted evaluator" else "MISMATCH");
       if ok then exit 0 else exit 1

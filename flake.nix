@@ -291,18 +291,32 @@
               cp $src/tools/corpus/corpus.py .
               python3 corpus.py --count $src/tests/corpus/m0.texpr > corpus-count.txt
               reader_rc=$?
+              python3 corpus.py --count-cands $src/tests/corpus/m0.texpr > corpus-cands.txt
+              cands_rc=$?
               python3 corpus.py --emit-coq $src/tests/corpus/m0.texpr > corner.v
               rocq compile corner.v > coq-corner.log 2>&1
               rocq_rc=$?
               grep -n -A6 "Error" coq-corner.log
               {
                 echo "reader_rc=$reader_rc"
+                echo "cands_rc=$cands_rc"
                 echo "reader_cases=$(cat corpus-count.txt)"
+                echo "reader_cands=$(cat corpus-cands.txt)"
                 echo "corner_lines=$(wc -l < corner.v)"
                 echo "rocq_rc=$rocq_rc"
                 echo "marker=$(grep -E "corner_cases = [0-9]+" coq-corner.log | head -1)"
+                echo "cands_marker=$(grep -E "corner_cands = [0-9]+" coq-corner.log | head -1)"
               } > status.txt
               cat status.txt
+              # The corner must fail on its own bad status, not only inside
+              # checks.corpus-differential: on 2026-11-19 the extracted corner derived
+              # "successfully" with ocamlc_rc=2 / driver_rc=127, because nothing here read
+              # the status it had just written.  A derivation whose phases ignored rc is a
+              # vacuous success (DESIGN-NOTES sec. 8.3), so gate here as well as in the check.
+              test "$reader_rc" = 0 || { echo "FAIL: corpus reader (corpus.py --count) exited $reader_rc"; exit 1; }
+              test "$cands_rc" = 0 || { echo "FAIL: corpus reader (corpus.py --count-cands) exited $cands_rc"; exit 1; }
+              test "$rocq_rc" = 0 || { echo "FAIL: rocq compile of the generated corner exited $rocq_rc, see coq-corner.log"; exit 1; }
+              test "$(wc -l < corner.v)" -gt 100 || { echo "FAIL: generated corner is not a substantial file"; exit 1; }
             '';
             installPhase = ''
               mkdir -p $out
@@ -310,6 +324,8 @@
               cp coq-corner.log status.txt $out/
               grep -oE "corner_cases = [0-9]+" coq-corner.log | head -1 |
                 cut -d" " -f3 > $out/case-count
+              grep -oE "corner_cands = [0-9]+" coq-corner.log | head -1 |
+                cut -d" " -f3 > $out/cands-count
             '';
           };
 
@@ -348,9 +364,19 @@
                 echo "ocamlc_rc=$ocamlc_rc"
                 echo "driver_rc=$driver_rc"
                 echo "summary=$(grep -E "^corpus corner: [0-9]+ cases" corpus-run.log | head -1)"
+                echo "cands_summary=$(grep -E "^cands corner: [0-9]+ groups" corpus-run.log | head -1)"
               } > status.txt
               cat status.txt
               tail -3 corpus-run.log
+              # Same rule as the Coq corner: the phases must gate on the rc they recorded,
+              # otherwise `nix build .#…ocaml-corner` reports success on a corner that never
+              # compiled or never ran (measured on 2026-11-19: ocamlc_rc=2, driver_rc=127).
+              test "$extract_rc" = 0 || { echo "FAIL: rocq compile of tools/extract/extract.v exited $extract_rc"; exit 1; }
+              test -f timbda_eval.ml || { echo "FAIL: Extraction produced no timbda_eval.ml"; exit 1; }
+              test "$(wc -l < timbda_eval.ml)" -gt 200 || { echo "FAIL: extracted evaluator is not a substantial file"; exit 1; }
+              test "$mli_rc" = 0 || { echo "FAIL: ocamlc of timbda_eval.mli exited $mli_rc"; exit 1; }
+              test "$ocamlc_rc" = 0 || { echo "FAIL: ocamlc of the driver exited $ocamlc_rc, see ocamlc.log"; exit 1; }
+              test "$driver_rc" = 0 || { echo "FAIL: the corpus driver exited $driver_rc, see corpus-run.log"; exit 1; }
             '';
             installPhase = ''
               mkdir -p $out
@@ -362,6 +388,8 @@
               fi
               grep -oE "corpus corner: [0-9]+ cases" corpus-run.log | head -1 |
                 cut -d" " -f3 > $out/case-count
+              grep -oE "cands corner: [0-9]+ groups" corpus-run.log | head -1 |
+                cut -d" " -f3 > $out/cands-count
             '';
           };
 
@@ -463,7 +491,9 @@
 
                 field () { grep -m1 "^$2=" "$1" | cut -d= -f2-; }
                 reader_rc=$(field "$st_coq" reader_rc)
+                cands_rc=$(field "$st_coq" cands_rc)
                 reader_cases=$(field "$st_coq" reader_cases)
+                reader_cands=$(field "$st_coq" reader_cands)
                 corner_lines=$(field "$st_coq" corner_lines)
                 rocq_rc=$(field "$st_coq" rocq_rc)
                 extract_rc=$(field "$st_ml" extract_rc)
@@ -474,6 +504,7 @@
 
                 fail () { echo "FAIL: $1" >&2; exit 1; }
                 test "$reader_rc" = 0  || fail "corpus reader exited $reader_rc"
+                test "$cands_rc" = 0   || fail "cands reader exited $cands_rc"
                 test "$rocq_rc" = 0    || fail "the generated Coq corner did not compile (rocq exit $rocq_rc)"
                 test "$extract_rc" = 0 || fail "Extraction failed (rocq exit $extract_rc)"
                 test "$mli_rc" = 0     || fail "the extracted signature (timbda_eval.mli) did not compile (exit $mli_rc)"
@@ -484,6 +515,7 @@
                 # extraction must not be able to produce a green build (that is how the
                 # first version of these corners "passed" while running nothing).
                 test "$reader_cases" -gt 0     || fail "the corpus reader saw 0 cases"
+                test "$reader_cands" -gt 0     || fail "the corpus declares no candidate-bag cases"
                 test "$corner_lines" -gt 100   || fail "the generated Coq corner has only $corner_lines lines"
                 test "$extracted_lines" -gt 200 || fail "Extraction produced only $extracted_lines lines of OCaml"
 
@@ -494,27 +526,42 @@
                 test "$n_coq" = "$reader_cases" || fail "Coq corner checked $n_coq cases, corpus declares $reader_cases"
                 test "$n_ocaml" = "$reader_cases" || fail "extracted corner ran $n_ocaml cases, corpus declares $reader_cases"
 
+                # The candidate-bag layer is counted separately on purpose: a corner that
+                # silently dropped the `cands` assertions would still satisfy the case count.
+                k_coq=$(cat ${cornerCoq}/cands-count || true)
+                k_ocaml=$(cat ${cornerOcaml}/cands-count || true)
+                test -n "$k_coq"   || fail "Coq corner printed no candidate-bag count"
+                test -n "$k_ocaml" || fail "extracted corner printed no candidate-bag count"
+                test "$k_coq" = "$reader_cands"   || fail "Coq corner discharged $k_coq cand_bag claims, corpus declares $reader_cands"
+                test "$k_ocaml" = "$reader_cands" || fail "extracted corner ran $k_ocaml cand_bag claims, corpus declares $reader_cands"
+
                 summary=$(grep -m1 "^corpus corner:" ${cornerOcaml}/corpus-run.log || true)
                 case "$summary" in
                   *"all agree with the extracted evaluator"*) ;;
                   *) fail "extracted corner verdict line is: $summary" ;;
                 esac
+                cands_summary=$(grep -m1 "^cands corner:" ${cornerOcaml}/corpus-run.log || true)
+                case "$cands_summary" in
+                  *"all agree with cand_bag"*) ;;
+                  *) fail "extracted corner candidate-bag line is: $cands_summary" ;;
+                esac
 
                 {
                   echo "timbda differential corpus check (docs/PLAN.md sec. 6)"
-                  echo "  corpus:            tests/corpus/m0.texpr  ($reader_cases cases)"
-                  echo "  Coq corner:        $n_coq assertions, generated by corpus.py, all discharged by rocq"
-                  echo "  extracted corner:  $n_ocaml cases against timbda_eval.ml ($extracted_lines lines, Extraction'd from the same Gallina evaluator)"
+                  echo "  corpus:            tests/corpus/m0.texpr  ($reader_cases cases, $reader_cands with a candidate bag)"
+                  echo "  Coq corner:        $n_coq cases / $k_coq cand_bag claims, generated by corpus.py, all discharged by rocq"
+                  echo "  extracted corner:  $n_ocaml cases / $k_ocaml cand_bag claims against timbda_eval.ml ($extracted_lines lines, Extraction'd from the same Gallina evaluator)"
                   echo "  generated corner:  $corner_lines lines of .v"
                   echo "  axiom footprint of the extracted evaluator:"
                   grep -n -e "Closed under the global context" -e "Axioms:" ${cornerOcaml}/extract.log || true
                   echo "  extracted corner line: $summary"
+                  echo "  extracted corner cands line: $cands_summary"
                 } > $out/report.txt
                 cp "$st_coq" $out/coq-corner-status.txt
                 cp "$st_ml"  $out/ocaml-corner-status.txt
                 cp ${cornerCoq}/coq-corner.log $out/coq-corner.log
                 cp ${cornerOcaml}/corpus-run.log $out/corpus-run.log
-                echo "ok: $reader_cases corpus cases agree across corners (Gallina native vs extracted OCaml)"
+                echo "ok: $reader_cases corpus cases (incl. $reader_cands candidate bags) agree across corners (Gallina native vs extracted OCaml)"
               '');
 
           # Every logical library the kernel Require-s resolves on the nix stack,

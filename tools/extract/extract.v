@@ -12,9 +12,9 @@
    for lib/coq/theories/extraction/Extraction.v reads `FCorelib.extraction`).
 
    What is extracted is exactly the head-table cone of coq/Eval.v: the fuel-bounded
-   normalizer, the head-redex selector, and the list of rows the head table can
-   select.  `Print Assumptions` is printed first so the build log carries the
-   axiom footprint of the extracted evaluator itself, not just of the kernel. *)
+   normalizer, the head-redex selector, the candidate-bag reader `cand_bag`, and the list of rows the
+   head table can select.  `Print Assumptions` is printed first, once per extracted name, so the build
+   log carries the axiom footprint of the extracted evaluator itself, not just of the kernel. *)
 
 From Corelib.extraction Require Import Extraction.
 Require Import Timbda.Syntax Timbda.Rewriting Timbda.Semantics Timbda.Eval.
@@ -22,10 +22,15 @@ Require Import Timbda.Syntax Timbda.Rewriting Timbda.Semantics Timbda.Eval.
 Print Assumptions Timbda.Eval.norm.
 Print Assumptions Timbda.Eval.head_redex.
 Print Assumptions Timbda.Eval.selected_rows.
+Print Assumptions Timbda.Eval.cand_bag.
 
 (* rocq 9.1 defaults the extraction output directory to the compilation dir and
    warns about it; say it explicitly so `rocq c` writes beside this file whatever
    `-output-directory` the caller passes. *)
 Set Extraction Output Directory ".".
 
-Extraction "timbda_eval.ml" Timbda.Eval.norm Timbda.Eval.head_redex Timbda.Eval.selected_rows.
+(* `cand_bag` is extracted too, so the OCaml corner compares the corpus' `cands`
+   fields against the very function the Gallina kernel defines, not against a
+   re-implementation of it (docs/DESIGN-NOTES.md sec. 9). *)
+Extraction "timbda_eval.ml" Timbda.Eval.norm Timbda.Eval.head_redex
+           Timbda.Eval.selected_rows Timbda.Eval.cand_bag.

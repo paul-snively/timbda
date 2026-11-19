@@ -1,0 +1,18 @@
+(lang dune 3.21)
+
+; Build concurrency for the Coq project (deliberate, not auto-detected).
+;
+; dune auto-detected 20-way concurrency on this 20-core box.  Each `coqc`
+; (rocq 9.1 `rocqworker`) holds its own conversion state, and a single heavy
+; unit is enough to matter: `tests/KernelTest.v` measured 53.9 GiB maxrss at
+; -j 1 on 2026-11-19 while it contained one `Example` asking `vm_compute` to
+; decide a fuel-24 ctrees equality (that Example is gone - the claim was
+; unprovable - and the whole build then peaked at 647 MiB, see
+; docs/DESIGN-NOTES.md sec. 4.2).  20 concurrent workers turn that kind of
+; unit into a machine-wide OOM: `coq/_build/log` ends `[got signal TERM]`,
+; dune exits 1 with no Coq error at all, and the .vo set is simply incomplete
+; (docs/DESIGN-NOTES.md sec. 4.1 and sec. 4.2).  2 is what a machine that also
+; hosts a model server can afford.
+;
+; Override on a quiet machine: `dune build -j 8`; go lower with -j 1.
+(jobs 2)

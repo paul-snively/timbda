@@ -136,7 +136,7 @@ case stuck_var_vs_value
   head none
   expr (unify (ret (var 0)) (ret 3))
   norm (unify (ret (var 0)) (ret 3))
-  why "A bare variable on either side takes no Eq row (no_eq_rule_pair); binding `x` is the Fig. 8 promote/subst rows, which the head table defers to M2."
+  why "A bare variable on either side takes no Eq row (no_eq_rule_pair); binding `x` is the Fig. 8 promote/subst rows, and those only fire inside a `block` whose slot they can fill - outside a block there is no binder to bind, so `x = 3` stays stuck."
 
 case eqfail_primhead_vs_int
   head r_eqfail
@@ -164,29 +164,37 @@ case betat0_empty_tuple
   norm fail
   why "BetaT0 base case: applying an empty tuple fails (RewBetaT0)."
 
+# BetaL/BetaT *declare* a slot (`x{}`); since this close-out the Fig. 8 promote row
+# fires on the `x = v` they create (docs/VERSE-RULES.md sec. 3.2, paper line 416), so a
+# beta canonical form no longer stops at the unification - it reaches a value under a
+# heap entry.  The `head` claims below are about the ROOT as written (still the App),
+# the `norm` claims are the whole hand-derived walk.
+
 case betal_declares_slot
   head r_betal
   expr (app (ret (lam tany (glob 1))) (ret unit))
-  norm (block ((tany)) (seq (unify (ret (var 0)) (ret unit)) (glob 1)))
-  why "BetaL: the lambda body keeps its indices (de Bruijn), the *argument* is lifted by the new binder; `x = unit` waits for the Fig. 8 promote rows."
+  norm (block ((tany unit)) (glob 1))
+  why "BetaL (line 468) -> `block x{}. (x = unit ; body)`; PromoteL (line 416) fires on that `x = unit` (slot 0 is declared-only, unit mentions no slot of this block, no other slot value mentions slot 0), fills slot 0 and replaces the unification by `ret unit`; the rebuild then takes R_Seq (line 483) and leaves the body. liftE does not touch Glob: a global name is index-neutral."
 
 case betal_body_is_slot_variable
   head r_betal
   expr (app (ret (lam tany (ret (var 0)))) (ret 7))
-  norm (block ((tany)) (seq (unify (ret (var 0)) (ret 7)) (ret (var 0))))
-  why "BetaL with a body that is already a variable reference: after the beta step `var 0` names the freshly declared slot."
+  norm (block ((tany 7)) (ret 7))
+  why "BetaL (line 468): the body keeps its indices, so the body's `var 0` names the freshly declared slot and the *argument* is lifted by the new binder. PromoteL (line 416) fills slot 0 with 7 and rewrites `x = 7` to `ret 7`; Subst (line 412) then reads the body's `var 0` as the slot value; R_Seq drops the left value. `(\x.x) 7` is now a value under a heap entry - the adequacy consequence of decision 3 (docs/RULES-AUDIT.md sec. 3, class C1)."
 
 case betat_single_candidate
   head r_betat
   expr (app (ret (tupv unit)) (ret 3))
-  norm (block ((tany)) (seq (unify (ret (var 0)) (ret 3)) (block () (seq (unify (ret (var 0)) (ret 0)) (ret unit)))))
-  why "BetaT (line 469): one candidate per tuple element (beta_t_cands index 0); a one-element candidate list is that candidate (choice_list), i.e. no spurious choice node."
+  norm (block ((tany 3)) (block () (seq (unify (ret (var 0)) (ret 0)) (ret unit))))
+  cands (block ((tany 3)) (block () (seq (unify (ret (var 0)) (ret 0)) (ret unit))))
+  why "BetaT (line 469) binds the argument once (line 474: `x = e` exists so e is not duplicated) and gives each element its own `block{}. (x = i ; v_i)`; a one-element candidate list IS that candidate (choice_list), so no spurious choice node. PromoteL fills the outer slot 0 with 3, R_Seq drops the binding. Inside the candidate `x = 0` is stuck: that block has no slots of its own, so its body's index 0 names the enclosing binder and the Subst context (`k : CtxS`) has no hole through a Block - audit record `Subst-Deep`."
 
 case betat_two_candidates
   head r_betat
   expr (app (ret (tupv 1 2)) (ret 7))
-  norm (block ((tany)) (seq (unify (ret (var 0)) (ret 7)) (choice (block () (seq (unify (ret (var 0)) (ret 0)) (ret 1))) (block () (seq (unify (ret (var 0)) (ret 1)) (ret 2))))))
-  why "BetaT with a 2-element tuple: choice_list folds the two candidates into one choice node - the candidate bag the denotation reads as br2 (T2)."
+  norm (block ((tany 7)) (choice (block () (seq (unify (ret (var 0)) (ret 0)) (ret 1))) (block () (seq (unify (ret (var 0)) (ret 1)) (ret 2)))))
+  cands (block ((tany 7)) (block () (seq (unify (ret (var 0)) (ret 0)) (ret 1)))) (block ((tany 7)) (block () (seq (unify (ret (var 0)) (ret 1)) (ret 2))))
+  why "BetaT with a 2-element tuple: choice_list folds the two candidates into one choice node - the candidate bag the denotation reads as br2 (T2). PromoteL fills the outer slot with 7, R_Seq drops the binding, and the choice rebuild normalizes both branches (each branch is a `Block nil`, so it is its own normal form here). All slots are valued, so cand_bag reads the block through and hands back two candidates, each carrying the heap it was produced under."
 
 # ---------- Fig. 10: primops via the schema rows -----------------------------
 
@@ -304,13 +312,14 @@ case choice_has_no_row_but_normalizes_inside
   head none
   expr (choice (app (ret (primv padd)) (tup (ret 7) (ret 35))) (ret 1))
   norm (choice (ret 42) (ret 1))
-  why "Candidate bags have no rewrite row in Figs. 9-12 (choice is the denotation's br2, T2), but the head table normalizes inside the branches."
+  cands (ret 42) (ret 1)
+  why "Candidate bags have no rewrite row in Figs. 9-12 (choice is the denotation's br2, T2), but the head table normalizes inside the branches. cand_bag reads the two branch values off the normal form - what a candidate bag *is* in M0, stated as a corpus claim and not as an implementation detail."
 
 case block_slots_are_untouched
   head none
   expr (block ((tint) (tany unit)) (seq (ret true) fail))
   norm (block ((tint) (tany unit)) fail)
-  why "No row fires at a Block root (HpAlpha/LamAlpha never fire: de Bruijn renames trivially); the body normalizes and the slot list is left alone."
+  why "A Block root fires only when the Fig. 8 walk finds a redex inside the body; here the body is `ret true ; fail` - a value and a Fail, with no slot variable to read and no declared slot to bind - so the walk selects nothing (HpAlpha/LamAlpha never fire either: de Bruijn renames trivially) and the body normalizes underneath by R_Seq while the slot list is left alone."
 
 case iter_rows_never_selected
   head none
@@ -329,3 +338,110 @@ case iter_if_value_operand_is_stuck
   expr (iter iif (ret 1) (ret 2))
   norm (iter iif (ret 1) (ret 2))
   why "Same deferral, with a value on the iter body: RewIterIf matches the `if x = delay ...` shape only, and no iter row is in Eval.v's head table at all, so nothing fires anywhere in this term."
+
+# ---------- Fig. 8: slot completion at a Block root (Subst / PromoteL / PromoteR) --
+# These rows fire *inside* a block body: `head_redex (Block slots body)` searches that
+# body through the two binder-free context grammars the ctors quantify over (CtxS for
+# Subst, CtxC for the promote rows), so the redex it reports is the ctor's own
+# right-hand side (KernelTest.v section D proves the coincidence).  Order inside one
+# body: PromoteL, then PromoteR, then Subst-at-node, then the descent - a kernel
+# strategy decision, recorded in docs/DESIGN-NOTES.md sec. 9, not a paper claim.
+# Slot index rule: body index i names slot p = n-1-i exactly when i < n.
+
+case subst_valued_slot
+  head r_subst
+  expr (block ((tint 5)) (ret (var 0)))
+  norm (block ((tint 5)) (ret 5))
+  cands (block ((tint 5)) (ret 5))
+  cands_why "one candidate: the slot list is complete, so the block is read through and the candidate carries it"
+  why "Subst (line 412): `exists X{hp, x v}. S[x] -> exists X{hp, x v}. S[v]`. Body index 0 is slot 1-1-0 = 0 and its heap entry is the value 5, so the row fires with S = the empty context; slotValueFromBody 1 0 5 = 5 (a closed value needs no reindexing). The slot list itself is untouched - Subst reads the heap, it does not change it."
+
+case subst_inside_seq
+  head r_subst
+  expr (block ((tint 5)) (seq (ret (var 0)) (ret 1)))
+  norm (block ((tint 5)) (ret 1))
+  why "The walk descends through `S ; e` - the ctor's context is k = HS_SeqR HS_Hole (ret 1), so the Subst redex is the left leaf - and head steps are re-visited, so R_Seq (line 483) drops the substituted value in the next pass and leaves `ret 1`."
+
+case subst_declared_slot_needs_a_value
+  head none
+  expr (block ((tany)) (ret (var 0)))
+  norm (block ((tany)) (ret (var 0)))
+  why "Subst's premise is `x v` - a *valued* heap entry - and the promote rows need a unification to bind, so a lone declared slot takes no row: stuck, not failed. That is decision 3's SStuck, the C1 boundary docs/RULES-AUDIT.md sec. 3 records."
+
+case subst_then_eqfail
+  head r_subst
+  expr (block ((tint 5)) (unify (ret (var 0)) (ret 7)))
+  norm (block ((tint 5)) fail)
+  why "PromoteL/R cannot fire (their premise is `exists X,x{hp}`, a declared-only slot), so the walk descends into the left leaf and Subst fires: `x = 7` becomes `5 = 7`, the EqK2 pair (line 434), which fails under the still-valued slot."
+
+case subst_then_eqfail_from_the_right_side
+  head r_subst
+  expr (block ((tint 5)) (unify (ret 1) (ret (var 0))))
+  norm (block ((tint 5)) fail)
+  why "The same row reached through the *right* side of the unification: the descent tries e1 first (nothing there), then e2. PromoteR is tried at the node and blocked by the valued slot, so Subst fires; `1 = 5` is EqK2."
+
+case guard_blocked_promote_still_descends
+  head r_subst
+  expr (block ((tint 5)) (unify (ret (var 0)) (ret (var 0))))
+  norm (block ((tint 5)) (ret 5))
+  why "Both promote directions match this node syntactically and both fail their guard (the slot is valued, not declared). Coq does not fall through to the next arm after a guard failure, so the kernel must (and does) descend instead: Subst fires on the left leaf, then on the right one, and the EqK1 pair (line 432) closes `5 = 5`. This case pins that shape."
+
+case promotel_binds_declared_slot
+  head r_promotel
+  expr (block ((tany)) (unify (ret (var 0)) (ret 7)))
+  norm (block ((tany 7)) (ret 7))
+  why "PromoteL (line 416): `exists X,x{hp}. C[x = v] -> exists X,x{hp[v/x], x v}. C[v]`. The kernel's M0 reading fills slot 0 with 7 and restricts hp[v/x] to the identity (promote_hp_ok); the ctor's rhs is `fillC k (Ret v)`, so the unification node is *replaced by the value* - which is what turns a beta canonical form from SStuck into a value."
+
+case promoter_var_on_right
+  head r_promoter
+  expr (block ((tany)) (unify (ret 7) (ret (var 0))))
+  norm (block ((tany 7)) (ret 7))
+  why "PromoteR (line 417, 'just like promote-l'): the value may sit on either side, and the kernel tries the two directions as two independent matches rather than as two arms of one match, so a left side that is not in slot range cannot shadow the right-side match. Paper lines 425-428 are why PromoteR is a row and not a swap rule."
+
+case promote_blocked_by_another_slot
+  head none
+  expr (block ((tany) (tany)) (unify (ret (var 0)) (ret (var 1))))
+  norm (block ((tany) (tany)) (unify (ret (var 0)) (ret (var 1))))
+  why "`x = y` with both sides locally bound: body index 0 is slot 1 and index 1 is slot 0, so each side's value mentions this block's own slots and promote_ok (fvsol(v) # dom(hp) union {x}, line 416) blocks both directions; Subst needs a valued slot and neither is one. This is the pair the paper refuses to swap (lines 425-428) because it could loop."
+
+case promote_blocked_by_an_existing_heap_ref
+  head none
+  expr (block ((tany) (tint (var 0))) (unify (ret (var 1)) (ret 7)))
+  norm (block ((tany) (tint (var 0))) (unify (ret (var 1)) (ret 7)))
+  why "Slot 1's value `var 0` names slot 0 (a slot value sees its own prefix at index q-1-p), so binding slot 0 would rewrite an *existing* entry: that is `hp[v/x]`, and the M0 restriction promote_hp_ok (identity-only) blocks the row. The general evolving-heap form is the tier-2 half of PromoteL/R, discharged at M3/T1."
+
+case promote_then_subst_two_slots
+  head r_promotel
+  expr (block ((tany) (tint 9)) (seq (unify (ret (var 1)) (ret 7)) (ret (var 0))))
+  norm (block ((tany 7) (tint 9)) (ret 9))
+  why "Index arithmetic over two slots: index 1 of a 2-slot block is slot 0 (declared -> PromoteL fires), index 0 is slot 1 (valued -> Subst fires on the *next* visit, reading slot 1 from the body PromoteL just rewrote). R_Seq then drops the left value. Subst and the promote rows never compete for the same slot - only for the same position."
+
+case subst_no_hole_through_a_nested_block
+  head none
+  expr (block ((tint 5)) (block () (ret (var 0))))
+  norm (block ((tint 5)) (block () (ret (var 0))))
+  why "The Subst context (CtxS, Syntax.v) has no hole through a Block - a nested binder is not a slot of the outer block - so the walk stops at the inner block, and inside it index 0 is out of range (n = 0 slots). The pinned oracle's deep substitution (Red.hs:1059) would rewrite here; this case pins the kernel's narrowing, which docs/RULES-AUDIT.md sec. 2 records as `Subst-Deep`. It is a *deviation record*, not a claim that the oracle agrees."
+
+case beta_choice_two_candidates
+  head none
+  expr (choice (app (ret (lam tany (ret 3))) (ret 7)) (ret 1))
+  norm (choice (block ((tany 7)) (ret 3)) (ret 1))
+  cands (block ((tany 7)) (ret 3)) (ret 1)
+  cands_why "two candidates: a choice node splits, and each candidate keeps the heap it was produced under"
+  why "Choice has no rewrite row (Figs. 9-12), so the root takes no row while both branches normalize: BetaL then PromoteL then R_Seq on the left, nothing to do on the right. The two branch normal forms are the candidates T2's br2 models."
+
+case cand_bag_choice_under_a_bind_is_one_candidate
+  head none
+  expr (seq (choice (ret 3) (ret 1)) (ret 7))
+  norm (seq (choice (ret 3) (ret 1)) (ret 7))
+  cands (seq (choice (ret 3) (ret 1)) (ret 7))
+  cands_why "one candidate: cand_bag does not move a choice across a bind - that move is a *rule*, not a reading"
+  why "No row fires (`Seq (Ret v) e` needs a value on the left; Norm5 needs a Seq on the left), so the rebuild normalizes the children and the term is its own normal form. cand_bag reports ONE candidate here: splitting `x <- (a|b); k x` into `(x<-a;k x) | (x<-b;k x)` is the bind/br2 interchange law, i.e. IterChoice's deferred ctrees-side content (docs/RULES-AUDIT.md sec. 4). A cand_bag that split under Seq/= would be asserting a law the kernel has no rules for."
+
+case cand_bag_declared_block_is_a_leaf
+  head none
+  expr (block ((tany)) (choice (ret 3) (ret 1)))
+  norm (block ((tany)) (choice (ret 3) (ret 1)))
+  cands (block ((tany)) (choice (ret 3) (ret 1)))
+  cands_why "one candidate: a block with a declared-only slot is decision 3's SStuck, so it is a leaf, not a bag"
+  why "The body walk has no redex (Choice is a barrier for the Subst/promote contexts) and the rebuild normalizes the body, which is already a choice of two values. cand_bag agrees with the denotation here: `all_slots_valued` is false, so the block is one leaf - the same reading closeSlots gives it."

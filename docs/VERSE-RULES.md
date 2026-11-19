@@ -166,8 +166,27 @@ oracle agrees independently: `verse-semantics/reduction/Red.hs:1384` enumerates 
 
 **Division rounding.** Line 452's `ki1 / ki2` does not fix the rounding for negative operands.
 The kernel uses `Z.div` (floors toward −∞: `(-7)/2 = -4`) and the pinned oracle uses Haskell `div`
-(`Red.hs:1347`), which floors the same way; `prim_div_zero_is_stuck` and `prim_div_negative_floor`
-pin both halves of that reading (`Div 0` = stuck, not `fail`).
+(`reduction/Red.hs:1346-1347`: `reduceArithOp Div ... | j /= 0 = P_Done $ IntE (i \`div\` j)`), which
+floors the same way; `prim_div_zero_is_stuck` and `prim_div_negative_floor` pin both halves of that
+reading (`Div 0` = stuck, not `fail`).
+
+**Recorded open question (`DEV-5`, recorded 2026-11-19).** Two halves of this are *not* settled,
+and neither is allowed to be written as a fact:
+
+1. *The C++ side is unverified.* Earlier notes here claimed the runtime evaluates `/` with C++
+   truncation (`(-7)/2 = -3`), citing a `Value.h`.  No such file exists in this repository, in its
+   bazel externals, or anywhere on the machine used for this work, so the claim has no source.  The
+   kernel/oracle agreement that *is* measured (Coq `Z.div` vs Haskell `div`, both flooring) says
+   nothing about C++.  Closing this is a `PLAN` § 4 T3 obligation to be discharged against real
+   upstream source, not a divergence to be assumed.
+2. *Stuck or fail at zero?* The oracle's `Core/Expr.hs:569` says `primOpCanFail Div = False`, yet
+   `Core/Expr.hs:623`/`645-647` attach a precondition (`divPreCond` = "second operand is not 0")
+   and `Red.hs:1346` gives `Div` no clause for `j == 0` at all.  The kernel resolves the tension by
+   making a zero divisor `PStuck` (no row fires, `coq/Syntax.v:349`), which is the reading that
+   agrees with the precondition — but the consequence is load-bearing: `Fail` is catchable by
+   `handle`/`try` and *stuck* is not, so this choice is about the observable semantics of `1/0`, not
+   about an implementation detail.  It is an upstream question, and it should be answered before M2
+   lowers arithmetic into C.
 
 ## 3.1. Beta reduction (Fig. 11, lines 468–469)
 
@@ -316,9 +335,15 @@ rather than rules (docs/RULES-AUDIT.md `IsEssential` column).
 ## 5. Strategy groups (Fig. 19–25 vocabulary)
 
 The paper's strategy evaluation (Fig. 25 total order, lecture-3 notes) enumerates
-group names; the kernel defines `StrategyGroup` (in `coq/Eval.v`) as a mirror of that
-list, and the `pick_redex` evaluator selects by priority — the Gallina strategy
-evaluator (PLAN § 4.4 / M0). Group list (transcribed from Fig. 25, with the paper's
+group names.  **Recorded divergence (`DEV-4`, measured 2026-11-18):** the kernel does
+*not* define `StrategyGroup` or `pick_redex`.  `coq/Eval.v` defines `RuleID` (one tag per
+rule row), `head_redex` (a fixed *arm order*: Fig. 12 structural rows, then the Fig. 9
+taxonomy, then Fig. 11 beta, then Fig. 10 delta, then the Fig. 8 block-body walk) and
+`selected_rows` (19 tags at the M0 close-out).  Wiring the Fig. 25 group vocabulary to a
+priority function over those rows — i.e. actually defining `StrategyGroup`/`pick_redex` —
+is an M2/M3 obligation, and until it is done the arm order in `Eval.v` *is* the kernel's
+strategy and the dialect's `strategy_group` field has no kernel counterpart to diff
+against.  Group list (transcribed from Fig. 25, with the paper's
 `For`/`ForAll` spellings normalized to `ForS`/`ForU`/`AllS`/`AllU` per the rule names):
 
 ```
