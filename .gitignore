@@ -21,3 +21,6 @@
 
 # nix build result links
 /result*
+
+# Private working notes (local only; never for publication)
+docs/_private/

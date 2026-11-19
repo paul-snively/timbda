@@ -40,3 +40,29 @@ coinduction, interaction-trees, ctrees), which the flake builds from pinned inpu
 `cd coq && dune build` builds the full M0 kernel with no host toolchain beyond nix;
 `nix build .#packages.x86_64-linux.timbda-kernel` builds it (with its `Admitted`/axiom gate)
 outside a shell too. The transitional opam switch (DEV-3) is closed as of 2026-11-18.
+
+## Status (M0 complete, 2026-11-19)
+
+M0 (the semantics spike) is done, with the kernel gate intact:
+
+- A one-for-one transcription of the Core-Verse (Timbda-0) rewrite rules from the
+  Supporting-Figures paper (`docs/VERSE-RULES.md`) backs `coq/Rewriting.v` (one `Rew`
+  ctor per paper rule); `coq/Denotation.v` models the candidate-set denotation as
+  choice-tree (`ctrees`) branching read up to weak bisimilarity; `coq/Eval.v` is the
+  Gallina evaluator plus its `Extraction`.
+- Machine-checked rule soundness (T1) for the 15 core rules discharged so far, plus the
+  candidate-set algebra (T2). Per-rule status, deferral classes, and the axiom audit
+  (gate: zero `Admitted`, exactly one axiom) live in `docs/RULES-AUDIT.md`.
+- Differential corpus `tests/corpus/m0.texpr`: 64 cases whose expectations were derived
+  by hand from the paper *before* consulting the evaluator's output, read independently
+  twice — a generated-Coq corner (`tools/corpus/corpus.py`) and an OCaml corner running
+  the *extracted* evaluator (`tools/corpus/driver.ml`) — agreeing 64/64 including
+  candidate-bag counts under `checks.corpus-differential`. The cross-check corrected a
+  real kernel error (`seq_z` range inclusivity), pinned in `KernelTest.v`.
+- Claims are bounded, not open-ended: see the prior-art audit and claim boundaries in
+  `docs/PLAN.md` § 11. The compilation half — out-of-order reordering soundness,
+  straight-line C lowering, and no-context-call theorems (PLAN § 3, T5/T6/T7) — lands
+  at M2/M3; nothing is claimed before its artifacts exist.
+
+*Timbda is the name the Verse papers use for Verse's evaluation algorithm. This is an
+independent academic project, unaffiliated with Epic Games or the Verse team.*

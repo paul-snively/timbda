@@ -401,8 +401,13 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
    and a 3.6 GiB cap) - and the 53.9 GiB peak that started this was one unprovable `Example`
    (fuel-24 `vm_compute` over the ctrees denotation), not the kernel.  Follow-up, M1-side: bound the
    cost of `Ltac t1_norm` (`coq/Denotation.v:100`), whose `repeat (setoid_rewrite …; kernel_cbn)` loop
-   is the candidate explanation for the cold cost, and give the nix sandbox an envelope root-side
-   (`tools/build/README.md`, not applied).  Docs: docs/DESIGN-NOTES.md § 4.2-4.3, tools/build/README.md.
+   is the candidate explanation for the cold cost.  (2026-11-19 addendum, verified live: the
+   root-side envelope is **applied** - 16 GiB `/swapfile` + fstab, and `nix-daemon.service` carries
+   `MemoryHigh=4G`/`MemoryMax=5G` confirmed at the cgroup; `max-jobs = 1` also applied
+   **client-side** for the interactive account (`~/.config/nix/nix.conf`; a plain no-flag `nix build`
+   measured 3 concurrent workers -> 1), while the daemon's own `max-jobs` still awaits root-side
+   `/etc/nix/nix.custom.conf`; `earlyoom --avoid/--prefer` and the sysctl tuning remain unapplied.
+   Statuses: `tools/build/README.md` § "Status after 2026-11-19".)  Docs: docs/DESIGN-NOTES.md § 4.2-4.3, tools/build/README.md.
 ## 9. Known reference anchors
 
 - Verse papers: simon.peytonjones.org/oplss-26/ ; OPLSS authoritative lecture PDFs at

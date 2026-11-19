@@ -115,7 +115,12 @@ Why it is not just `coq-build.sh` with `nix build` inside it - measured on this 
   started at 08:23:24 and never finished; machine rebooted at 08:34): **30 SIGTERM decisions in 10
   minutes, 28 of them the model server** (`strata`/`strata-host`, VmRSS 41094-47169 MiB), 2 a Brave
   renderer, at mem avail 2.44-9.03% and swap free 0-8.91%.  Not one Coq process was a victim, because
-  earlyoom ranks by RSS and the capped build was never the biggest thing on the box.
+  earlyoom ranks by RSS and the capped build was never the biggest thing on the box.  (2026-11-19
+  amendment, measured: `max-jobs = 1` has since been applied in the interactive account's
+  `~/.config/nix/nix.conf` - plain no-flag `nix build` with three independent ~7 s burn derivations
+  went from 3 concurrent nixbld workers / 8 s wall to 1 worker / 22 s wall.  The daemon's own setting
+  is still `auto`: builds from other accounts (root, CI) still fan out.  Status and the open
+  root-side follow-up: § "Status after 2026-11-19".)
 
 And the measurement that rewrote this script, today at 11:46:33.  The version described above required
 `MemAvailable >= 6 GiB` and nothing else.  It passed - `8236 MiB`, 12.9% of 63916 - with swap free
@@ -178,13 +183,17 @@ table.  Store paths here are not durable evidence - the collector runs on a time
 what a claim rests on is the run and the status files it wrote, with their timestamps.  Full sequence,
 with journal times: `docs/DESIGN-NOTES.md` § 4.3 and § 8.2-8.3.
 
-## Root-side options (documented, deliberately NOT applied)
+## Root-side options (1 and 3 applied 2026-11-19; 2 and 4 not applied)
 
-These would remove the pressure instead of containing it.  All need root; this repo neither runs them
-nor claims they are in effect.  Current facts: `earlyoom.service` runs `/usr/bin/earlyoom -r 3600`
-(v1.7) via `EARLYOOM_ARGS` in `/etc/default/earlyoom`; swap is `/dev/dm-2`, 3.9 GiB, and its usage
-cycles between ~0% and ~100% over a working day; `nix-daemon.service` has no memory limit; the ext4
-root filesystem has ~140 GiB free.
+These would remove the pressure instead of containing it.  Options 1 and 3 were executed on this box
+(15:42-15:49 EST) and verified against the live system on 2026-11-19; options 2 and 4 remain
+unapplied.  Current facts: `earlyoom.service` runs `/usr/bin/earlyoom -r 3600` (v1.7) via
+`EARLYOOM_ARGS` in `/etc/default/earlyoom` - no `--avoid`/`--prefer`; swap is now ~19.8 GiB total
+(`/dev/dm-2` 3.8 GiB + a 16 GiB `/swapfile`, mode 600, fstab line `/swapfile none swap sw 0 0`);
+`nix-daemon.service` carries `MemoryHigh=4G` `MemoryMax=5G` via
+`/etc/systemd/system/nix-daemon.service.d/override.conf` (cgroup read-back `memory.max = 5368709120`;
+`MemorySwapMax` unchanged at `infinity`); the ext4 root filesystem has ~127 GiB free (`/swapfile`
+accounts for 16 of it).  The scripts below stand as what was run.
 
 1. **Swap with real headroom** (raises commit headroom; stops the storm at its source):
    ```sh
@@ -218,7 +227,36 @@ root filesystem has ~140 GiB free.
    means an over-large Coq derivation is killed *by the daemon's* cgroup, which the gate script reports
    as a `nix build` failure - so pick the envelope from the cold-build numbers in `docs/DESIGN-NOTES.md`
    § 4.3, not from the warm 647 MiB.
-4. Optional kernel tuning: `vm.swappiness=10`, `vm.watermark_scale_factor=500`.
+4. Optional kernel tuning: `vm.swappiness=10`, `vm.watermark_scale_factor=500` (unapplied; measured
+   2026-11-19: `vm.swappiness=1`, `vm.watermark_scale_factor=10`).
+
+### Status after 2026-11-19 (verified live)
+
+- **Option 1 applied** - as scripted: 16 GiB `/swapfile` (mode 600) + fstab entry; `SwapTotal`
+  20,778,488 kB.  Side effect: `nix-gate.sh`'s floors are `max(knob, 12% of total)`, so its swap floor
+  auto-raises from the 700 MiB knob to ~2.4 GiB against the new total.
+- **Option 3 applied** - values exactly as scripted (4 G / 5 G), verified both by `systemctl show` and
+  by reading `/sys/fs/cgroup/system.slice/nix-daemon.service/memory.max`; accounting on, no
+  per-worker overrides below it.  Envelope sized per this file's own warning (cold kernel peak
+  >4.4 GiB, `Denotation.v` alone >3.5 GiB cold): one Coq-bearing derivation at a time fits; two at
+  once would be killed by the daemon cgroup and surface as a `nix build` failure - which is why the
+  `max-jobs` follow-up below matters.
+- **Applied without root, client-side, for the interactive account only**: `max-jobs = 1` appended to
+  `~/.config/nix/nix.conf` (per-key override of the system `max-jobs = auto`; per-invocation
+  `nix build --max-jobs N` still wins, and `TIMBDA_NIX_GATE_JOBS` is untouched).  Measured with three
+  independent ~7 s trivial burn derivations, plain no-flag `nix build`: 3 concurrent nixbld workers /
+  8 s wall before, 1 worker / 22 s wall after; `nix config show` (client view) now reports
+  `max-jobs = 1`.  What it does **not** do: change the daemon's own setting (`/etc/nix/nix.conf` is
+  Determinate-managed: "do not modify ... put user changes in `nix.custom.conf`"), and builds started
+  by other accounts (root, CI) still fan out.
+- **Root-side follow-up, still open** - daemon-side concurrency for all accounts.  Run only when no
+  build is in flight, because restarting the daemon aborts in-progress `nix build`s:
+  ```sh
+  sudo sh -c 'echo "max-jobs = 1" >> /etc/nix/nix.custom.conf'
+  sudo systemctl restart nix-daemon.service
+  sudo nix config show | grep max-jobs   # system view; expect 1
+  ```
+- **Still unapplied**: option 2 (`EARLYOOM_ARGS` is still just `-r 3600`) and option 4.
 
 The option that *would* fit in the repo but severs this machine's model host: parking
 `llama-swap.service` for the duration of a build (`systemctl --user stop llama-swap.service;
