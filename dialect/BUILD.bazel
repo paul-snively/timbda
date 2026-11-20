@@ -1,33 +1,102 @@
-# M-1 trivial dialect stub; build API mirrors the in-tree MLIR bazel overlay.
+# Timbda-0 dialect + M1 canonicalizer (kernel rules: coq/Rewriting.v Figs. 9-12).
+# Build API mirrors the in-tree MLIR bazel overlay (tblgen.bzl macros).
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("@llvm-project//mlir:tblgen.bzl", "gentbl_cc_library", "td_library")
 
 package(default_visibility = ["//visibility:public"])
 
+# `includes = ["/", "."]` puts both the workspace root and `dialect/` on the
+# TableGen include path: Timbda.td includes "TimbdaRules.td" (package-relative)
+# and TimbdaPatterns.td includes "dialect/Timbda.td" (workspace-relative).
 td_library(
     name = "TimbdaDialectTdFiles",
-    srcs = ["Timbda.td"],
-    includes = ["."],
-    deps = ["@llvm-project//mlir:OpBaseTdFiles"],
+    srcs = [
+        "Timbda.td",
+        "TimbdaRules.td",
+    ],
+    includes = ["/", "."],
+    deps = [
+        "@llvm-project//mlir:CallInterfacesTdFiles",
+        "@llvm-project//mlir:OpBaseTdFiles",
+        "@llvm-project//mlir:SideEffectInterfacesTdFiles",
+    ],
 )
 
+# Enum attributes here are `EnumAttr` attribute definitions (Timbda.td sets
+# `genSpecializedAttr = 0` on the enum infos), so the attribute classes and the
+# dialect attribute parse/print hooks come from the attrdef generators; the
+# enum generators emit the C++ enums plus stringify/symbolize helpers.
 gentbl_cc_library(
     name = "TimbdaDialectIncGen",
     tbl_outs = {
-        "TimbdaDialect.h.inc": ["-gen-dialect-decls"],
+        "TimbdaAttributes.cpp.inc": [
+            "-gen-attrdef-defs",
+            "-attrdefs-dialect=timbda",
+        ],
+        "TimbdaAttributes.h.inc": [
+            "-gen-attrdef-decls",
+            "-attrdefs-dialect=timbda",
+        ],
         "TimbdaDialect.cpp.inc": ["-gen-dialect-defs"],
+        "TimbdaDialect.h.inc": ["-gen-dialect-decls"],
+        "TimbdaEnums.cpp.inc": ["-gen-enum-defs"],
+        "TimbdaEnums.h.inc": ["-gen-enum-decls"],
+        "TimbdaOps.cpp.inc": ["-gen-op-defs"],
+        "TimbdaOps.h.inc": ["-gen-op-decls"],
+        "TimbdaTypes.cpp.inc": [
+            "-gen-typedef-defs",
+            "-typedefs-dialect=timbda",
+        ],
+        "TimbdaTypes.h.inc": [
+            "-gen-typedef-decls",
+            "-typedefs-dialect=timbda",
+        ],
     },
     tblgen = "@llvm-project//mlir:mlir-tblgen",
     td_file = "Timbda.td",
     deps = [":TimbdaDialectTdFiles"],
 )
 
+td_library(
+    name = "TimbdaCanonicalizationTdFiles",
+    srcs = ["TimbdaPatterns.td"],
+    includes = ["/", "."],
+    deps = [":TimbdaDialectTdFiles"],
+)
+
+# The 23 DRR rewriters (kernel rows Figs. 9-12) consumed by
+# TimbdaCanonicalization.cpp; `populateWithGenerated` is emitted there.
+gentbl_cc_library(
+    name = "TimbdaCanonicalizationIncGen",
+    tbl_outs = {
+        "TimbdaCanonicalization.cpp.inc": ["-gen-rewriters"],
+    },
+    tblgen = "@llvm-project//mlir:mlir-tblgen",
+    td_file = "TimbdaPatterns.td",
+    deps = [":TimbdaCanonicalizationTdFiles"],
+)
+
 cc_library(
     name = "TimbdaDialect",
-    srcs = ["TimbdaDialect.cpp"],
+    srcs = [
+        "TimbdaDialect.cpp",
+        "TimbdaOps.cpp",
+    ],
     hdrs = ["TimbdaDialect.h"],
     deps = [
         ":TimbdaDialectIncGen",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
+    ],
+)
+
+cc_library(
+    name = "TimbdaCanonicalization",
+    srcs = ["TimbdaCanonicalization.cpp"],
+    hdrs = ["TimbdaCanonicalization.h"],
+    deps = [
+        ":TimbdaCanonicalizationIncGen",
+        ":TimbdaDialect",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
     ],
@@ -38,3 +107,5 @@ cc_test(
     srcs = ["timbda_dialect_test.cpp"],
     deps = [":TimbdaDialect"],
 )
+
+

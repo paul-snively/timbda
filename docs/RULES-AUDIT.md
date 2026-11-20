@@ -234,6 +234,29 @@ diff must expect 72, not 68.
 
 ## 7. M1 reconciliation checklist (`tools/rules-audit.py`)
 
+The checklist is a script now: `python3 tools/rules-audit.py` runs 31 checks and exits
+non-zero on any failure.  At the M1 build all 31 are green, and that run is the M1
+coverage claim (docs/PLAN.md § 5: every paper rule ⇒ a record + an MLIR pattern + a Rocq
+ctor).  Beyond the five items below it also checks: the 72-row arithmetic and the 3
+`TimbdaExtern` records; the audit-row categories 18 matching / 4 essential / 10
+verification / 3 open-lambda / 2 kernel-adjacent, with no row left un-categorized; the
+15/2/18 discharged/partial/deferred split; the `sel` column against
+`coq/Eval.v`'s `selected_rows` row by row (19 selected `RuleID`s of 27, 8 never fired);
+the status column as *evidence* rather than assertion — `discharged` ⇔ a `RewSound_<rule>`
+lemma in `coq/Denotation.v` (the 2 SCHEMA rows at their 1-ary and 2-ary arities),
+`partial` ⇔ those lemma pairs, `deferred` ⇔ no lemma, no orphan lemma — plus zero
+`Admitted` and no `Axiom`/`Parameter`/`Hypothesis`/`Conjecture` declaration anywhere in
+`coq/`; and the 23 `pattern = "drr"` ctor rows against `dialect/TimbdaPatterns.td` defs
+and the generated `populateWithGenerated`, 23 each with identical names.
+
+`TimbdaAuditSummary`'s integers are recomputed from the rows rather than trusted.  The one
+value the tool cannot derive that way is `paperNamedCtors = 26`: it counts the papers' rule
+names (docs/VERSE-RULES.md § 7), not rows, and the tool prints it as "not row-derivable"
+instead of pretending to verify it.  `Print Assumptions` (§ 6) stays a build-time gate in
+the Nix/coq corner, not part of this script; the generated-populate check reads
+`bazel-out/k8-fastbuild/bin/dialect/TimbdaCanonicalization.cpp.inc` and skips with a note
+if `bazel build //dialect:TimbdaCanonicalization` has not been run.
+
 1. `audit:` tag ↔ ctor ↔ § 1 row: 35/35 match, tier equal.
 2. § 2 records ↔ `TimbdaRule`/`TimbdaExtern` records in `dialect/Timbda.td` (72-row
    arithmetic, § 2 note).
@@ -241,5 +264,6 @@ diff must expect 72, not 68.
    M0; `corpus.py --summary` prints which fired and names the 8 never exercised).
 4. Status column ↔ `RewSound_*` lemma existence + the `Print Assumptions` one-axiom
    pattern (§ 6).
-5. Strategy-group column (Fig. 25 vocabulary, VERSE-RULES § 5) is the one § 1 column
-   the dialect must add at M1; it is not carried per row here yet.
+5. Strategy-group column: `TimbdaRules.td` carries it per ctor row (11 distinct values);
+   the tool checks each against the VERSE-RULES § 5 vocabulary (31 names), so Fig. 25's
+   group names have a kernel-side counterpart to diff against.

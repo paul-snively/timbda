@@ -24,3 +24,8 @@
 
 # Private working notes (local only; never for publication)
 docs/_private/
+
+# sweep/TD-sweep captured outputs + python artifacts
+_sweeps/
+*.err
+__pycache__/
