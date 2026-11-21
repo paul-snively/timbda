@@ -51,7 +51,7 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
             v                                       + C via CertiRocq + boost.context shim
     CertiRocq -> Clight -> clang (CompCert optional)   wasm: WAMI lowering -> SsaWasm -> Wasm
             |                                              |
-            +----------> C objects <---- thin C++ driver; VeriFFI boundary;
+            +----------> C objects <---- thin C++ driver; extern-region boundary;
                                         Alive2 validates clang-side IR
 
 - Gallina kernel owns: determinacy analysis, lowering, and the strategy evaluator (explicit
