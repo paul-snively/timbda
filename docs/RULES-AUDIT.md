@@ -110,6 +110,17 @@ Arithmetic for § 7's "68 records": 33 named ctor rows + 18 matching + 4 essenti
 and the 2 kernel-adjacent records (`Gc-Rec`, `Subst-Deep`) → **72 rows** total; M1's
 diff must expect 72, not 68.
 
+The 33 named ctor rows split **26 + 7** (computed from the rows' `kernel-extension` /
+`audit-only` tags by `tools/rules-audit.py` sec. 5): 26 carry a VERSE-RULES paper rule
+name, 7 are kernel-side records - `Gt2`/`IsInt2` (the total-guard variants of Fig. 10's
+`Gt`/`IsInt` lines, § 3's decision-3 pair), `BetaT0` (`kernel-extension:base-case`),
+`Gc1` (`kernel-extension`), `PromoteR` (`kernel-extension:M3`), and the two `audit-only`
+rows `HpAlpha`/`LamAlpha`.  Those last two record side conditions of the kernel's renaming
+machinery rather than head rewrites: no dialect op stands for them (`pattern = "none"`,
+`selected = 0`, never fired), so the audit's DRR-coverage gate (sec. 5) demands a stock-DRR
+pattern for every discharged or partial ctor row *except* rows tagged `audit-only`, and
+lists the two there as kernel-side facts rather than as dialect rewrites.
+
 ## 3. Deferral reason classes
 
 * **C1 — evolving-heap.**  Semantics.v decision 3: a block with a declared-unvalued
