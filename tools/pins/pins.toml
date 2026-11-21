@@ -109,6 +109,8 @@ repo = "github:CertiRocq/CertiRocq"
 branch = "main"
 rev = "943b52ae654708130f241ccf8a50ecb95a7956e2"
 
+# VeriFFI runtime pieces (monitors + link glue) are CI-lane only -- PLAN sec. 4
+# extern-monitor boundary policy; no shipped VeriFFI overhead. Pin stays for the CI lane.
 [formal.veriffi]
 flake_input = "veriffi"
 repo = "github:CertiRocq/VeriFFI"

@@ -72,7 +72,8 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
 - TimbdaRule records: one per paper rewrite rule (lhs dag, rhs dag, side conditions,
   class in {eval, match, delta, unify}, semName).
 - ContextExtern records: symbol name, C++ decl, wasm shape, LLVM function-attribute dict,
-  VeriFFI spec name; fixed annotation string "timbda.context_switch".
+  VeriFFI spec name (generated into the `Ffi.v` carrier; monitors CI-lane only — § 4 boundary
+  policy); fixed annotation string "timbda.context_switch".
 - Each record generates FIVE artifacts:
   1. MLIR dialect C++ + DRR rewriter (stock mlir-tblgen backends);
   2. Rocq: AST ctor, Rew relation ctor, per-rule soundness-lemma skeleton (new TableGen backend
@@ -105,7 +106,7 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
     |  |- Eval.v         head-redex table + fuel-bounded norm (Gallina corner of the differential
     |  |                 triangle); the fair work-queue scheduler is the M2/M3 step
     |  |- Lower.v        determinate fragments -> Clight; general -> CPS calls back into Eval
-    |  |- Ffi.v          VeriFFI extern specs
+    |  |- Ffi.v          extern specs: T12 proof carrier + CI monitor lane
     |  |- Compile.v      CertiRocq wiring; optional CompCert composition
     |- driver/           thin MLIR pass adapters (C++); M4 boost.context shim (generated)
     |- tests/            lit/ (pdll), coq-golden/, differential/ (shared generated corpus)
@@ -148,7 +149,8 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
     Faithfully stated conjectures; strengthens T5/T7 if proved; nothing gates on them.
 12. T12 (M4, later): boost.context extern family implements its VeriFFI specification; generated
     dcont -> extern lowering is a refinement of shift/reset semantics in the model. The C++ fast
-    path enters only as a theorem, never a contract.
+    path enters only as a theorem, never a contract. The proof is static; shipping carries no
+    monitors (§ 4 boundary policy) — monitors police the CI build of the extern region.
 
 ## 4. Verification ledger (TCB)
 
@@ -167,10 +169,37 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   tagging, gc_stack, boxed/unboxed floats, pointer punning — CompCert's memory model has no TBAA,
   clang's does). Mitigation: "Clight-boundary hardening" copts group (-fno-strict-aliasing first;
   review -fno-strict-prototypes etc. against emitted shapes) applied BY RULE in Bazel to the TU
-  group: generated code + CertiRocq runtime + VeriFFI glue. Order-sensitivity lives only at the
-  extern/VeriFFI boundary — governed by T12-style contracts.
+  group: generated code + CertiRocq runtime + VeriFFI glue (CI-build TUs only — the shipped group
+  carries no VeriFFI runtime, § 4 boundary policy). Order-sensitivity lives only at the extern
+  region — governed by T12-class contracts (§ 4 boundary policy: the extern region carries no
+  shipped monitors).
+- Extern-monitor boundary policy (decision, 2026-11-21). VeriFFI's runtime monitors are not
+  shipped. The distinction that decides it: VeriFFI's *specs* are load-bearing — they give externs
+  denotations in the same universe as the kernel model, and they are the thing a T12-class proof
+  proves *implementation* of; VeriFFI's *monitors* are enforcement, and enforcement is needed only
+  where no proof reaches — hand-written C++. In this design the extern region is closed by
+  construction: shims are generated (TableGen emits both sides' declarations and annotations), the
+  only non-generated code in the region is pinned library code (`boost.context`, a pinned rev), and
+  `Ffi.v` carries the specs. Coverage for the residual: the static layer (spec + T12-class proof +
+  attribute machinery: `convergent`, `nobuiltin`, `nocf_check`, annotation chain), pinning, and CI
+  empiricism — a monitor-enabled VeriFFI build of the extern region runs in the CI lane over the
+  shared generated corpus. Shipping monitors fail the project's own runtime-cost bar on three
+  counts: they police the only region where the proofs already reach (M4's context-switch family —
+  the fast path); they are the state-tracking class of monitor, not cheap argument checks; and they
+  tax the very optimization whose "provably-mapped, never a bare contract" rule they sit under. The
+  reversibility asymmetry decides the rest: re-enabling shipping monitors is one generated flag
+  away if a named threat model ever appears (externs outside the pinned+generated+proven set);
+  shipping them "just in case" is permanent cost with no named threat. The weighed-and-declined
+  counter-case (third-party C misbehaving in the field): at a pinned rev that case is inside the
+  T12 obligation's scope — a `boost.context` bug is a library-correctness failure upstream of this
+  ledger's scope, and no named threat at this boundary justifies the cost. Shipping extern
+  overhead: zero. CertiRocq's own runtime (gc_stack.o, link glue, malloc/free calls) remains the
+  certified-baseline cost and is not part of this removal — the certified baseline is deliberately
+  the naive-but-proved leg; the non-naive leg (T5/T7/T9) is where overhead must survive this bar.
 - Differential triangle (always on): Gallina-extracted evaluator <-> MLIR canonicalizer <->
-  augustss Haskell REPL tester, on shared generated corpus.
+  augustss Haskell REPL tester, on shared generated corpus. A monitor-enabled VeriFFI build runs
+  over the same corpus in CI: the extern boundary is checked by spec + proof + monitor +
+  differential — the monitor living in CI, not in the shipped binary.
 
 ## 5. Milestones
 
@@ -219,7 +248,8 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
   implementation with zero boost.context dependency.
 - M4: performance/streaming path. dcont lowering + generated ContextExtern annotations + shim;
-  T12. Skippable until demanded by profiling or reactive/streaming features.
+  T12 (static; shipping monitor-free per § 4 boundary policy). Skippable until demanded by
+  profiling or reactive/streaming features.
 - M5: WASM leg. timbda -> DCont -> SsaWasm -> Wasm (WAMI pipeline); optionally CertiRocq's
   WebAssembly target for the evaluator itself.
 
@@ -275,8 +305,12 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
   coq-ext-lib 0.13.0-dev, coq-paco 4.4-dev, rocq-coinduction 1.21 (tag `v1.21`; master needs rocq
   ≥ 9.2), coq-itree 5.2.1-dev, rocq-ctree 2.0-dev.  Two upstream quirks patched: extlib's
   dune-project declares `using coq 0.8` (retargeted to 0.7), paco's Makefile invokes the retired
-  `coq_makefile` (`rocq makefile -f`).  CertiRocq and VeriFFI remain unpinned-until-needed (M2/M3:
-  ship their C runtime — gc_stack.o, FFI glue — as package outputs).
+  `coq_makefile` (`rocq makefile -f`).  CertiRocq remains unpinned-until-needed (M2/M3: ship its
+  C runtime — gc_stack.o, link glue — as package outputs).  VeriFFI's runtime pieces (monitors and
+  their link glue) enter the CI lane only — § 4 boundary policy; no shipped VeriFFI overhead, and
+  M2/M3 shipping runtime contains no VeriFFI component (M3's certified runtime is CertiRocq +
+  Gallina only, consistent with its zero-switch design; the amendment fixes an earlier mis-bundling
+  of "VeriFFI glue" into the M2/M3 shipped-runtime list). Pins stay: the CI lane uses them.
 - Coq-mode dune 3.21.1 also comes from nixpkgs.  `coq/dune-project` pins `using coq 0.7`, and CI
   keeps every Coq-mode stanza in the repo on that version (coq lang ≥ 0.8 compiles with `coqc -boot`,
   which drops the Stdlib package from the loadpath — DESIGN-NOTES § 5).
