@@ -154,11 +154,13 @@ SmallVector<APInt, 4> intAttrsOf(OperandRange args) {
 
 //===----------------------------------------------------------------------===//
 // Z mirror (docs/DESIGN-NOTES.md DEV-20).  The kernel computes over Z; the
-// dialect mirrors Z with APInt and computes at 128 bits (the golden corpus and
-// probe kernels stay far inside Z's magnitudes; APInt's signed + - * trap
-// loudly on overflow instead of silently wrapping).  Fresh int literals keep
-// the width already carried by the row's int literals and grow to 64-bit, then
-// to the 128-bit Z mirror: literals grow, they never truncate (DEV-20).
+// dialect mirrors Z with APInt and evaluates closed literal prim operands at
+// 128 bits.  That exactness is a corpus bound, not an arithmetic guarantee:
+// plain APInt `+ - *` wrap modulo 2^128, and `zOf`'s zext asserts on inputs
+// wider than the mirror - DEV-20 records the width/fuel bound that closes
+// this on the lowering side (M2).  Fresh int literals keep the width already
+// carried by the row's int literals and grow to 64-bit, then to the 128-bit
+// Z mirror: literals grow, they never truncate (DEV-20).
 //
 // `Z.div` floor-divides (`Z.div_mod` signs the remainder like the divisor);
 // `sdiv` truncates toward zero, so `divZ` corrects the quotient.

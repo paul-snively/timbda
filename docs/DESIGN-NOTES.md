@@ -872,3 +872,82 @@ confirmation does not do, and what therefore stays in these notes rather than on
 
 **And what a `cands` assertion is not.**  It compares `Eval.v`'s candidate *list*, ordered: a claim
 about the evaluator's bag, not about `≈`-level candidate sets, and not `T8`.
+
+## 10. Dialect encoding decisions (DEV-6, DEV-16, DEV-18, DEV-20; written 2026-11-21)
+
+DEV-1..5 are kernel-side records: deviations from, or readings of, the paper
+(`VERSE-RULES` § 3, PLAN § 4 T3/§ 6).  The dialect code cites four further ids -
+DEV-6, DEV-16, DEV-18, DEV-20 - that had no entry anywhere in docs: the comments in
+`dialect/TimbdaCanonicalization.{h,cpp}` and `dialect/Timbda.td` point at ledger entries that did not
+exist.  This section writes them down under exactly the ids the code cites, so the cross-references
+resolve as written.  Unlike DEV-1..5 these are *dialect encoding decisions* - choices about how the
+kernel's machinery is spelled in MLIR - and each record says what its decision does **not** yet
+carry: their machine-checkable form is M2 work, not M1 evidence.
+
+**DEV-6 - SSA substitution is an encoding invariant.**  The kernel's substitution machinery (the
+`liftV`/`liftE` de Bruijn arithmetic) has no dialect counterpart.  Capture is carried by the SSA
+structure instead: valued block slots are operands captured directly by the body region, declared-only
+slots are block arguments, and the Fig. 8 promotion rows are what rewrite arguments into operands
+(`dialect/Timbda.td`, `Block` op summary - that row pair *is* the substitution).  A `Glob` channel is
+read through op operands too: the kernel's `Glob` is an `Expr`, and its dialect form is the op's value
+channel (`isValOperand`'s glob case).  Cloning maps captured references through unchanged through a
+single `IRMapping` per pass - the kernel `liftV` pass-through, with the `IRMapping` playing the role
+the kernel's indices play.  Limits of the claim: the dialect verifier checks the *shape* of regions
+(one block, one yield, binder arity); the invariant "no rewrite can produce an uncaptured reference"
+is currently exercised on the kernel side only (the corpus pins substitution behaviour for `Eval.v`'s
+head table), and on the dialect side nothing exercises it at all: no bazel target builds the
+canonicalizer - `//dialect:timbda_dialect_test` links only the ops/verifier library, and
+`bazel build //dialect:TimbdaCanonicalization` is the canonicalizer TU's only compile check today.
+A canonicalization test target and a checkable form of the invariant (verifier obligation or proof)
+are deferred to M2.
+
+**DEV-16 - the region value convention.**  A region op's value is its single block's `timbda.yield`
+operand.  A `timbda.bind` region is one block with one argument - the arm binder - that the arm never
+references: Fig. 12's rows only match when the kernel arm binder is unused, so the dialect binder
+exists structurally and is never read.  The init operand carries the bound expression's value channel;
+the arm's final statement carries the arm's value channel; the kernel's `;` sequencing is the arm's
+statement sequence.  Arm-tail extension (`extendArmTail`, `spliceStatementsIntoTerminated`,
+`spliceBlockIntoArm`) preserves all of this, and the `Block` op's declared-only slots - which *are*
+referenceable block arguments, the point DEV-6's promote direction turns into operands - are the one
+place a region argument is allowed to appear live.
+
+**DEV-18 - region edits are record-only and root-anchored.**  Stock DRR cannot emit ops with regions
+(probe F, `dialect/TimbdaPatterns.td` header), so every region-shaped RHS - Seq arms, `Block` binders,
+`Unify` chains, the beta choice trees - is rebuilt in the C++ helpers instead of generated, through
+rewriter-recorded APIs only (`matchRewrite`'s `match` phase never edits IR), and always anchored
+immediately before the matched root op.  Consequence the audit depends on: the 23 generated rewriter
+structs decide *which* row fires; the helper half decides *how* its region RHS is built; the
+generated-body/helper bijection (`tools/rules-audit.py`) is what keeps the two halves naming the same
+rows.
+
+**DEV-20 - the 128-bit Z mirror, and why it is neither `arith` nor a bignum library.**  The kernel
+computes over Coq's Z: unbounded addition/multiplication, floor `Z.div`, `Z.modulo` signed like the
+divisor (the floor half is measured, not asserted - § 8's `norm` corners pin `(-7) / 2` at `-4` in
+both engines).  The dialect mirrors that by evaluating closed literal prim operands on `APInt` at the
+mirror width (`kZBits`; `divZ` corrects `sdiv`'s truncating quotient to `Z.div`'s floor; `seq_z`
+reproduces the inclusive `DotDot` range), and materialising results with the grow-don't-truncate
+ladder: keep the row's own literal width, else 64-bit, else the mirror.  `arith` is not used, and
+`grep -rn "arith::" dialect/` is empty today; the reasons are recorded here rather than left to code
+comments:
+
+- Fig. 9-10 rows are *prim rows over Z-valued values*, decided from attribute facts at match time
+  (literalness, widths, `Z.ltb` residue).  `arith` ops are fixed-width SSA arithmetic with their own
+  overflow semantics, and a rewrite would have to emit them as SSA arithmetic *before* knowing the
+  row's answer - the guards would then re-derive from values what they currently read from attributes.
+- Fixed width *with truncation* is exactly the choice DEV-5 left open as a lowering obligation (the C
+  `/`-truncates claim, unverified here by design).  Choosing it inside canonicalization would bake the
+  unverified half into the middle of the pipeline, where a flip on the obligation becomes silent; the
+  mirror instead widens (seed width -> 64-bit -> mirror) and leaves the commitment where M2's T5
+  certified-lowering leg can be asked to prove it.
+- `PStuck` rows (open operands) have no `arith` counterpart: on `arith` an open operand is still
+  foldable IR arithmetic, while the kernel rows stay stuck.
+- APInt is already arbitrary precision for attributes and pinned with the toolchain; a third-party
+  GMP would extend the pin for no correctness gain.
+
+What the mirror is **not**, said plainly: a 128-bit guarantee.  Plain APInt `+ - *` wrap at `2^128`,
+`zOf`'s zext asserts on inputs wider than the mirror, and nothing in the verifier today bounds a
+literal's width against the mirror - so a wider-than-mirror literal in external IR reaches that
+assertion, not an error.  Fuel bounds kernel steps, not magnitudes (§ 5), and `DotDot` materialises
+its inclusive span eagerly as a VTup, so materialisation - not folding - is where a magnitude bound
+has to bite.  Recording it as an obligation: M2 owes a literal-width/materialisation bound (fuel or
+size) before the canonicalizer consumes IR the corpus did not generate.
