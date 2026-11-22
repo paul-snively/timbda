@@ -1,0 +1,246 @@
+# M2 gate corpus - determinate-fragment claims (draft 1, 2026-11-21).
+#
+# WHAT THIS FILE IS.  The corpus shadow of the four M2 gate rulings recorded in
+# docs/PLAN.md sec. 8 decision 8 (accepted pending Verse-team revision): every case
+# carries a `det=` classification computed from the decision-8 rulings *before* any
+# engine ran, plus the normalisation pin the M2 machinery (T4 `det_check`, T5
+# out-of-order lemma, T6 straight-line lowering, T7 no-switch theorem) must agree
+# with.  Groups map to the rulings: A/C/D exercise the determinate-fragment claims,
+# E lists the rejections `det_check` owes, F pins the DEV-20 materialisation
+# obligations, G queues the flex/even-odd probes PLAN sec. 11 records.
+#
+# DERIVATION (ritual per PLAN sec. 8 decision 6).  Expectations derived by hand on
+# 2026-11-21 from the rule text (docs/VERSE-RULES.md sec. 2-5, paper Figs. 8-13),
+# the pinned oracle (Core/Expr.hs, Red.hs - already pinned by m0.texpr where cited),
+# and kernel header comments (coq/Syntax.v prim_total; coq/Rewriting.v promote_ok /
+# promoteHpGo).  No expectation was taken from evaluator output; both corners have
+# NOT yet run against this file.  Wiring the corners to a second spec file is the
+# next infra step (awaiting review); until then this file is claims only.
+#
+# Classification vocabulary in the `why` fields:
+#   det=yes        closed blocks only, total value candidate, no choice, no stuck shape
+#   det=no(FAIL)   candidate exists but is `fail` - no value candidate (T4's `sem e = ret ...`)
+#   det=no(stuck)  kernel selects no row: the Div-0 / open-block class (decision 8b rejects)
+#   det=probe      a reading the corpus exists to expose, not to claim
+#
+# Grammar identical to tests/corpus/m0.texpr (tools/corpus/README.md sec. 1); the
+# `det=` vocabulary lives inside `why` strings so both readers parse this unchanged.
+
+defaults fuel 24
+
+# ---------- group A: div/sub/mul sign matrix - the T6 division ladder ---------
+# Line 452 (Fig. 10) is silent on sign.  Kernel and pinned oracle agree on FLOOR
+# (Z.div / Haskell `div`, Red.hs:1346-1347; m0.texpr prim_div_negative_floor pins
+# `(-7)/2 = -4`).  C truncation differs exactly where the pins marked [LADDER] -
+# Lower.v must reproduce the *floor* value (decision 8b; DEV-20 `divZ` precedent).
+# [SAME] marks sign combinations where truncation would agree - the ladder rungs
+# that must be proven no-ops, pinned so their no-op status is measured, not assumed.
+
+case arith_div_pos_pos
+  head r_prim
+  expr (app (ret (primv pdiv)) (tup (ret 7) (ret 2)))
+  norm (ret 3)
+  why "det=yes. 7/2 = 3: floor and truncation agree [SAME]. The rest of the matrix pins where they do not. Cite: line 452; prim_total Z.div (Syntax.v); T6 division table per decision 8b."
+
+case arith_div_pos_neg
+  head r_prim
+  expr (app (ret (primv pdiv)) (tup (ret 7) (ret -2)))
+  norm (ret -4)
+  why "det=yes. [LADDER] 7/(-2): FLOOR -4; C truncation would give -3. This is the pair the Lower.v divZ ladder must reproduce (PLAN sec. 3 T3 half: C++ rounding recorded open at DEV-5; M2 ends at Clight, where CompCert's `/` truncates - the correction is emitted code, never a claim of agreement). Cite: Red.hs:1346-1347 (Haskell div floors), Syntax.v prim_total."
+
+case arith_div_neg_neg_halves
+  head r_prim
+  expr (app (ret (primv pdiv)) (tup (ret -7) (ret -2)))
+  norm (ret 3)
+  why "det=yes. [SAME] (-7)/(-2): floor and truncation both give 3 (both-negative exact-ish half: truncation agrees whenever the true quotient rounds the same way). Pinned to measure, not assumed, that the ladder is silent here."
+
+case arith_div_neg_pos
+  head r_prim
+  expr (app (ret (primv pdiv)) (tup (ret -6) (ret 4)))
+  norm (ret -2)
+  why "det=yes. [LADDER] (-6)/4 = -2 floor; C truncation -1. Second rungs-pair with arith_div_pos_neg."
+
+case arith_div_neg_neg_quarter
+  head r_prim
+  expr (app (ret (primv pdiv)) (tup (ret -6) (ret -4)))
+  norm (ret 1)
+  why "det=yes. [SAME] (-6)/(-4): floor 1, truncation 1."
+
+case arith_div_exact_neg
+  head r_prim
+  expr (app (ret (primv pdiv)) (tup (ret -8) (ret -2)))
+  norm (ret 4)
+  why "det=yes. [SAME] exact negative division: 4 either way. Rung-zero of the ladder."
+
+case arith_sub_neg_neg
+  head r_prim
+  expr (app (ret (primv psub)) (tup (ret -5) (ret -3)))
+  norm (ret -2)
+  why "det=yes. Sub is total and sign-clean (line 452): (-5)-(-3) = -2, Z and C agree. Pinned so the ladder claim covers add/sub/mul as the measured no-op half."
+
+case arith_mul_neg_pos
+  head r_prim
+  expr (app (ret (primv pmul)) (tup (ret 7) (ret -4)))
+  norm (ret -28)
+  why "det=yes. 7*(-4) = -28, Z and C agree (multiplication has no rounding rung)."
+
+case arith_ppls_neg_identity
+  head r_prim
+  expr (app (ret (primv ppls)) (ret -9))
+  norm (ret -9)
+  why "det=yes. pls identity on integers, negative included (m0.texpr prim_ppls_identity extends to -9 here)."
+
+# ---------- group C: unify taxonomy and the Norm4 revisit probe ---------------
+
+case unify_seq_left_drop_eqk1
+  head r_seq
+  expr (seq (ret 1) (unify (ret 4) (ret 4)))
+  norm (ret 4)
+  why "det=yes. R_Seq (line 483) drops the dead prefix; head steps are re-visited (tools/corpus/README.md sec. 3), so `4 = 4` then closes via EqK1 (line 432)."
+
+case unify_seq_left_drop_eqk2
+  head r_seq
+  expr (seq (ret 1) (unify (ret 4) (ret 5)))
+  norm fail
+  why "det=no(FAIL). Same drop, then EqK2 (line 434): unequal literals fail. The candidate is fail, so T4's `sem e = ret (v, s')` has no witness: det_check owes this as a rejection (decision 8b's 'obvious stuck shapes' generalised: a *guaranteed* fail is as un-lowerable as a guaranteed Div-0)."
+
+case norm4_revisit_partial
+  head r_norm4
+  expr (unify (unify (ret 6) (app (ret (primv padd)) (tup (ret 2) (ret 3)))) (ret 6))
+  norm (seq (unify (ret 6) (ret 5)) (ret 6))
+  why "det=probe. Norm4 (VERSE-RULES sec. 3.3 table; Fig. 12 lines 479-491; the paper note: Norm4 exists for progress) fires at the root; the re-visited root has no row (neither side a value), so the structural rebuild leaves the partial shape - the README sec. 3.2 one-pass artifact. Probe content: a FAIR run collapses the left child (app -> 5, then EqK2 -> fail): the fair candidate is fail (det=no(FAIL) semantically), while the one-pass normalizer never performs the collapse. T4 must classify the fair semantics, T8 must prove the evaluator reaches it; this pin is the artifact both owe."
+
+# ---------- group D: out-of-order and independence - the T5 pins --------------
+# Decision 8a: determinate fragments are closed blocks only. Decision 8b/d: the
+# lowering never sees an open block. The T5 claim itself (Wbisim of permuted
+# fragments) lives in T5; what the corpus pins is the *measurable half*: permuted
+# starts normalize, every candidate is a singleton, and the final component is the
+# same value in every permutation.
+
+case oo_left_assoc
+  head r_norm5
+  expr (seq (seq (app (ret (primv padd)) (tup (ret 2) (ret 3))) (app (ret (primv pmul)) (tup (ret 4) (ret 5)))) (app (ret (primv psub)) (tup (ret 9) (ret 1))))
+  norm (seq (ret 5) (seq (ret 20) (ret 8)))
+  cands (seq (ret 5) (seq (ret 20) (ret 8)))
+  cands_why "one candidate: cand_bag does not interchange binds (m0.texpr cand_bag law) - the bag holds the whole node"
+  why "det=yes. Norm5 de-clutters `(e1;e2);e3` first; rebuild normalizes the children and the new root is not re-visited (README sec. 3.2), so the partial right-associated shape is the normal form. Prefix order is visible in the pin, not in the candidate count."
+
+case oo_assoc_right
+  head none
+  expr (seq (app (ret (primv padd)) (tup (ret 2) (ret 3))) (seq (app (ret (primv pmul)) (tup (ret 4) (ret 5))) (app (ret (primv psub)) (tup (ret 9) (ret 1)))))
+  norm (seq (ret 5) (seq (ret 20) (ret 8)))
+  cands (seq (ret 5) (seq (ret 20) (ret 8)))
+  cands_why "same bag as oo_left_assoc, reached from a different starting shape"
+  why "det=yes. Structurally different start (right-associated already), NO root row (left is not a value), rebuild only - and the normal form is identical to oo_left_assoc's pin. Pinning the *same* norm from distinct expressions is the corpus-side shadow of T5's fold/reassociate lemma."
+
+case oo_swap_prefix
+  head r_norm5
+  expr (seq (seq (app (ret (primv pmul)) (tup (ret 4) (ret 5))) (app (ret (primv padd)) (tup (ret 2) (ret 3)))) (app (ret (primv psub)) (tup (ret 9) (ret 1))))
+  norm (seq (ret 20) (seq (ret 5) (ret 8)))
+  cands (seq (ret 20) (seq (ret 5) (ret 8)))
+  cands_why "one candidate, final leaf 8 - as in oo_left_assoc/oo_assoc_right"
+  why "det=yes. Prefix swapped (mul before add): different normal form (prefix order is observable), same candidate count and same final component 8. T5's Wbisim is the claim that these three pins are *semantically* equal; the corpus pins what evaluation shows without claiming the theorem."
+
+case oo_indep_blocks_fwd
+  head none
+  expr (seq (block ((tint 5)) (app (ret (primv padd)) (tup (ret (var 0)) (ret 1)))) (block ((tint 7) (tint 9)) (ret (var 0))))
+  norm (seq (block ((tint 5)) (ret 6)) (block ((tint 7) (tint 9)) (ret 9)))
+  cands (seq (block ((tint 5)) (ret 6)) (block ((tint 7) (tint 9)) (ret 9)))
+  cands_why "one candidate: both blocks are slot-complete (decision 8a in-fragment), so each is read through; the seq holds the candidate"
+  why "det=yes. Slot-disjoint closed blocks: the body walk Substs (line 412) inside the first (body index 0 is slot 0, value 5 -> add yields 6) and the second (index 0 is slot 1, value 9). A Block is not a value, so no Seq row fires at the root - the seq node survives normalization, which is exactly what T5/T6 must treat: the independence here is *slot-disjointness plus no shared binder*, and Lower.v's straight-line form must emit the two slot writes in either order (T5) without ever consulting an open block (decision 8a)."
+
+case oo_indep_blocks_rev
+  head none
+  expr (seq (block ((tint 7) (tint 9)) (ret (var 0))) (block ((tint 5)) (app (ret (primv padd)) (tup (ret (var 0)) (ret 1)))))
+  norm (seq (block ((tint 7) (tint 9)) (ret 9)) (block ((tint 5)) (ret 6)))
+  cands (seq (block ((tint 7) (tint 9)) (ret 9)) (block ((tint 5)) (ret 6)))
+  cands_why "one candidate; mirror image of oo_indep_blocks_fwd"
+  why "det=yes. The swap pair of oo_indep_blocks_fwd: pins differ by prefix order, candidate shape identical. Together the two pins are the corpus witness pair T5's `seq e1 e2 ~ sem seq e2 e1` lemma will be checked against once T5 exists."
+
+# ---------- group E: rejection witnesses - what det_check must say no to ------
+
+case wtn_choice_dup_two_entries
+  head none
+  expr (choice (ret 3) (ret 1))
+  norm (choice (ret 3) (ret 1))
+  cands (ret 3) (ret 1)
+  cands_why "two candidates in the evaluator's bag list (m0.texpr cand_bag precedent); br2 idempotence (T2) identifies the denotation's SET with {3}, but the evaluator's bag keeps both entries - the set/evaluation distinction DESIGN-NOTES sec. 9 records"
+  why "det=no(stuck-class). Choice node: no rewrite row (Figs. 9-12), T4's rejection is syntactic and conservative - decision 8b. A duplicate choice (3|3) would be a singleton at the br2 level; the conservative checker never inspects candidates, so it rejects the node class regardless. Pinned here in m0's shape; the idempotence half is recorded in cands_why rather than claimed."
+
+case wtn_fail_root_no_value
+  head none
+  expr fail
+  norm fail
+  why "det=no(FAIL). Fail root: T4's witness form `sem e = ret (v, s')` has no witness (fail is a candidate set containing failure, not a value). Cite m0.texpr eq rows; DEV-5 half 2's `Fail`-catchability note is why the checker class is syntactic: catch can rewrite a fail candidate into a value candidate only if a catch node exists, and M0's grammar has none."
+
+case wtn_open_block_in_seq_stays
+  head none
+  expr (seq (block ((tany)) (ret (var 0))) (ret 1))
+  norm (seq (block ((tany)) (ret (var 0))) (ret 1))
+  cands (seq (block ((tany)) (ret (var 0))) (ret 1))
+  cands_why "one candidate: the declared-only block is decision 3's SStuck leaf (m0.texpr cand_bag_declared_block_is_a_leaf reading), and the seq holds it"
+  why "det=no(stuck-class). Decision 8a: open blocks are outside the determinate fragment, and this is the witness: the lone declared slot takes no Subst (premise needs a valued slot) and no promote row (premise needs a unification), so the left component never becomes a value and R_Seq never fires. R_Seq needs the LEFT to be a value (line 483), so the open block also blocks the seq - the rejection reason is structural, matching decision 8a's fragment rule."
+
+case wtn_unify_value_fail_stuck
+  head none
+  expr (unify (ret 3) fail)
+  norm (unify (ret 3) fail)
+  why "det=no(stuck-class). `Fail` is not a value and EqFail's pair shape (m0.texpr eqfail_primhead_vs_int: head-vs-head different roots) does not cover a bare literal against Fail: no row fires - tools/corpus/README.md sec. 1's worked example is this exact term (stuck, not fail)."
+
+case wtn_div0_after_seq_drop
+  head r_seq
+  expr (seq (ret 1) (app (ret (primv pdiv)) (tup (ret 9) (ret 0))))
+  norm (app (ret (primv pdiv)) (tup (ret 9) (ret 0)))
+  why "det=no(stuck-class). R_Seq drops the dead prefix (head r_seq, line 483), re-visit, and the Div-0 row is PStuck (m0.texpr prim_div_zero_is_stuck; Syntax.v prim_total `b =? 0` arm). The witness class decision 8b owes to T7: with the guaranteed-literal zero pinned at the lowering site, the Clight division site is safe *because det_check proved the zero shape absent*; this case is the shape that must be rejected."
+
+# ---------- group F: materialisation - the DEV-20 span cases ------------------
+
+case dotdot_zero_start
+  head r_prim
+  expr (app (ret (primv pdotdot)) (tup (ret 0) (ret 4)))
+  norm (ret (tupv 0 1 2 3 4))
+  why "det=yes. Inclusive both ends (line 459; oracle `i <- [l..h]`, Red.hs:1384 - already pinned at 1..3 by m0.texpr prim_dotdot_range). A 5-element materialisation: F1/F2 are the *span* cases decision 8c's verifier-side bound must cap before the canonicalizer consumes external IR (DESIGN-NOTES section 9, DEV-20 tail)."
+
+case dotdot_negative_span
+  head r_prim
+  expr (app (ret (primv pdotdot)) (tup (ret -3) (ret 1)))
+  norm (ret (tupv -3 -2 -1 0 1))
+  why "det=probe (span materialisation with a negative start; m0.texpr never exercised lo < 0 with the fixed Z.leb guard). Expected by the same inclusive reading (line 459; oracle Haskell [-3..1]); Syntax.v seq_z is the kernel materialisation and its negative handling is *pinned here, not yet measured* - if a corner disagrees, the finding lands next to DEV-20 like the seq_z finding did."
+
+case iter_ifor_absent
+  head none
+  expr (iter ifor (block ((tint)) (ret 1)) (ret 2))
+  norm (iter ifor (block ((tint)) (ret 1)) (ret 2))
+  why "Absence claim (m0.texpr already pins iall/iif deferral): every Fig. 13 row needs the CtxC context-hole machinery, the head table defers the whole Iter family (RULES-AUDIT sec. 5), and nothing in the M2 corpus may assume it fires. The slot list is left untouched."
+
+# ---------- group G: the flex queue - VC even/odd on the kernel side ----------
+# PLAN sec. 11 records VC's even/odd term (Ariola & Blom) as the queued
+# out-of-corpus test for the flex obligations; decision 8a keeps open blocks out of
+# M2. These probes pin the refusal shapes NOW, so the refusal survives whatever the
+# flex layer becomes. Cited rule: promote (line 416) with the freshness side
+# condition fvsol(v) # dom(hp) union {x} (lines 416, 253 note); VC's cyclic-fill
+# pathology and its u-occurs rule are the paper-side context.
+
+case probe_forwardref_tuple_fill
+  head none
+  expr (block ((tany) (tany)) (unify (ret (var 1)) (ret (tupv 1 (var 0)))))
+  norm (block ((tany) (tany)) (unify (ret (var 1)) (ret (tupv 1 (var 0)))))
+  why "det=probe, kernel reading pinned; DIVERGENCE SHAPED TO SHOW. Body index 1 is slot 0 (index i names slot n-1-i), so this is VC's even/odd FIRST limb verbatim: `x = (1, y)` with x = slot 0, y = slot 1. Kernel: promote_ok (Rewriting.v ll. 224-226) counts mentions of ANY slot of the block, so the forward reference to the unfilled slot 1 blocks the row - head none. Paper (line 416 as VERSE-RULES sec. 3.2 records it): freshness is `fvsol(v) # dom(hp) union {x}`; slot 1 is declared, not in dom(hp), and is not x, so the VC row would FIRE and plant the forward reference - and its mutual composition with the second limb is the even/odd pair itself. Subst needs a valued slot (none here); the Eq pair rejects VVar-vs-tuple, so both readings agree on head none for the OTHER arms and disagree only on promote. together with probe_selfref_tuple_direct (x = (1, x), where BOTH readings refuse - a mention of x itself blocks under either reading), this quartet maps exactly where Timbda's kernel is stricter than the VC freshness condition: the even/odd pair cannot be built here because the kernel denies its first limb. M3's flex/recursive rows owe a ruling, with receipts, on which freshness the kernel keeps; until then this pin is the regression that any flex layer must confront openly, not silently. (Also recorded: m0.texpr promote_blocked_by_another_slot cites promote_ok with the paper's line-416 condition as if the two coincide - probe-grade evidence that they do not coincide for declared-slot references. Candidate spec-record finding; the ruling belongs to M3/T1.)"
+
+case probe_forwardref_lam_fill
+  head none
+  expr (block ((tany) (tany)) (unify (ret (var 0)) (ret (lam tany (ret (var 2))))))
+  norm (block ((tany) (tany)) (unify (ret (var 0)) (ret (lam tany (ret (var 2))))))
+  why "det=probe, kernel reading pinned; DIVERGENCE SHAPED TO SHOW. VC's even/odd SECOND limb verbatim: y = (z.x), with y = slot 1 (body index 0 names slot n-1-0 = 1): crossing the lambda binder shifts the occurrence search by 1 (Syntax.v occurs arithmetic), so the lam's raw index 2 names slot 0 - the lam mentions x's NEIGHBOUR, not the binder being bound. Kernel: promote_ok's walk (Rewriting.v ll. 224-226) catches the slot 0 mention - head none. Paper: fvsol(v) = {slot 0}; the freshness set for binding slot 1 is dom(hp) union {slot 1} - disjoint - so the VC row would FIRE. Composed with probe_forwardref_tuple_fill (first limb), this is the even/odd pair VC builds through two individually-legal promotions; the kernel denies both limbs at the gate."
+
+case probe_selfref_tuple_direct
+  head none
+  expr (block ((tany) (tany)) (unify (ret (var 1)) (ret (tupv 1 (var 1)))))
+  norm (block ((tany) (tany)) (unify (ret (var 1)) (ret (tupv 1 (var 1)))))
+  why "det=probe, refusal under BOTH readings. x = (1, x), x = slot 0 (body index 1): the mention is x itself, so the line-416 condition blocks the row under the paper reading exactly as promote_ok blocks it under the kernel's. Pinned as the agreement case of this group: the kernel/paper divergence is specifically about forward references to *other* unfilled slots, not about seeing self-mentions - a green run here is what keeps the divergence probes honest."
+
+case probe_overfresh_declared_slot
+  head none
+  expr (block ((tany) (tany)) (unify (ret (var 1)) (ret (lam tany (ret (var 1))))))
+  norm (block ((tany) (tany)) (unify (ret (var 1)) (ret (lam tany (ret (var 1))))))
+  why "det=probe, DIVERGENCE SHAPED TO SHOW. The lam's raw index 1 escapes its binder to body level: it names slot 1, a DECLARED slot that is not x and not in dom(hp). Kernel: promote_ok (Rewriting.v ll. 224-226) counts mentions of ANY slot of the block, so the row is blocked - head none (kernel reading pinned). Paper (line 416): freshness is `fvsol(v) # dom(hp) union {x}`; a forward reference to a declared-but-unfilled slot satisfies it, so the VC row would FIRE and create exactly the forward-reference fill whose mutual version becomes the even/odd pair - the door VC's u-occurs rule and Ariola & Blom skew confluence stand at (PLAN sec. 11). Timbda's kernel already stands on the stricter side of the fork for free; M2's determinate fragment (decision 8a) keeps it dormant; M3's flex/recursive rows owe the ruling - with receipts - whether the stricter reading is kept or the VC freshness is matched. This case is the measurement: if a corner disagrees with the kernel reading pinned here, the disagreement is the finding."

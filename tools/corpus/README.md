@@ -238,3 +238,31 @@ harness.
 4. Nothing in `coq/` changes when a case is added; only `coq/*.v` rebuilds trigger the
    `Admitted`/axiom gate (§ `DESIGN-NOTES` § 6).  If a case exposes a kernel bug, fixing the
    kernel re-runs that gate, which is the point.
+
+## 7. M2 gate corpus, draft (`tests/corpus/m2-det.texpr`, 2026-11-21)
+
+The first M2 artifact, per decision 6's ritual: 29 cases carrying the four M2 gate rulings
+(docs/PLAN.md § 8 decision 8a-d, *accepted pending* Verse-team revision) as claims.  Expectations
+were derived by hand from the rule text (docs/VERSE-RULES.md sec. 2-5), already-pinned m0.texpr
+cases, pinned oracle citations, and kernel header comments - **before either engine ran against
+the file**.  Status at this commit: the Python reader parses it (29 cases, 7 candidate-bag
+claims, `R_Prim` x11, `R_Seq` x3, `R_Norm5` x2, `R_Norm4` x1; 12 deliberate `head none` claims);
+the flake's `corpus-differential` check still runs `m0.texpr` only, so **no corner has executed
+these claims yet** - wiring a second spec file into the check is the next infra step, awaiting
+review, and `tools/build/nix-gate.sh .#checks...` (§ 6 step 3) is the safe way to pay for it.
+
+Group A pins the division sign matrix with `[LADDER]`/`[SAME]` marks so Lower.v's floor-vs-
+C-truncation correction table is measured rung by rung (decision 8b).  Groups D pins out-of-order
+and slot-independent normal forms permuted against each other (the corpus half of T5).  Group E
+lists the rejection witnesses `det_check` owes.  Group F pins the `DotDot` spans DEV-20's
+verifier-side bound must cap.  Group G is the measurement suite for the queued flex question:
+four promote-freshness probes pin where the kernel's `promote_ok` (Rewriting.v ll. 224-226, counts
+mentions of *any* slot of the block) is stricter than the VC line-416 freshness as recorded in
+VERSE-RULES sec. 3.2 (`fvsol(v) # dom(hp) union {x}`, blocks only mentions of valued slots and
+the binder itself), including the two shapes that together are VC's even/odd pair.  Two of those
+four are shaped so the pinned kernel reading and the paper reading differ in principle: a green
+run confirms the kernel refuses both VC limbs (extending m0.texpr's promote_blocked pins to the
+verbatim limb shapes), while a FAIL - a promote row firing where promote_ok was assumed to block -
+would itself be the finding.  Either way the run records kernel facts; the kernel-vs-paper
+freshness asymmetry is established by the two rule texts and arbitrated by nobody - the ruling
+belongs to M3/T1.
