@@ -966,3 +966,149 @@ size) before the canonicalizer consumes IR the corpus did not generate.  Mechani
 2026-11-21, pending Verse-team revision (PLAN § 8 decision 8c): verifier-side - external
 literals wider than the mirror are rejected at verification, plus a span bound on eager
 `DotDot` materialisation; not fuel.
+
+## 11. The m2 corpus gate executed (measured 2026-11-22)
+
+`tests/corpus/m2-det.texpr` - 29 claims written by hand on 2026-11-21 per decision 6's ritual - has
+now been run through both corners.  What the run taught is bigger than the pass: 27 of the 29
+claims executed exactly as derived, and the two that did not were wrong on the *claim* side, in a
+way the two engines agreed about.
+
+### 11.1 Getting the bill past the host floor
+
+The bill ran 2026-11-22 06:20 as four gate targets: the two m2 corners, `checks.corpus-m2-differential`
+and the m0 `checks.corpus-differential` (the last to re-attest the unchanged m0 pair against the
+parameterised flake).  Two earlier attempts the same morning never built anything: at the stock
+floors (`TIMBDA_NIX_GATE_MIN=8G`, `TIMBDA_NIX_GATE_GUARD=12`, so a mem floor of 8192 MiB - the knob,
+since 12% of MemTotal 63916 MiB is 7670 MiB) the box had **10.0-10.9% MemAvailable** - 6362-6940
+MiB, `strata-host` measured 42.1-49.5 GiB resident across those attempts - so the script printed
+`refusing to build` and exited 2 with every target `not attested` (exit-code discipline, § 4.3).
+`journalctl` windows for those attempts contain no OOM kill: earlyoom's trigger is *both* mem and
+swap free under 10%, and swap free was 15.2-15.3 GiB of 20.3 GiB (73-75%), so it never had a chance
+to fire; the honest failure here is "no work started", not "the host was unhealthy".
+
+The bill was paid with `TIMBDA_NIX_GATE_MIN=5G TIMBDA_NIX_GATE_GUARD=8`, which preflight renders as
+`mem floor: MemAvailable >= 5120 MiB (8.0% of total) [knob 5G, guard 8%]` - the knob, since 8% of
+63916 MiB is 5113 MiB - and `swap floor: swap free >= 1623 MiB [knob 700M, guard 8%]`.  That mem
+floor is *below* earlyoom's 10%-of-mem trigger (5120 MiB = 8.0% of this box), which is exactly the
+case § 4.3's "a floor at or under 10% is not a guard" warns about; the reason it was acceptable here
+is the second half of that note - earlyoom needs *both* thresholds, and swap free stayed at
+15.1-15.3 GiB (73-75% free, 13 GiB above its trigger) in every bill of the day - plus the 2 s
+during-run watchdog, which is what would have stopped a build that started under the floor.  Nothing
+crossed it: the same journal windows record no OOM kill, and the low-water `MemAvailable` readings
+for the four targets were 6820-7375 MiB (10.7-11.5%).
+
+### 11.2 What the executed pair says, in each corner's own words
+
+From the outputs' own `status.txt` (all five still in the store when these lines were read):
+
+- `xv9qr24869s3pblfq2jypm4nldqvb7fk-timbda-corpus-coq-corner-m2-0.1.0`: `reader_rc=0 cands_rc=0
+  reader_cases=29 reader_cands=7 corner_lines=211 rocq_rc=0 marker=corner_cases = 29
+  cands_marker=corner_cands = 7`, plus `corner-generated.v` = 211 lines / 46 `Example`s, all proved.
+- `m9gcaybb7jfqhldfgchhnsm4vxhh3m2x-timbda-corpus-ocaml-corner-m2-0.1.0`: `extract_rc=0
+  extracted_lines=1465 mli_rc=0 ocamlc_rc=0 driver_rc=0`,
+  `summary=corpus corner: 29 cases, all agree with the extracted evaluator`,
+  `cands_summary=cands corner: 7 groups, all agree with cand_bag`; its `corpus-run.log` has 29 `ok`
+  lines and 0 `FAIL` lines.
+- `3b4wzs2agyizpr5igi9sv3j4haisxxfj-timbda-corpus-m2-differential`: `corpus:
+  tests/corpus/m2-det.texpr (29 cases, 7 with a candidate bag)`, `generated corner: 211 lines of
+  .v`, `extracted corner: 29 cases / 7 cand_bag claims against timbda_eval.ml (1465 lines)`, four
+  `Closed under the global context` lines for the extracted names, and the driver line
+  `ok: 29 corpus cases (incl. 7 candidate bags) agree across corners (Gallina native vs extracted
+  OCaml)`.
+- `dc4r0y70q2j51106277ybcns2hqq7ixb-timbda-corpus-differential` re-ran the m0 pair green: `64
+  cases / 7 with a candidate bag`, `generated corner: 421 lines`, `timbda_eval.ml (1465 lines)` -
+  identical counts to § 8.2-8.3's record, which is the point of re-running it after the wiring change.
+  Worth recording: the m0 corner derivations got *new hashes* even though m0's spec file is
+  untouched, because both corners copy the whole flake source (`$src/tools/corpus/corpus.py`,
+  `$src/tests/...`) - editing `m2-det.texpr` moves the m0 corners' `$src` too.  A T4/T5-era cache
+  expectation that "m0 corners are content-addressed by m0.texpr alone" is simply false on this
+  flake.
+
+### 11.3 The two claims the engines rejected, and what re-deriving from rule text found
+
+On the first run the two engines agreed with each other and disagreed with the file: the Coq corner
+could not prove the generated `Example` asserting the draft's normal form, and the OCaml driver
+printed `FAIL` for the same two cases and their candidate-bag claims - Group D's
+`oo_indep_blocks_fwd`/`oo_indep_blocks_rev`, where draft 1 claimed the first block of the fwd pin -
+`(block ((tint 5)) (app (ret (primv padd)) (tup (ret (var 0)) (ret 1))))`, a closed single-slot
+block whose body is an application whose *argument tuple* mentions the block's own slot - collapses
+to `(ret 6)` under `R_Subst`.  Both engines returned the partial shape instead: block 1 stays exactly
+as written (no row fires at a block head whose body is an application, and `R_Subst` cannot reach a
+term position inside an argument tuple), and block 2 - `(block ((tint 7) (tint 9)) (ret (var 0)))`,
+whose body *is* the `R_Subst` pattern with the hole context empty - resolves to `(ret 9)`.  So the
+normal form both corners agreed on is `seq <block 1 unchanged> <block 2 → (ret 9)>`, with a
+one-candidate bag holding that whole node (the `cand_bag` law m0 already pins), and the differential
+reported "2 of 29 do not agree" - naming the claim side.
+
+Decision 6's ritual then applied in the direction the *first* run could not test: the engines do not
+adjudicate which claim is correct, the rule text does.  Re-derivation, recorded verbatim in the two
+`why` fields (`tests/corpus/m2-det.texpr` ll. 155, 163) and summarised in the commit message: at a
+block head only the selected Fig. 8 rows apply (`Eval.v`'s `body_walk`); `R_Subst`'s rule form
+(`coq/Rewriting.v` ll. 398-403) matches bodies of shape `fillS k (Ret (Var i))` with `k` in the
+recorded S grammar (`coq/Syntax.v` ll. 116-131: `S ::= hole | e=S | S=e | e[S] | S[e] | e;S | S;e`),
+and *a position inside an application's argument tuple is not in that grammar* - the
+value-context/block-inside variants are `Subst-Deep`, the Tier-2 row this kernel deliberately does
+not select and which `coq/Rewriting.v` ll. 480-483 records as deferred to M3.  Two m0 pins already
+say the same thing from the other side (`subst_then_eqfail`: `R_Subst` reaches unify-argument `S`
+positions; `betal_body_is_slot_variable`: host-position blocks never collapse in m0's pinned
+shapes).  So the kernel's non-collapse was right, the draft's collapse was a derivation error, and
+the amendment moved the claims - not the engine - to the rule-text reading.  No kernel file changed
+in that commit (`git show --stat` for `802e9ad` touches only `tests/corpus/m2-det.texpr`), which is
+why § 11.2's kernel-side numbers (1465 extracted lines, the four closed axiom footprints) are
+comparable across the amendment.
+
+Generalisation worth keeping for T4-T7-era claims: a cross-corner differential is a disagreement
+detector, not an oracle.  When both corners agree and the file does not, the file is the suspect,
+and the fix is a fresh derivation from `docs/VERSE-RULES.md` / kernel rule text plus the existing
+pinned precedents - never "what the driver printed" (that is the direction decision 6 exists to
+forbid).  Recording the rejected claim in the file's header note (`m2-det.texpr` ll. 16-23) rather
+than erasing it is part of the same discipline: the amended pins say `det=yes (amended 2026-11-22)`
+and keep the draft's error visible.
+
+Two consequences for M2's machinery, both now corpus facts rather than rulings:
+
+- Decision 8a's closed-blocks restriction is unchanged, but its *witness* is now precise: T4's
+  fair-sem side still resolves that block to the value 6 (paper-side slot lookup in evaluation -
+  the kernel has no `Get` row, tools/corpus/README.md § 5), while the *evaluator* produces a partial
+  shape.  So T4's `sem e ≈ eval e` leg has to be stated for a `sem` that does the resolving, and the
+  corpus pins the evaluator's half separately.
+- T5's corpus witnesses for order-agnostic straight-line lowering are now the amended *mirrored
+  pair* (each permutation reaches its own partial normal form, identical candidate count), together
+  with the three unchanged Group D permutation pins (`oo_left_assoc`, `oo_assoc_right`,
+  `oo_swap_prefix`).  What they do *not* provide is a collapse claim the M0 row set cannot make.
+- Group G's four `promote-freshness` probes - the measurement side of the flex-scope question
+  queued in PLAN § 10 - came back as claimed, `head -> no row` in both corners, which pins the
+  kernel's stricter `promote_ok` as behaviour with cases attached.
+
+Store paths here are dated readings, per § 4.3's rule: the corner and check outputs listed above
+were present when read, and the durable record is the amendment commit and this entry.
+
+### 11.4 Today's box is not the box § 10 measured
+
+Re-measuring for the re-bill (2026-11-22 07:08, `tools/build/nix-gate.sh` preflight and
+`systemctl show nix-daemon`):
+
+- The nix daemon cgroup is **`MemoryHigh=4.0G` / `MemoryMax=5.0G`** (`/etc/systemd/system/nix-daemon.service.d/override.conf`,
+  re-read live: `MemoryHigh=4294967296`, `MemoryMax=5368709120`, `DelegateMemory=auto`,
+  `DelegateFragment=…Max=5368709120…`).  § 10 recorded 5.4G/7.4G on 2026-11-19; that envelope is
+  now a dated reading, not the live setting, and the difference matters operationally: at a 5G
+  daemon ceiling a daemon-sandboxed *kernel* build (peak 20.2 GiB, § 4.3) is not a thing to attempt,
+  which is precisely why § 4.3's split - `coq-build.sh` for kernel-scale builds inside a verified
+  4.0G/5.0G cgroup, the gate for the small corner/check derivations - is load-bearing and not
+  convenience.
+- Swap is 20.3 GiB (`swap free 15.1-15.2 GiB`, 74.7% free) against 62.4 GiB of RAM, and `earlyoom`
+  (v1.7, `/etc/earlyoom/earlyoom.env`: `SWAP_THRESHOLD=10`, `MT_THRESHOLD=10`, `--prefer
+  '(nvidia|python|rocq|dune)'`) is a live service with `Nice=10`, `CPUAccounting=yes`, enabled.
+  Nothing in the run windows killed anything.
+- Preflight readings for the re-bill: 6820-7029 MiB MemAvailable (10.67-10.99%), swap free 15156
+  MiB; held floors 5120 MiB mem / 1623 MiB swap at `TIMBDA_NIX_GATE_MIN=5G TIMBDA_NIX_GATE_GUARD=8`.
+  The re-bill took 2 s and 3 s (targets rc=0), re-attesting 29 cases / 7 candidate bags for m2 and
+  64 / 7 for m0 - the same counts § 11.2 records.
+- A cache fact the re-bill makes visible rather than inferable: the check outputs have *new* store
+  paths (`rc4g2jacvi0bvixwm0lqa0gp108md6b5-timbda-corpus-m2-differential`,
+  `95ch4c3y81q67pbc92g04i4zyswrsjh2-timbda-corpus-differential`) purely because this file changed -
+  both corner derivations consume the whole flake source.  Treat "the check rebuilt" as "the source
+  hash moved", never as "the kernel moved", and cross-check the kernel-side numbers (1465 extracted
+  lines, the four `Closed under the global context` footprints) before drawing a semantic
+  conclusion from a rebuild.

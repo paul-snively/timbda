@@ -244,7 +244,15 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   completeness claim).
 - M2: the non-naive leg. Checks.v (T4), T5, Lower.v for determinate fragments (T6, T7),
   CertiRocq->C; golden test: out-of-order constant-expression programs compile to straight-line C
-  with zero switch sites, proved.
+  with zero switch sites, proved.  *Status 2026-11-22:* M2's gate corpus `tests/corpus/m2-det.texpr`
+  (29 claims, hand-derived 2026-11-21 per decision 6, wired to `checks.corpus-m2-differential`) has
+  been executed through both corners: green at 29 cases / 7 candidate bags, with the m0 pair
+  re-attested unchanged (64 / 7).  27 of the 29 claims held exactly as derived; the two that failed
+  were Group D block-collapse claims, wrong on the claim side, and are amended from the rule text
+  rather than from engine output (docs/DESIGN-NOTES.md § 11, tests/corpus/README.md § 8).  What the
+  run fixed for the machinery ahead: T4's sem-side and eval-side legs are separately pinned (the
+  evaluator's shape for a slot-independent closed block is a *partial* one), and T5's witnesses are
+  the amended mirrored partial-shape pair.
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
   implementation with zero boost.context dependency.
 - M4: performance/streaming path. dcont lowering + generated ContextExtern annotations + shim;
@@ -385,6 +393,19 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
 4. wasmtime stack-switching version/flag pinning (record engine config per WAMI harness).
 5. musl: static-only toolchain in hermetic-llvm; boost.context probe required before commitment.
 6. CompCert: at the tail; optional license-gated lane only.
+7. **Open question, measured but not ruled (2026-11-22): block-scope/freshness - the kernel is
+   stricter than VC.**  `m2-det.texpr` Group G's four probes came back `head -> no row` in both
+   corners: the kernel's `promote_ok` (coq/Rewriting.v ll. 224-226 - counts mentions of *any* slot
+   of the block) rejects re-promotion of a slot VC's line-416 `R_PromoteL/R` freshness would allow
+   (VERSE-RULES § 3.2, VC l. 416: a *fresh* declared slot may still be free in the substituted
+   value).  Kernel-stricter means every kernel-derivable block is VC-derivable, never the reverse,
+   which is the safe direction for T4/T6 but means the kernel can reject a flex fill VC endorses.
+   **Status: queued, not decided** - the ruling (keep the stricter guard and state T4's sem-side
+   with a VC-fresh-but-kernel-stuck witness, vs. relaxing `promote_ok` toward the line-416 reading)
+   waits on the Sweeney/SPJ publication line, the same receipt decision 8 is owed.  Evidence:
+   docs/DESIGN-NOTES.md § 11.2-11.3.  Related correction recorded with it: "freshness" is a property
+   of the kernel's selected rows, not of any fuel - the kernel evaluator takes no fuel argument at
+   all, and `fuel` is extraction-scaffold/corpus-index machinery (docs/DESIGN-NOTES.md § 12).
 
 ## 8. Decision log (also in Strata, tag "timbda")
 

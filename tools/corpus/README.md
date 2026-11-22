@@ -254,15 +254,20 @@ m0 pair under their original attribute names plus an m2 pair under
 `timbda-corpus-{coq,ocaml}-corner-m2`, and gates each pair with a check built from one shared
 comparator: `checks.corpus-differential` (m0 - a line-diff against the previous commit shows the
 gate's shell text unchanged apart from the parameterization itself, and the m0 instantiation
-reconstitutes the old text exactly) and the new `checks.corpus-m2-differential`.  Status at this
-commit: the four corners and both checks *evaluate* (`nix eval .#checks.…differential.drvPath`
-prints derivation store paths), but **no corner has executed the m2 claims yet**: the first two
-run attempts on 2026-11-22 were stopped by the gate's own host watchdog before any derivation
-started (`rc=124`, "target not attested"; the box had 10.0-10.4% MemAvailable against the gate's
-12% floor with a model server holding 43-50 GiB - see § 5's exit-code notes and
-tools/build/README.md).  The run bill is `tools/build/nix-gate.sh
-.#checks.x86_64-linux.corpus-m2-differential` (§ 7 step 3 applies to the m2 spec as it does to
-m0); until that bill is paid, every m2 pin is a claim awaiting measurement.
+reconstitutes the old text exactly) and the new `checks.corpus-m2-differential`.  Both corners and
+both checks *ran* on 2026-11-22, and the m2 corner pair is what the 29 claims were measured
+against.  Two attempts earlier that day never started: the gate's own host watchdog
+refused the bill at the stock floor (`exit 2`, "not attested"; 10.0-11.1% MemAvailable against a
+floor of max(8G, 12% of total) with a model server holding 43-50 GiB - § 5's exit-code notes and
+tools/build/README.md).  The bill was paid with `TIMBDA_NIX_GATE_MIN=5G TIMBDA_NIX_GATE_GUARD=8`
+(held floor 5120 MiB, MemAvailable 7174-7374 MiB during the runs).  Result: **27 of the 29 draft
+pins executed exactly as derived**, and the two that did not were both Group D block pins
+(`oo_indep_blocks_rev` and its candidate-bag claim) - the two corners agreed *with each other*
+(Coq corner: 211 generated lines, 46 `Example`s, `rocq_rc=0`; OCaml corner: `ocamlc_rc=0`,
+`driver_rc=0`, "corpus corner: 29 cases, all agree with the extracted evaluator") and contradicted
+the draft, which is the disagreement decision 6's ritual exists to catch.  Counts, rule-text
+arbitration and the store-path honesty note are in docs/DESIGN-NOTES.md § 11; the pins are amended
+to the rule-text reading in the same commit that records the run, and no engine file changed.
 
 Group A pins the division sign matrix with `[LADDER]`/`[SAME]` marks so Lower.v's floor-vs-
 C-truncation correction table is measured rung by rung (decision 8b).  Groups D pins out-of-order
