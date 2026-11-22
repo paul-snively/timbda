@@ -252,7 +252,21 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   rather than from engine output (docs/DESIGN-NOTES.md § 11, tests/corpus/README.md § 8).  What the
   run fixed for the machinery ahead: T4's sem-side and eval-side legs are separately pinned (the
   evaluator's shape for a slot-independent closed block is a *partial* one), and T5's witnesses are
-  the amended mirrored partial-shape pair.
+  the amended mirrored partial-shape pair.  *Status 2026-11-23:* both T4 legs are discharged -
+  `T4_sem` in `coq/Checks.v` (`det_check e = true -> exists v, denote e (e_fuel e + k) ≈ sret (SOk v)`,
+  the kernel's own `equ` witness transported to `≈`) and `T4_eval` in `coq/ChecksEval.v` (`det_check e
+  = true -> cand_bag (norm fuel e) = norm fuel e :: nil`, assembled from `head_redex_det` /
+  `norm_det` / `cand_bag_single`; the two modules are one theory, split for a measured build-cost
+  reason - docs/DESIGN-NOTES.md § 12.1) - and `coq/tests/ChecksTest.v` mirrors all 29 corpus verdicts at the Gallina level
+  (17 accept / 12 reject, the corpus's own tally, written from decision 8 and untouched by what the
+  checker returned) together with the nine `norm` pins and all seven candidate bags, the five accepted
+  ones proved *through* `T4_eval`.  `Print Assumptions T4_eval` is `Closed under the global context`;
+  `T4_sem` inherits the single `eq_rect_eq` the ctrees machinery contributes (docs/DESIGN-NOTES.md § 12).
+  The recorded M1-side build TODO (docs/DESIGN-NOTES.md § 4.3) is closed in the same step:
+  `Denotation.v`'s `t1_norm`/`t1_fold` retactored to a root-peeling `rewrite` loop over a kernel-`sret`
+  bridge lemma, cold compile 708 s / 11.2 GiB down to 181 s / 1.9 GiB, statements and axiom audit
+  untouched (docs/DESIGN-NOTES.md § 12.2).
+  What M2 still owes: T5, `Lower.v` for determinate fragments (T6, T7), and the golden test.
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
   implementation with zero boost.context dependency.
 - M4: performance/streaming path. dcont lowering + generated ContextExtern annotations + shim;

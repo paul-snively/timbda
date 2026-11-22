@@ -284,3 +284,13 @@ verbatim limb shapes), while a FAIL - a promote row firing where promote_ok was 
 would itself be the finding.  Either way the run records kernel facts; the kernel-vs-paper
 freshness asymmetry is established by the two rule texts and arbitrated by nobody - the ruling
 belongs to M3/T1.
+
+The corpus's `det=` classifications - the ones that live inside the `why` strings and are therefore
+read by no machinery at all - now have a Gallina-side mirror: `coq/tests/ChecksTest.v` states each of
+the 29 verdicts as a `det_check` fact over the same expression, plus the nine `norm` pins and the
+seven candidate-bag claims (§ 8's `cands`/`cands_why` fields).  It is a *mirror*, not a third corner:
+`corpus.py` and `driver.ml` remain the only readers of `tests/corpus/*.texpr`, the two corners stay
+the only place a corpus claim is executed against the evaluator, and nothing here changed the corner
+or check text (docs/DESIGN-NOTES.md § 12 records what the mirror measured - 17 accept / 12 reject, the
+corpus's own tally, green on the first build).  A disagreement between the mirror and the corners
+would be a finding about `Checks.v`, never a reason to edit a pin.

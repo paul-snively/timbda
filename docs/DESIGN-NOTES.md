@@ -362,6 +362,10 @@ which is why the cost is not simply moved elsewhere: `tests/KernelTest.v` compil
 corpus corner compiles in under a minute (`nix log` for `…-corpus-coq-corner` shows the whole Coq
 corner at 59 s), so the cost is in the proofs, not in the evaluator or the harness.
 
+*Status 2026-11-23: done.*  § 12.2's retactor - bridge lemma `bind_sret_l` plus a root-peeling
+`rewrite` loop in `t1_norm`/`t1_fold`, every lemma statement untouched - took the cold
+`coqc Denotation.v` from 708 s and 11.2 GiB maxrss to 181 s and 1.9 GiB.
+
 **The nix half of the gate cannot be capped from inside the repo, and that is a measured property of
 this machine, not an opinion.**
 
@@ -1123,3 +1127,178 @@ Re-measuring for the re-bill (2026-11-22 07:08, `tools/build/nix-gate.sh` prefli
   hash moved", never as "the kernel moved", and cross-check the kernel-side numbers (1465 extracted
   lines, the four `Closed under the global context` footprints) before drawing a semantic
   conclusion from a rebuild.
+
+## 12. T4's two soundness legs, proved (M2, 2026-11-23)
+
+`coq/Checks.v` now carries both legs whose shapes § 11's corpus pinned, over the checker
+`det_check e = ws_expr 0 e && det_struct e` (`coq/Checks.v` l. 395; the six guards G1-G6 are
+documented at the head of the file):
+
+```
+Theorem T4_sem   : forall e k, det_check e = true -> exists v, denote e (e_fuel e + k) ≈ sret (SOk v)
+Theorem T4_eval  : forall e fuel, det_check e = true -> cand_bag (norm fuel e) = norm fuel e :: nil
+```
+
+`T4_sem` (l. 1404) is the PLAN § 3 claim, witnessed through `denE_total` and transported from ctrees
+structural equality to `≈` by `equ_wbisim_subrelation` - the same idiom every T1 row in Denotation.v
+uses, and the reason the pure layer's witness is `sret (SOk v)`: the Get/Put signature is the M4 host
+layer (Semantics.v header decision), so there is no state leg to name.
+
+`T4_eval` (l. 2644) says only what the evaluator demonstrably delivers, and § 11.3 is why it cannot
+say more: for the amended Group D pins the evaluator's normal form of a *closed* block with an
+app-body is a partial shape, so "reaches a value" is a sem-leg claim and never an eval-leg claim.  The
+leg is assembled from three lemmas, each one the honest version of a step:
+
+  * `head_redex_det` (l. 2406): if `head_redex e = Some (r, c)` and `det_struct e`, then
+    `det_struct c`.  This is where the guards do their work as *pinning*, not as filtering: G5's
+    `app_node_ok` (l. 341) forces the head to `Ret (VPrim p)`, which shadows the `R_BetaL`/`R_BetaT`
+    arms - the only rows in `Eval.v`'s selected table that can mint a `Choice` - so the "no choice is
+    ever minted" invariant is a G5 fact about shapes, not a bookkeeping claim; G4's `eq_pair_ok`
+    (l. 272, two literal values plus `lit_eqb`) leaves `EqK1` as the only live `Unify` row and its
+    contractum is a literal; G3's `slots_closed_ok` kills the promote rows inside `body_walk`
+    (`promote_guard_dead`), leaving `R_Subst`, whose conclusion is that the slots list is *unchanged*
+    (`body_walk_det`, l. 2171) and the body stays `det_struct`.
+  * `norm_det` (l. 2561): induction on fuel; at a stuck root the reconstruction re-reads G4/G5/G6 on
+    children that `det_struct` already pinned to stuck syntax, so the node is reassembled from the
+    hypothesis rather than re-derived.
+  * `cand_bag_single` (l. 2616): structural induction on `e`; a G3-closed block reads through its
+    valued slots (`slots_closed_all_valued`, l. 2309) and the IH collapses the mapped singleton.
+
+Measured facts about the toolchain, recorded because each one cost probes and the next Gallina leg
+will meet them again (rocq 9.1.1, this file's own build):
+
+  * `cbn` refuses to unfold `block_redex`: its unfolding is stuck on the `body_walk` call, so cbn
+    treats the delta step as unproductive and stops at `block_redex sl body`.  `unfold block_redex in Hh`
+    is what exposes the walk call as the scrutinee that `destruct ... eqn:Hw` can then rewrite
+    (`Eval.v` l. 222-227).  Whitelisted `cbn [f]` behaves the same way for a *productive* constant,
+    which is what keeps `prim_total p vs` visible where the rewrite has to land.
+  * `destruct (t) as [...] eqn:H` eliminates `t`'s occurrences **in place** wherever `t` is a match
+    scrutinee: `Hh : head_redex ... = Some (r, cont)` comes back as `Some (R_Prim, Ret w) = Some (r, cont)`
+    already agreeing with `Hp`, so a later `rewrite Hp in Hh` is not merely useless, it errors with
+    `Found no subterm matching`.  Read such hypotheses directly; the `first [rewrite H | idtac]` hedge in
+    `norm_det` exists for the cases where Coq generalises instead.
+  * `Ltac` bodies resolve bare identifiers against the *parameter list at definition time*
+    (`Ltac tr := subst zz.` fails "Hypothesis zz was not found"), so every hypothesis a tactic touches
+    must be passed as a parameter.
+  * `induction e` interleaves constructor arguments with their induction hypotheses in `as [...]`
+    patterns - a pattern that names only the arguments silently binds an argument name to an IH.  The
+    `cand_bag_single` proof reads its two live roots out of the goal with `match goal` instead, which
+    keeps it independent of `Expr`'s argument names.
+
+`coq/tests/ChecksTest.v` (324 lines, 45 `Example`s) is the Gallina-side mirror of § 11's corpus: the
+same 29 expressions, each with its `det_check` verdict as decision 8 derives it - **17 accept, 12
+reject, exactly the corpus's own tally**, with no pin adjusted to engine output: the file was written
+from the corpus's `det=` readings, and the only objection the first build raised was a misspelled
+`Definition` name of mine, never a verdict.  It also mirrors the nine
+`norm` pins the accepted cases carry and all seven candidate bags: the five accepted bags are
+discharged *through* `T4_eval` (the theorem, not a computation of `cand_bag`), and the two rejected
+ones (`Choice`, the open block under a `;`) are plain `cand_bag` evaluations, which is what the corpus
+means by "the evaluator's bag" there.
+
+Build-time evidence, as § 8.2 requires it to be: `Print Assumptions T4_eval` prints
+`Closed under the global context` - the eval leg is pure Gallina, no ctrees dependency - while
+`Print Assumptions T4_sem` prints the single stdlib axiom `Eqdep.Eq_rect_eq.eq_rect_eq`, the same one
+the vendored ctrees machinery contributes to every audited T1 row.  `tools/build/coq-build.sh`
+`EXPECTED_VO` now names `Checks` and `tests/ChecksTest` and the flake's kernel gate checks both `.vo`
+files alongside `tests/KernelTest.vo`; the axiom audit itself (exactly one unique axiom line, no
+`Admitted`) is unchanged, as are the m0 corpus corners.
+
+What M2 still owes is unchanged by this: T5 (the Wbisim between permuted fragments, whose witnesses
+§ 11.3 amended to the mirrored partial-shape pair), `Lower.v`'s T6/T7 for determinate fragments, and
+the golden test with zero switch sites.
+
+### 12.1 Why the eval leg lives in its own module (`coq/ChecksEval.v`, measured 2026-11-23)
+
+With `T4_eval`'s chunk inside `Checks.v`, the checker became the kernel's heaviest compilation unit
+(2653 lines) and the kernel build stopped fitting in any envelope this box can host.  What was
+measured, in the order it happened:
+
+- the gate bill (`TIMBDA_NIX_GATE_MIN=5G TIMBDA_NIX_GATE_GUARD=8`, `--max-jobs 1`, pinned `coq/
+  dune-workspace` `jobs 2`): the `timbda-kernel` derivation ran 1636 s and took the host from
+  `MemAvailable 9959 MiB` to `4955 MiB`, with swap free falling 17875 → 11882 MiB, before the gate's
+  watchdog killed our own nix client.  All three Coq-side targets (`timbda-kernel`,
+  `corpus-differential`, `corpus-m2-differential`) ended `rc=124 ... target not attested`;
+  `version-consistency` and `golden-test` stayed green; `journalctl -u earlyoom` for the window is
+  empty, so the refusal worked as designed and nothing on the host was harmed.
+- the contained path refused as well: `tools/build/coq-build.sh` at its pinned 2G/3G envelope ended
+  `Active: failed (Result: oom-kill)` on its own transient user scope - `Duration: 2h 43min`,
+  `CPU: 1min 4.7s`, i.e. the build spent its wall clock throttled against `MemoryHigh` - and left
+  `coq/_build/default` holding 8 of the expected `.vo` files.  That is the wrapper doing its job (a
+  worker OOM-killed inside its own cgroup, no Coq error, `got signal` evidence rather than a
+  verdict), and it says the *envelope* was too small for the unit, not that the proof is expensive
+  to check.
+- freeing host memory was tried and is not available: stopping Red Panda (4.0 GiB resident, 2.9 GiB
+  of swap) moved MemAvailable 8.5 → 10.2 GiB, which is not enough for a ~5 GiB working set above a
+  5120 MiB floor; the 42 GiB resident neighbour (strata-host) stays.
+
+The split is therefore a build-infra decision, not a theory decision: `coq/ChecksEval.v`
+(`Require Import Timbda.Checks`) carries `head_redex_det`, `norm_det`, `cand_bag_single` and
+`T4_eval`; `coq/Checks.v` keeps the guards, the checker and `T4_sem`.  Nothing about the claims
+moves - same statements, same proofs, same `Print Assumptions` results - and one consequence is
+visible in the imports: `ChecksEval.v` needs no `CTree`/`WBisim` import at all, which is exactly the
+fact `Print Assumptions T4_eval` reports as `Closed under the global context`.  The gate and the
+artifact list name all three files (`flake.nix` kernel gate, `tools/build/coq-build.sh EXPECTED_VO`).
+
+### 12.2 Retactoring `Denotation.v`'s `t1_norm`/`t1_fold`: § 4.3's TODO, closed (measured 2026-11-23)
+
+§ 12.1 made the M2 units cheap; the kernel build still did not fit, because § 4.3's recorded - and
+deliberately not-yet-done - hot spot is `Denotation.v`, an M0 file: `nix build` of the kernel was
+re-invalidated by M2's kernel edits, so re-billing the corpus pairs required a cold `coqc Denotation.v`
+at 11.2 GiB private memory.  With the resident 42 GiB neighbour (strata-host) and Red Panda already
+stopped, that number fits nowhere on this box: the gate watchdog refused the nix bill, a 4.6 GiB
+envelope OOM-killed a worker inside its own cgroup, and the contained wrapper stalled at `memory.high`
+(`Result: oom-kill`, `Duration: 2h 43min`, `CPU: 1min 4.7s`).  So the TODO got done.
+
+**Localization by cumulative prefix compiles.**  Rocq 9.1.1 has no `Set Timing`, no `Set Time` and no
+`Set Ltac Profiling` - each prints `Warning: There is no flag or option with this name` - so per-lemma
+cost was measured by compiling the file truncated at lemma boundaries (single `coqc`, `/usr/bin/time -v`):
+
+| prefix ends at | wall | maxrss |
+|---|---|---|
+| l.196 (all Fig. 9 unify rows) | 1.03 s | 458 MiB |
+| l.205 (`RewSound_EqFail`) | 2.35 s | 458 MiB |
+| l.212 (`RewSound_Add`) | 97 s | 7.5 GiB |
+| l.251 (`RewSound_Cons` + rest of Fig. 10) | 6:41 | 10.4 GiB |
+| whole file | 11:48 | 11.2 GiB |
+
+One lemma - `RewSound_Add`, a two-line `Proof. intros. t1_norm; reflexivity. Qed.` at fuel 5 - carries
+7.5 GiB of that.  The raw dumps (`Set Printing All.`, obtained from real tactic failures - a `Fail
+reflexivity` swallows its own error text) show why: after `kernel_cbn` the `App`/`TupE` rows are nested
+`@CTree.bind (@sret …) (fun r => …)` chains under lambdas, and `setoid_rewrite` inside `repeat` runs a
+full position search through the `Chain`/`Proper` instances ctrees registers globally, once per layer.
+
+**The alias that hid it.**  The kernel's pure head is its own constant, `Semantics.v:50`
+`Definition sret x := go (RetF x)`; the library law is headed by ctrees' notation
+(`CTreeDefinitions.v:102`) `Ret x := (go (RetF x))` - same body, different name.  `setoid_rewrite`
+matches up to conversion, so it paid the search cost without ever exposing this; plain `rewrite`
+matches syntactically and reported `Found no subterm matching @CTree.bind … @go … @RetF …`.  A
+`t1_norm` without the setoid search therefore did not even type-check until the law was restated at
+the kernel head.
+
+**The retactor** (statements untouched; only the two Ltacs and one new bridge lemma):
+
+```coq
+Lemma bind_sret_l {X Y : Type} (x : X) (k : X -> ctree void1 B2 Y) :
+  sret x >>= k ≅ k x.
+Proof. unfold sret. apply bind_ret_l. Qed.
+
+Ltac t1_norm := apply equ_wbisim_subrelation; kernel_cbn;
+  repeat (first [ rewrite bind_sret_l | progress kernel_cbn ]).
+```
+
+Normalize, then peel the exposed head binds with plain `rewrite` - the same idiom ctrees' own proofs
+use (`Misc/Head.v`, `Interp/FoldCTree.v`: `rewrite bind_ret_l; reflexivity`).  Two toolchain facts
+learned writing it: the bridge must stand *before* the tactics (Ltac resolves bare identifiers at
+definition time; the first cut failed "The reference bind_sret_l was not found"), and it must be
+stated with the `>>=` notation, not the constant `bind`, which is not in scope unqualified.
+
+**Measured result.**  Cold `coqc Denotation.v` alone: 708 s and 11,202,248 kB maxrss before; **181 s
+and 1,937,748 kB** after - 6x less memory, 4x faster, and the three `Print Assumptions` audits it ends
+with print the same single `Eqdep.Eq_rect_eq.eq_rect_eq` fingerprint as before, so the kernel gate's
+axiom audit is unaffected.  The § 4.3 table's cap-attempts (2G/3G … 4800M) all died on this unit.
+
+**Whole-tree result (same day).**  A cold `tools/build/coq-build.sh` (pinned `jobs 2`, envelope back at
+its documented `HIGH=2G MAX=3G`, the setting every § 4.3 attempt died against) finished with scope-cgroup
+peak **1936 MiB**, `memory.events` counters `high 0 max 0 oom_kill 0` - the build never touched the soft
+cap - `ok: all 11 expected .vo artifacts present, dune exit 0`, zero `Error:`/`Admitted` lines, and host
+MemAvailable low-water 10.9 GiB.  The retactor did not move the cost elsewhere: it removed it.

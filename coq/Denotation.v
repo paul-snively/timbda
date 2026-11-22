@@ -84,6 +84,20 @@ Require Import Timbda.Syntax Timbda.Rewriting Timbda.Semantics.
    deliberately kept out so that rule hypotheses can be matched against them. *)
 
 (* Coq 9 delta lists are space-separated: `cbn [a, b]` is a syntax error. *)
+
+(* Kernel-`sret` form of ctrees' `bind_ret_l`.  The pure arguments in this file's
+   goals are headed by `Timbda.Semantics.sret` (`go (RetF x)`), while the library
+   lemma's pattern is headed by the notation `Ret x` (`go (RetF x)` under another
+   name); plain `rewrite` matches syntactically and finds nothing through the
+   alias (measured 2026-11-23).  The bridge states the law at the kernel head, so
+   the peeling loops below match it directly.  It stands before the tactics
+   because Ltac resolves bare identifiers at tactic-definition time. *)
+Lemma bind_sret_l {X Y : Type} (x : X) (k : X -> ctree void1 B2 Y) :
+  sret x >>= k ≅ k x.
+Proof.
+  unfold sret. apply bind_ret_l.
+Qed.
+
 Ltac kernel_cbn :=
   cbn [denE denE_tup apply_c iter_step closeSlots closeV closeE
        prim_app prim_total prim_sres unify_top unify_seq sret
@@ -96,14 +110,25 @@ Ltac kernel_cbn_foldprim :=
        root_of root_eqb no_eq_rule_pair is_lit_val is_int_val lit_eqb
        walkSlotsV anySlotsV negb andb rev app length].
 
-(* Full normalization: prim_total is unfolded as well. *)
-Ltac t1_norm := apply equ_wbisim_subrelation;
-  repeat (setoid_rewrite bind_ret_l; kernel_cbn).
+(* Full normalization: prim_total is unfolded as well.
+
+   M2 retactor (2026-11-23, docs/DESIGN-NOTES.md § 12.2).  The original loop was
+   `repeat (setoid_rewrite bind_ret_l; kernel_cbn)`.  Measured by cumulative prefix
+   compiles of this file: `RewSound_Add` alone cost 94 s and 7.5 GiB of private
+   memory (the file total: 708 s, 11.2 GiB), and the cost is the deep setoid
+   traversal - `setoid_rewrite` explores every position under the continuations'
+   lambdas and matches through the globally registered ctrees Proper instances,
+   several times (once per fuel layer).  The peel below does the same work the way
+   ctrees' own library proofs do it (FoldCTree.v, Head.v): normalize, then peel the
+   exposed head binds with plain `rewrite` (one linear pass per layer).  It is a
+   tactic change only: every lemma statement in this file is untouched. *)
+Ltac t1_norm := apply equ_wbisim_subrelation; kernel_cbn;
+  repeat (first [ rewrite bind_sret_l | progress kernel_cbn ]).
 
 (* Normalization that keeps `prim_total p [...]` folded, for rows whose
    hypothesis is an equation about it (the Fig. 10 schema rows). *)
-Ltac t1_fold := apply equ_wbisim_subrelation;
-  repeat (setoid_rewrite bind_ret_l; kernel_cbn_foldprim).
+Ltac t1_fold := apply equ_wbisim_subrelation; kernel_cbn_foldprim;
+  repeat (first [ rewrite bind_sret_l | progress kernel_cbn_foldprim ]).
 
 (* ---------- helpers ---------- *)
 

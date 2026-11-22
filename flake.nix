@@ -366,6 +366,15 @@
               echo "--- axiom audit (Print Assumptions, coq/tests/KernelTest.v) ---"
               test -f _build/default/tests/KernelTest.vo \
                 || { echo "FAIL kernel tests did not compile"; exit 1; }
+              # M2 (2026-11-23): the T4 checker theory, its eval-side leg and the corpus-mirror
+              # tests stand in the same gate as the M0 tests - a kernel build that silently skipped
+              # any of them is not a pass (tools/build/coq-build.sh EXPECTED_VO mirror).
+              test -f _build/default/Checks.vo \
+                || { echo "FAIL the T4 checker theory did not compile"; exit 1; }
+              test -f _build/default/ChecksEval.vo \
+                || { echo "FAIL the T4 eval-side leg did not compile"; exit 1; }
+              test -f _build/default/tests/ChecksTest.vo \
+                || { echo "FAIL the M2 checker tests did not compile"; exit 1; }
               if grep -n "Admitted" build.log; then
                 echo "FAIL Admitted appeared in build output"; exit 1
               fi

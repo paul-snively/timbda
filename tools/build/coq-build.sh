@@ -153,7 +153,10 @@ cd "$COQ_DIR" || fail "no coq/ directory at $COQ_DIR"
 mkdir -p "$(dirname "$LOG")" || fail "cannot create the log directory for $LOG"
 
 # ---- 3. expected artifacts (anti-vacuity, same rule as the corpus corners) --
-EXPECTED_VO=(Syntax Rewriting Semantics Denotation Eval KernelStub Probe tests/KernelTest)
+# M2 addition (2026-11-23): Checks is the T4 checker theory, ChecksEval its eval-side leg and
+# tests/ChecksTest the corpus-mirror file (tests/corpus/m2-det.texpr's 29 verdicts), so a build
+# that skipped any of them is vacuous in exactly the sense the corpus corners guard against.
+EXPECTED_VO=(Syntax Rewriting Semantics Denotation Eval Checks ChecksEval KernelStub Probe tests/KernelTest tests/ChecksTest)
 missing_vos() {
   local out=() t
   for t in "${EXPECTED_VO[@]}"; do
