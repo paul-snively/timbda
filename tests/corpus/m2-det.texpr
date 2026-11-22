@@ -1,4 +1,4 @@
-# M2 gate corpus - determinate-fragment claims (draft 1, 2026-11-21).
+# M2 gate corpus - determinate-fragment claims (draft 1, 2026-11-21; amended 2026-11-22).
 #
 # WHAT THIS FILE IS.  The corpus shadow of the four M2 gate rulings recorded in
 # docs/PLAN.md sec. 8 decision 8 (accepted pending Verse-team revision): every case
@@ -13,9 +13,14 @@
 # 2026-11-21 from the rule text (docs/VERSE-RULES.md sec. 2-5, paper Figs. 8-13),
 # the pinned oracle (Core/Expr.hs, Red.hs - already pinned by m0.texpr where cited),
 # and kernel header comments (coq/Syntax.v prim_total; coq/Rewriting.v promote_ok /
-# promoteHpGo).  No expectation was taken from evaluator output; both corners have
-# NOT yet run against this file.  Wiring the corners to a second spec file is the
-# next infra step (awaiting review); until then this file is claims only.
+# promoteHpGo).  No expectation was taken from evaluator output.  Amendment history
+# (2026-11-22, first gate run): 27 of 29 pins executed exactly as derived - including
+# the Group G promote-freshness refusals (all four `no row`) - and the two Group D
+# block pins (oo_indep_blocks_fwd/rev) proved derivation errors: draft 1 assumed
+# Subst reaches the tuple-argument position, but the Fig. 8 `S` grammar recorded in
+# coq/Syntax.v (l.116-131) and the deferred Subst-Deep Tier-2 row (coq/Rewriting.v
+# l.480-483) say it does not.  The pins are amended to the rule-text reading; the
+# full re-derivation is in the two `why` fields and tools/corpus/README.md sec. 8.
 #
 # Classification vocabulary in the `why` fields:
 #   det=yes        closed blocks only, total value candidate, no choice, no stuck shape
@@ -144,18 +149,18 @@ case oo_swap_prefix
 case oo_indep_blocks_fwd
   head none
   expr (seq (block ((tint 5)) (app (ret (primv padd)) (tup (ret (var 0)) (ret 1)))) (block ((tint 7) (tint 9)) (ret (var 0))))
-  norm (seq (block ((tint 5)) (ret 6)) (block ((tint 7) (tint 9)) (ret 9)))
-  cands (seq (block ((tint 5)) (ret 6)) (block ((tint 7) (tint 9)) (ret 9)))
-  cands_why "one candidate: both blocks are slot-complete (decision 8a in-fragment), so each is read through; the seq holds the candidate"
-  why "det=yes. Slot-disjoint closed blocks: the body walk Substs (line 412) inside the first (body index 0 is slot 0, value 5 -> add yields 6) and the second (index 0 is slot 1, value 9). A Block is not a value, so no Seq row fires at the root - the seq node survives normalization, which is exactly what T5/T6 must treat: the independence here is *slot-disjointness plus no shared binder*, and Lower.v's straight-line form must emit the two slot writes in either order (T5) without ever consulting an open block (decision 8a)."
+  norm (seq (block ((tint 5)) (app (ret (primv padd)) (tup (ret (var 0)) (ret 1)))) (block ((tint 7) (tint 9)) (ret 9)))
+  cands (seq (block ((tint 5)) (app (ret (primv padd)) (tup (ret (var 0)) (ret 1)))) (block ((tint 7) (tint 9)) (ret 9)))
+  cands_why "one candidate: the normal form itself (cand_bag law) - the seq holds it; block 1 is a stuck leaf (no row at a block head with an app body), block 2 resolved"
+  why "det=yes (amended 2026-11-22). Draft 1 pinned the first block as collapsing to (ret 6); the first gate run flagged it (FAIL in both corners, driver log lines 17-21) and the re-derivation from rule text - not from the engine - says the draft was wrong: at a block head only Fig. 8 rows apply, RewSubst (coq/Rewriting.v l.398-403) matches only bodies of the shape fillS k (Ret (VVar i)) with k in the recorded S grammar (coq/Syntax.v l.116-131: hole, e=S, S=e, e;S, S;e, and the e[S]/S[e] variants), and the tuple-argument position inside an app body is not in that grammar - the value-context/block-inside variants are the Subst-Deep Tier-2 row deferred to M3 (coq/Rewriting.v l.480-483). So under one-pass rebuild (README sec. 3.2) block 1 keeps its app body: no Subst (unreachable), Gc1 premise false (slot 0 used), Promote premise needs a unify shape, no R_Seq/R_Norm4 at the seq root (Block is not a value, line 483). Block 2 matches the Subst pattern with k = Hole and resolves to (ret 9) - that half of draft 1 stands. M0 precedents the amended pin matches: subst_then_eqfail (Subst does reach unify-argument S positions) and betal_body_is_slot_variable (host-position blocks never collapse in m0 pins). T4's fair-sem side still resolves block 1 to the value 6 (paper-side slot lookup in evaluation, or the deferred Subst row - the kernel has no Get row, README sec. 5), so decision 8a's fragment classification is unchanged; what changes is that the *evaluator* artifact is a partial shape, exactly like norm4_revisit_partial above. The T5/T6 story (slot-disjoint closed blocks, order-agnostic straight-line lowering) is carried by the mirrored rev pin and the first three Group D cases."
 
 case oo_indep_blocks_rev
   head none
   expr (seq (block ((tint 7) (tint 9)) (ret (var 0))) (block ((tint 5)) (app (ret (primv padd)) (tup (ret (var 0)) (ret 1)))))
-  norm (seq (block ((tint 7) (tint 9)) (ret 9)) (block ((tint 5)) (ret 6)))
-  cands (seq (block ((tint 7) (tint 9)) (ret 9)) (block ((tint 5)) (ret 6)))
-  cands_why "one candidate; mirror image of oo_indep_blocks_fwd"
-  why "det=yes. The swap pair of oo_indep_blocks_fwd: pins differ by prefix order, candidate shape identical. Together the two pins are the corpus witness pair T5's `seq e1 e2 ~ sem seq e2 e1` lemma will be checked against once T5 exists."
+  norm (seq (block ((tint 7) (tint 9)) (ret 9)) (block ((tint 5)) (app (ret (primv padd)) (tup (ret (var 0)) (ret 1)))))
+  cands (seq (block ((tint 7) (tint 9)) (ret 9)) (block ((tint 5)) (app (ret (primv padd)) (tup (ret (var 0)) (ret 1)))))
+  cands_why "one candidate; mirror image of the amended fwd pin"
+  why "det=yes (amended 2026-11-22, same correction as oo_indep_blocks_fwd - see its why for the full re-derivation). The swap pair now pins: same partial shape mirrored (resolved block in prefix position, stuck app-body block in suffix position), identical candidate count, same final component 9/6 pattern. Draft 1's collapse error was symmetric; the amendment is symmetric too. As a pair the two pins now show T5 what it actually needs: permutation invariance of the *evaluator* normal form (each permutation reaches the mirrored partial shape as its own normal form) without assuming collapse that the M0 row set does not provide."
 
 # ---------- group E: rejection witnesses - what det_check must say no to ------
 
