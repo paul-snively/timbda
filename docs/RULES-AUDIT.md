@@ -54,7 +54,7 @@ row (Timbda-0 implements Core Verse only); the § 2 records carry it.
 | `RewBetaT` | BetaT | 11 | 1 | 0 | R_BetaT | deferred | C1; the candidate bodies close only via the promote rows |
 | `RewBetaT0` | BetaT0 (kernel extension from line 475) | 11 | 1 | 0 | R_BetaT0 | **discharged** | `RewSound_BetaT0` (relies on the decision-5 fail short-circuit; fuel `S(S f)` covers the function arm only) |
 | `RewSeq` | Seq | 12 | 1 | 0 | R_Seq | **discharged** | `RewSound_Seq` (fuel `S(S f) → S f`) |
-| `RewNorm1` | Norm1 | 12 | 1 | 0 | R_Norm1 | deferred | **fuel rebudgeting (C3)**: node moved across the `=`/`;` boundary; needs the fuel-transfer/monotonicity lemma that M2's T8 adequacy proof also depends on |
+| `RewNorm1` | Norm1 | 12 | 1 | 0 | R_Norm1 | deferred | **fuel rebudgeting (C3)**: node moved across the `=`/`;` boundary; needs the fuel-transfer/monotonicity lemma the T8 adequacy proof also depends on (corrected 2026-11-21: was "M2's T8" - T8 sits at M3, PLAN § 5, decision log 8 corollary) |
 | `RewNorm2` | Norm2 | 12 | 1 | 0 | R_Norm2 | deferred | C3 |
 | `RewNorm3` | Norm3 | 12 | 1 | 0 | R_Norm3 | deferred | C3 |
 | `RewNorm4` | Norm4 | 12 | 1 | 0 | R_Norm4 | deferred | C3 (progress role, paper lines 502-503) |
@@ -63,7 +63,7 @@ row (Timbda-0 implements Core Verse only); the § 2 records carry it.
 | `RewLamAlpha` | LamAlpha | 12 | 1 | 0 | never | **discharged** | `RewSound_LamAlpha`, same treatment |
 | `RewFloat` | Float | 12 | **2** | 0 | no (M3) | deferred | C1 + the C-general form needs the flatten-substitution lemma; kernel states C = □ with a free `sx ++ sy` merge (outermost-first slots) |
 | `RewSubst` | Subst | 8 | 1 | 0 | **yes** (`R_Subst`, M0 close-out) | deferred | C1: block-slot completion semantics (decision 3); the kernel restriction (binder-free `CtxS`) is recorded at the ctor. Selected now by the head table's `Block` arm (`body_walk`), which is a *strategy* fact, not a licence: `RewSound_Subst` is still what T1 owes, and its lhs (a `None` slot) is SStuck in the M0 denotation while its rhs is not |
-| `RewGc1` | Gc1 (kernel split of the paper's Gc) | 8 | 1 | 0 | no (M2) | deferred | C1, plus the `dropSlot`/`shrinkE` reindexing computation lemma; the SCC (recursive-heap) form is the no-ctor record `Gc-Rec`, § 2. Stays unselected deliberately: without the reindexing lemma there is nothing to check the slot-shrinking against |
+| `RewGc1` | Gc1 (kernel split of the paper's Gc) | 8 | 1 | 0 | no (M3/T1) | deferred | C1, plus the `dropSlot`/`shrinkE` reindexing computation lemma; the SCC (recursive-heap) form is the no-ctor record `Gc-Rec`, § 2. Stays unselected deliberately: without the reindexing lemma there is nothing to check the slot-shrinking against. ("no (M2)" resolved 2026-11-21: straight-line lowering has no dead-slot removal to do - PLAN § 8 decision 8d) |
 | `RewPromoteL` | PromoteL | 8 | **2** | 0 | **yes** (`R_PromoteL`, M0 close-out) | deferred | tier 2 by statement: `hp[v/x]` is restricted to the identity via `promote_hp_ok`; the general evolving-heap form is the M3/T1 obligation. Selected now (it is the row that closes a BetaL/BetaT `x = v`), so the C1 divergence is *reachable* from `head_redex`, not just latent |
 | `RewPromoteR` | PromoteR | 8 | **2** | 0 | **yes** (`R_PromoteR`, M0 close-out) | deferred | as PromoteL; kept separate because the paper rules out a swap rule (lines 425-428: `x = y` could loop) — the kernel tries the two directions as two independent matches for the same reason (`promote_dir`) |
 | `RewIterFail` | IterFail | 13 | 1 | 0 | no (M3) | deferred | **iter/choice corner (C4)**: context-hole matcher (CtxC walk) + an `iter_step`/`closeSlots` computation lemma |
@@ -156,7 +156,8 @@ lists the two there as kernel-side facts rather than as dialect rewrites.
   different lemma, not the same one funded differently.
 * **C3 — fuel rebudgeting.**  Norm1-Norm5 relocate evaluation nodes across `=`/`;`;
   each side consumes a different node count under uniform fuel.  Discharging them needs
-  a `denE` fuel-monotonicity lemma — the same lemma M2's T8 adequacy draft leans on.
+  a `denE` fuel-monotonicity lemma — the same lemma the T8 adequacy draft leans on (corrected
+  2026-11-21: was "M2's T8" - T8 sits at M3, PLAN § 5, decision log 8 corollary).
   Same caveat as C2: the rebudgeting is a consequence of the fold shape (`denE_seq`/
   `denE_unify` charge per node), so "fuel" here is interpreter bookkeeping; it is not a
   claim about how much evaluation the program does, and it is not fundable by choosing a

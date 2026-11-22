@@ -442,6 +442,27 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
    measured 3 concurrent workers -> 1), while the daemon's own `max-jobs` still awaits root-side
    `/etc/nix/nix.custom.conf`; `earlyoom --avoid/--prefer` and the sysctl tuning remain unapplied.
    Statuses: `tools/build/README.md` § "Status after 2026-11-19".)  Docs: docs/DESIGN-NOTES.md § 4.2-4.3, tools/build/README.md.
+8. (2026-11-21; M2 gate rulings, **accepted pending** - revision is owed to new Verse-team
+   information (Sweeney/SPJ/publication line), and any revision must be recorded saying which
+   limb moved and on what receipt.  (a) **M2's determinate fragment is closed blocks only**: every
+   slot `Some`; open-block completion semantics stays the admitted Tier-2 M3/T1 obligation
+   (`RewBetaL`/`RewBetaT`/`RewSubst`/`RewPromoteL` general forms, RULES-AUDIT C1), so T4/T5/T6/T7
+   never face a `None` slot and the M0-reachable C1 divergence stays out of M2's scope.  (b) **T6
+   is stated as conditional refinement**: the C behaviour refines the kernel where the kernel does
+   not get stuck; `det_check` rejects obvious stuck shapes (literal `Div _ 0` - consistent with
+   DEV-5 half 2's measured PStuck reading); the floor-vs-C-truncation correction ladder the
+   dialect already carries (`divZ`, DEV-20) must be carried through `Lower.v` so T6's division
+   claims match the kernel's `Z.div`; T3's C++-rounding half (DEV-5) is not in M2's scope - M2
+   ends at Clight.  (c) **DEV-20's owed bound is verifier-side**: external literals wider than the
+   128-bit mirror are rejected, plus a span bound on eager `DotDot` materialisation; fuel is not
+   the mechanism.  (d) **Gc1 stays unselected through M2**: straight-line lowering has no dead-slot
+   removal to do, and the `dropSlot`/`shrinkE` reindexing lemma has nothing to check against until
+   slot shrinking actually runs.)  Corollary cleanups the same day: RULES-AUDIT's "no (M2)" on the
+   Gc1 row resolves to M3/T1 (8d), and the "M2's T8 adequacy" phrasing at RULES-AUDIT ll. 57/159
+   corrects to M3 (PLAN § 5 puts T8 at M3), giving the C3 fuel-rebudget lemma a consistent home.
+   The M2 golden-test corpus follows decision 6's ritual: claims written by hand before either
+   engine runs.
+
 ## 9. Known reference anchors
 
 - Verse papers: simon.peytonjones.org/oplss-26/ ; OPLSS authoritative lecture PDFs at

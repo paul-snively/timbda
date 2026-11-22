@@ -962,4 +962,7 @@ literal's width against the mirror - so a wider-than-mirror literal in external 
 assertion, not an error.  Fuel bounds kernel steps, not magnitudes (§ 5), and `DotDot` materialises
 its inclusive span eagerly as a VTup, so materialisation - not folding - is where a magnitude bound
 has to bite.  Recording it as an obligation: M2 owes a literal-width/materialisation bound (fuel or
-size) before the canonicalizer consumes IR the corpus did not generate.
+size) before the canonicalizer consumes IR the corpus did not generate.  Mechanism accepted
+2026-11-21, pending Verse-team revision (PLAN § 8 decision 8c): verifier-side - external
+literals wider than the mirror are rejected at verification, plus a span bound on eager
+`DotDot` materialisation; not fuel.
