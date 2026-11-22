@@ -403,9 +403,14 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
    **Status: queued, not decided** - the ruling (keep the stricter guard and state T4's sem-side
    with a VC-fresh-but-kernel-stuck witness, vs. relaxing `promote_ok` toward the line-416 reading)
    waits on the Sweeney/SPJ publication line, the same receipt decision 8 is owed.  Evidence:
-   docs/DESIGN-NOTES.md § 11.2-11.3.  Related correction recorded with it: "freshness" is a property
-   of the kernel's selected rows, not of any fuel - the kernel evaluator takes no fuel argument at
-   all, and `fuel` is extraction-scaffold/corpus-index machinery (docs/DESIGN-NOTES.md § 12).
+   docs/DESIGN-NOTES.md § 11.2-11.3.  Related correction recorded with it, re-measured against the
+   code on 2026-11-22: "freshness" is a property of the kernel's selected rows, not of any fuel -
+   row *selection* is fuel-free (`head_redex` coq/Eval.v l. 234 and `cand_bag` l. 331 take no fuel
+   argument), while the evaluator proper is fuel-bounded (`Fixpoint norm (fuel : nat) (e : Expr)`,
+   coq/Eval.v l. 284) and the corpus harness's default fuel 24 (tools/corpus/corpus.py) is
+   extraction-scaffold machinery driving that bounded walk (docs/DESIGN-NOTES.md § 8.3).  The
+   first draft of this item said the evaluator "takes no fuel argument at all" and cited a
+   non-existent DESIGN-NOTES § 12; both are wrong and are corrected here.
 
 ## 8. Decision log (also in Strata, tag "timbda")
 
