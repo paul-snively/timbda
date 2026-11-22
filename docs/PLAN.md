@@ -486,6 +486,48 @@ Discovered prior art (cite and differentiate; verify marked items during the M0 
   NOT formalized (sec. 3.7); "choices laid out in space, not in time" — search-as-data is VC's own
   design thesis, not our invention. VC != Timbda-0: Timbda-0 is the OPLSS'26 ZF-denotation line,
   whose full paper SPJ repeatedly calls "the subject of another paper" (still unpublished).
+- The Ariola chain inside VC — the prior-art lineage of the very sharing/recursive-substitution
+  machinery this audit measures. Entries transcribed 2026-11-21 from the VC extended-version PDF
+  itself (doi:10.1145/3607845; simon.peytonjones.org copy); every DOI below is exactly as VC's own
+  reference list prints it. Launchbury, A Natural Semantics for Lazy Evaluation, POPL'93
+  (doi:10.1145/158511.158618): the heap-threading semantics VC's rewrite semantics replaces — VC's
+  intro says the only semantics "faithful to its sharing semantics ... was an operational semantics
+  that sequentially threads a global heap through execution", "But then Ariola et al., in a seminal
+  paper, showed how to reify the heap into the term itself ... Inspired by their idea, we present a
+  new rewrite system for functional logic programs that reifies logical variables, unification, and
+  choice into the term itself." Ariola, Maraist, Odersky, Felleisen, Wadler, A Call-by-Need Lambda
+  Calculus, POPL'95 (doi:10.1145/199448.199507): VC annotates its central sharing rule subst as
+  "precisely the same as the let-v rule of Ariola et al. [1995]". Occurs discipline: VC's occurs
+  check is rule u-occurs — "u-occurs reduces x = ⟨1, x, 3⟩; e to fail using the context V =
+  ⟨1, □, 3⟩" — with "the side condition v ≠ V [ x ] in subst avoids an overlap with u-occurs".
+  Recursion: VC §4.1.2 reproduces the letrec pathology verbatim — "It is well known that adding
+  letrec to the lambda calculus makes it non-confluent, in a very tiresome, but hard-to-avoid, way
+  [Ariola and Blom 2002]" (their "Notorious Even/odd Problem"): VC's own term ∃x y. x = ⟨1, y⟩;
+  y = (λz. x); x, reduced substituting-for-x-first vs substituting-for-y-first, yields two cyclic
+  terms that "cannot be joined", "equivalent only under some kind of graph isomorphism". Ariola &
+  Klop, Cyclic Lambda Graph Rewriting, LICS'94 (doi:10.1109/LICS.1994.316066); Ariola & Klop, Lambda
+  Calculus with Explicit Recursion, Inf. Comput. 139(2), 154–233, 1997 (doi:10.1006/inco.1997.2651)
+  — VC §4.3: "Ariola and Klop studied a form of the lambda calculus with an added letrec construct
+  and determined (like us) that their calculus was not confluent; then they added a specific
+  constraint on recursive substitution and proved that the modified calculus is confluent." Ariola &
+  Blom, Skew Confluence and the Lambda Calculus with Letrec, Ann. Pure Appl. Log. 117(1), 95–168,
+  2002 (doi:10.1016/S0168-0072(01)00104-X). Ledger caution, from the paper's own text: VC's proven
+  confluence (Thm 4.1, full proof App. C) holds only for "well-behaved" terms — those that never
+  reduce to "obviously problematic" lambda-unification / cyclic-substitution terms — and inside that
+  carve-out recursion is by fixpoint combinator: "one can still write recursive (and non-terminating)
+  programs using one's favorite fixpoint combinator, such as Y or Z." VC's stated open problem is the
+  Ariola-Blom tool itself: "We believe, and currently are trying to prove, that VC without the pesky
+  no-recursion side condition of Theorem 4.1 is skew confluent" — with the paper's own caveat that
+  "the proof of skew confluence is not yet complete" (App. D). Cite. Kernel-side counterpart
+  (measured 2026-11-21): the kernel stands inside a carve-out of its own — "Non-recursive slots only
+  (recursive heaps = Gc-Rec/Def-Rec Tier-2 rows)" (coq/Syntax.v header); the promote/GC occurs
+  guards carry "Exact for the non-recursive M0 fragment" (coq/Rewriting.v ll. 78-83, 226, 232-236);
+  and VERSE-RULES' Gc row records "M0 kernel restricts to non-recursive `def`", the Gc-Rec SCC
+  variant admitted as a Tier-2 row (M3/T1). The kernel is the
+  well-behaved side of the fork. VC's even/odd term above is recorded as a candidate out-of-corpus
+  test for the M2/M3 flex obligations: if a flex fill ever produces a cyclic slot, kernel behaviour
+  is measured before this ledger says anything about it — no recursion claim is inheritable from
+  VC's own unfinished skew-confluence proof.
 - github.com/sweirich/lambda-calculus (Weirich; MIT; ~77 commits; README verified 2026-11-16): Coq
   mechanizations of lambda calculus + "extensions for the verse programming language":
   verse/syntax.v (well-scoped de Bruijn via autosubst), verse/icfp.v (equational theory explicitly
@@ -520,9 +562,16 @@ Discovered prior art (cite and differentiate; verify marked items during the M0 
 - Omnisemantics (MIT PLV): set-of-outcomes Coq semantics; forward compiler-correctness proofs for
   nondeterminism — vocabulary precedent for Denotation.v.
 - github.com/paul-snively/verse (2022-23, project owner's own prior work): Coq experiments on VC;
-  conjecture that VC uses the "LOW" reduction strategy (Biernacka et al., ICFP'22 Zoo of strategies)
-  and ambition to prove confluence. Personal intellectual lineage; this project is the machinery
-  that can finally answer it.
+  conjecture that VC uses the "low" reduction strategy and ambition to prove confluence. Personal
+  intellectual lineage; this project is the machinery that can finally answer it. Venue correction
+  2026-11-21 (this line previously read "Biernacka et al., ICFP'22 Zoo of strategies"): the zoo
+  paper is Biernacka, Charatonik & Drab, The Zoo of Lambda-Calculus Reduction Strategies, And Coq,
+  LIPIcs vol. 233 (13th ITP), art. 7, pp. 7:1–7:19, 2022 (doi:10.4230/LIPIcs.ITP.2022.7; verified
+  from the Dagstuhl PDF); "low" ("leftmost innermost weak") is a strategy that paper *introduces*
+  ("By swapping the phases of lcbw and rcbw, we have formulated the low (leftmost innermost weak)
+  strategy"), its Coq formalization sits at bitbucket.org/pl-uwr/strategies, and it names
+  call-by-need as the admitted omission from its zoo ("it is harder to characterize, and it still is
+  in the wild") — the region where VC-like strategies live. Cite.
 
 Claim boundaries — legitimately ours (paper-defensible phrasing):
 1. Verified SPECIALIZATION of a search language: a certified Gallina kernel for Verse-lineage

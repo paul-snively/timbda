@@ -15,7 +15,19 @@ Rule provenance itself lives in `docs/VERSE-RULES.md`; milestone scope in
   *outside* the block); the body position has cutoff `|X| + d`.
 - Slot values are `option Val`: `None` = declared-but-unvalued, the domain of
   the promote/Gc rules (VERSE-RULES § 2, Fig. 8).  Non-recursive slots only;
-  recursive heaps are the Gc-Rec/Def-Rec Tier-2 rows.
+  recursive heaps are the Gc-Rec/Def-Rec Tier-2 rows.  What that boundary is, in
+  the published record (cited 2026-11-21): the machine-side twin of the carve-out
+  VC's own confluence theorem stands on — VC proves confluence (Thm 4.1) only for
+  "well-behaved" terms, and its unrestricted recursion question is open by the
+  paper's own admission (skew confluence, Ariola & Blom, APPL 2002; VC: "the proof
+  of skew confluence is not yet complete"); full lineage in PLAN § 11 "The Ariola
+  chain inside VC", incl. VC's rule u-occurs, which fails the cyclic unification
+  x = ⟨1, x, 3⟩; e outright.  The kernel stands on the well-behaved side of that
+  fork: the promote/GC occurs guards (Rewriting.v ll. 78-83, 226, 232-236) carry
+  "Exact for the non-recursive M0 fragment", and VC's even/odd term is queued as a
+  candidate out-of-corpus test for the M2/M3 flex obligations.  The Tier-2
+  recursive rows, when built, inherit the choice VC faces — carve-out vs. skew
+  confluence — as a decision to measure and cite, not inherit.
 - `liftE k e` inserts `k` binders *outside* `e`; `shrinkE e` (cutoff `d`) removes
   the binder at index `d` and reindexes above it.  Under the GC1 side condition
   (`occurs` says the dropped binder is unused) the `Var d -> Var 0` clause is
