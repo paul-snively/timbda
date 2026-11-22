@@ -218,6 +218,133 @@
           # Timbda.*` without going through dune (the two corpus corners).
           kernelTheoryDir =
             "${self.packages.${system}.timbda-kernel}/${stack.userContrib}";
+
+          mkCorpusCoqCorner = { cornerName, specFile }: pkgs.stdenv.mkDerivation {
+            pname = cornerName;
+            version = "0.1.0";
+            src = ./.;
+            nativeBuildInputs = [ pkgs.python3 ] ++ stack.ocamlForRocq;
+            buildInputs = [ self.packages.${system}.timbda-kernel ] ++ stack.rocqDeps;
+            phases = [ "buildPhase" "installPhase" ];
+            buildPhase = ''
+              set +e
+              # The kernel package installs its .vo trees under userContrib; rocq finds
+              # them through ROCQPATH, which its own setup hook fills in for the rocqDeps
+              # but not for timbda-kernel (a plain mkDerivation), so name it here.
+              export ROCQPATH="${kernelTheoryDir}''${ROCQPATH:+:}$ROCQPATH"
+              # The Coq corner: corpus.py generates a file of `reflexivity` assertions
+              # about Coq's own evaluator (Timbda.Eval.norm / head_redex), and rocq
+              # either compiles that file or it does not.  `Print corner_cases.` inside
+              # the generated file prints the Coq-side case count for the cross-check.
+              # Every step's status lands in status.txt: an empty corpus file or a
+              # silently-missing tool must not be able to produce a vacuous "exit 0"
+              # (that is exactly how this corner first fooled us - an empty corner.v
+              # compiles happily).
+              cp $src/tools/corpus/corpus.py .
+              python3 corpus.py --count $src/${specFile} > corpus-count.txt
+              reader_rc=$?
+              python3 corpus.py --count-cands $src/${specFile} > corpus-cands.txt
+              cands_rc=$?
+              python3 corpus.py --emit-coq $src/${specFile} > corner.v
+              rocq compile corner.v > coq-corner.log 2>&1
+              rocq_rc=$?
+              grep -n -A6 "Error" coq-corner.log
+              {
+                echo "reader_rc=$reader_rc"
+                echo "cands_rc=$cands_rc"
+                echo "reader_cases=$(cat corpus-count.txt)"
+                echo "reader_cands=$(cat corpus-cands.txt)"
+                echo "corner_lines=$(wc -l < corner.v)"
+                echo "rocq_rc=$rocq_rc"
+                echo "marker=$(grep -E "corner_cases = [0-9]+" coq-corner.log | head -1)"
+                echo "cands_marker=$(grep -E "corner_cands = [0-9]+" coq-corner.log | head -1)"
+              } > status.txt
+              cat status.txt
+              # The corner must fail on its own bad status, not only inside
+              # checks.corpus-differential: on 2026-11-19 the extracted corner derived
+              # "successfully" with ocamlc_rc=2 / driver_rc=127, because nothing here read
+              # the status it had just written.  A derivation whose phases ignored rc is a
+              # vacuous success (DESIGN-NOTES sec. 8.3), so gate here as well as in the check.
+              test "$reader_rc" = 0 || { echo "FAIL: corpus reader (corpus.py --count) exited $reader_rc"; exit 1; }
+              test "$cands_rc" = 0 || { echo "FAIL: corpus reader (corpus.py --count-cands) exited $cands_rc"; exit 1; }
+              test "$rocq_rc" = 0 || { echo "FAIL: rocq compile of the generated corner exited $rocq_rc, see coq-corner.log"; exit 1; }
+              test "$(wc -l < corner.v)" -gt 100 || { echo "FAIL: generated corner is not a substantial file"; exit 1; }
+            '';
+            installPhase = ''
+              mkdir -p $out
+              cp corner.v $out/corner-generated.v
+              cp coq-corner.log status.txt $out/
+              grep -oE "corner_cases = [0-9]+" coq-corner.log | head -1 |
+                cut -d" " -f3 > $out/case-count
+              grep -oE "corner_cands = [0-9]+" coq-corner.log | head -1 |
+                cut -d" " -f3 > $out/cands-count
+            '';
+          };
+
+          # The extracted-evaluator corner: tools/extract/extract.v runs `Extraction` on
+          # the *installed* kernel package, and tools/corpus/driver.ml - an independent
+          # reader of the same corpus - runs the extracted OCaml evaluator on every case.
+          mkCorpusOcamlCorner = { cornerName, specFile }: pkgs.stdenv.mkDerivation {
+            pname = cornerName;
+            version = "0.1.0";
+            src = ./.;
+            nativeBuildInputs = [ stack.rocq-core ] ++ stack.ocamlForRocq;
+            buildInputs = [ self.packages.${system}.timbda-kernel ] ++ stack.rocqDeps;
+            phases = [ "buildPhase" "installPhase" ];
+            buildPhase = ''
+              set +e
+              export ROCQPATH="${kernelTheoryDir}''${ROCQPATH:+:}$ROCQPATH"
+              cp $src/tools/extract/extract.v .
+              cp $src/tools/corpus/driver.ml .
+              rocq compile extract.v > extract.log 2>&1
+              extract_rc=$?
+              grep -n -e "Error" -e "Closed under the global context" -e "Axioms:" extract.log
+              # `Extraction "timbda_eval.ml"` also emits timbda_eval.mli; compiling the
+              # interface first means the driver is type-checked against the extracted
+              # signature, not just against whatever constructors happen to be visible.
+              ocamlc -c timbda_eval.mli > ocamlc.log 2>&1
+              mli_rc=$?
+              ocamlc -o corpus-run timbda_eval.ml driver.ml >> ocamlc.log 2>&1
+              ocamlc_rc=$?
+              ./corpus-run $src/${specFile} > corpus-run.log 2>&1
+              driver_rc=$?
+              grep -n "^FAIL" corpus-run.log
+              {
+                echo "extract_rc=$extract_rc"
+                echo "extracted_lines=$(wc -l < timbda_eval.ml)"
+                echo "mli_rc=$mli_rc"
+                echo "ocamlc_rc=$ocamlc_rc"
+                echo "driver_rc=$driver_rc"
+                echo "summary=$(grep -E "^corpus corner: [0-9]+ cases" corpus-run.log | head -1)"
+                echo "cands_summary=$(grep -E "^cands corner: [0-9]+ groups" corpus-run.log | head -1)"
+              } > status.txt
+              cat status.txt
+              tail -3 corpus-run.log
+              # Same rule as the Coq corner: the phases must gate on the rc they recorded,
+              # otherwise `nix build .#…ocaml-corner` reports success on a corner that never
+              # compiled or never ran (measured on 2026-11-19: ocamlc_rc=2, driver_rc=127).
+              test "$extract_rc" = 0 || { echo "FAIL: rocq compile of tools/extract/extract.v exited $extract_rc"; exit 1; }
+              test -f timbda_eval.ml || { echo "FAIL: Extraction produced no timbda_eval.ml"; exit 1; }
+              test "$(wc -l < timbda_eval.ml)" -gt 200 || { echo "FAIL: extracted evaluator is not a substantial file"; exit 1; }
+              test "$mli_rc" = 0 || { echo "FAIL: ocamlc of timbda_eval.mli exited $mli_rc"; exit 1; }
+              test "$ocamlc_rc" = 0 || { echo "FAIL: ocamlc of the driver exited $ocamlc_rc, see ocamlc.log"; exit 1; }
+              test "$driver_rc" = 0 || { echo "FAIL: the corpus driver exited $driver_rc, see corpus-run.log"; exit 1; }
+            '';
+            installPhase = ''
+              mkdir -p $out
+              cp extract.log ocamlc.log corpus-run.log status.txt $out/
+              cp $src/tools/corpus/driver.ml $out/driver.ml
+              if test -f timbda_eval.ml; then
+                cp timbda_eval.ml $out/
+                test -f timbda_eval.mli && cp timbda_eval.mli $out/ || true
+              fi
+              grep -oE "corpus corner: [0-9]+ cases" corpus-run.log | head -1 |
+                cut -d" " -f3 > $out/case-count
+              grep -oE "cands corner: [0-9]+ groups" corpus-run.log | head -1 |
+                cut -d" " -f3 > $out/cands-count
+            '';
+          };
+
         in
         {
           # The M0 Gallina kernel: coq/*.v + coq/tests/KernelTest.v.
@@ -261,136 +388,38 @@
           };
 
           # ---- differential corpus corners (M0 tail; docs/PLAN.md sec. 6) ----------
-          # One spec file (tests/corpus/m0.texpr), two independent readers, two
-          # evaluators.  Each corner always builds and writes a verdict line into its
-          # log, so a disagreement stays readable; checks.corpus-differential is the
-          # gate that fails when the two corners do not agree.  Harness scaffolding
-          # lives in tools/ + tests/, never in coq/, so the kernel gate above is
-          # untouched by it (tools/corpus/README.md sec. 5).
-          timbda-corpus-coq-corner = pkgs.stdenv.mkDerivation {
-            pname = "timbda-corpus-coq-corner";
-            version = "0.1.0";
-            src = ./.;
-            nativeBuildInputs = [ pkgs.python3 ] ++ stack.ocamlForRocq;
-            buildInputs = [ self.packages.${system}.timbda-kernel ] ++ stack.rocqDeps;
-            phases = [ "buildPhase" "installPhase" ];
-            buildPhase = ''
-              set +e
-              # The kernel package installs its .vo trees under userContrib; rocq finds
-              # them through ROCQPATH, which its own setup hook fills in for the rocqDeps
-              # but not for timbda-kernel (a plain mkDerivation), so name it here.
-              export ROCQPATH="${kernelTheoryDir}''${ROCQPATH:+:}$ROCQPATH"
-              # The Coq corner: corpus.py generates a file of `reflexivity` assertions
-              # about Coq's own evaluator (Timbda.Eval.norm / head_redex), and rocq
-              # either compiles that file or it does not.  `Print corner_cases.` inside
-              # the generated file prints the Coq-side case count for the cross-check.
-              # Every step's status lands in status.txt: an empty corpus file or a
-              # silently-missing tool must not be able to produce a vacuous "exit 0"
-              # (that is exactly how this corner first fooled us - an empty corner.v
-              # compiles happily).
-              cp $src/tools/corpus/corpus.py .
-              python3 corpus.py --count $src/tests/corpus/m0.texpr > corpus-count.txt
-              reader_rc=$?
-              python3 corpus.py --count-cands $src/tests/corpus/m0.texpr > corpus-cands.txt
-              cands_rc=$?
-              python3 corpus.py --emit-coq $src/tests/corpus/m0.texpr > corner.v
-              rocq compile corner.v > coq-corner.log 2>&1
-              rocq_rc=$?
-              grep -n -A6 "Error" coq-corner.log
-              {
-                echo "reader_rc=$reader_rc"
-                echo "cands_rc=$cands_rc"
-                echo "reader_cases=$(cat corpus-count.txt)"
-                echo "reader_cands=$(cat corpus-cands.txt)"
-                echo "corner_lines=$(wc -l < corner.v)"
-                echo "rocq_rc=$rocq_rc"
-                echo "marker=$(grep -E "corner_cases = [0-9]+" coq-corner.log | head -1)"
-                echo "cands_marker=$(grep -E "corner_cands = [0-9]+" coq-corner.log | head -1)"
-              } > status.txt
-              cat status.txt
-              # The corner must fail on its own bad status, not only inside
-              # checks.corpus-differential: on 2026-11-19 the extracted corner derived
-              # "successfully" with ocamlc_rc=2 / driver_rc=127, because nothing here read
-              # the status it had just written.  A derivation whose phases ignored rc is a
-              # vacuous success (DESIGN-NOTES sec. 8.3), so gate here as well as in the check.
-              test "$reader_rc" = 0 || { echo "FAIL: corpus reader (corpus.py --count) exited $reader_rc"; exit 1; }
-              test "$cands_rc" = 0 || { echo "FAIL: corpus reader (corpus.py --count-cands) exited $cands_rc"; exit 1; }
-              test "$rocq_rc" = 0 || { echo "FAIL: rocq compile of the generated corner exited $rocq_rc, see coq-corner.log"; exit 1; }
-              test "$(wc -l < corner.v)" -gt 100 || { echo "FAIL: generated corner is not a substantial file"; exit 1; }
-            '';
-            installPhase = ''
-              mkdir -p $out
-              cp corner.v $out/corner-generated.v
-              cp coq-corner.log status.txt $out/
-              grep -oE "corner_cases = [0-9]+" coq-corner.log | head -1 |
-                cut -d" " -f3 > $out/case-count
-              grep -oE "corner_cands = [0-9]+" coq-corner.log | head -1 |
-                cut -d" " -f3 > $out/cands-count
-            '';
+          # Each spec file gets two independent readers and two evaluators.  Every
+          # corner always builds and writes a verdict line into its log, so a
+          # disagreement stays readable; the checks.corpus-* gates fail when a spec's
+          # two corners do not agree.  Harness scaffolding lives in tools/ + tests/,
+          # never in coq/, so the kernel gate above is untouched by it
+          # (tools/corpus/README.md sec. 5).  The builders are parameterised by spec
+          # file (2026-11-22, the M2 wiring - tools/corpus/README.md sec. 8):
+          # m0.texpr keeps its corners, names, build script and gate verbatim (the
+          # shell text below is character-identical to the pre-wiring version apart
+          # from the m0.texpr path becoming ${specFile} and pname becoming a
+          # parameter), and m2-det.texpr gets the identical machinery as a second
+          # corner pair under -m2 names.
+          # The four corners, spelled out: the m0 pair keeps the pre-wiring attribute
+          # names, so every documented target (`.#packages.…-corpus-coq-corner`, the
+          # gate, the DESIGN-NOTES measurements) stays addressable unchanged.
+          timbda-corpus-coq-corner = mkCorpusCoqCorner {
+            cornerName = "timbda-corpus-coq-corner";
+            specFile = "tests/corpus/m0.texpr";
           };
-
-          # The extracted-evaluator corner: tools/extract/extract.v runs `Extraction` on
-          # the *installed* kernel package, and tools/corpus/driver.ml - an independent
-          # reader of the same corpus - runs the extracted OCaml evaluator on every case.
-          timbda-corpus-ocaml-corner = pkgs.stdenv.mkDerivation {
-            pname = "timbda-corpus-ocaml-corner";
-            version = "0.1.0";
-            src = ./.;
-            nativeBuildInputs = [ stack.rocq-core ] ++ stack.ocamlForRocq;
-            buildInputs = [ self.packages.${system}.timbda-kernel ] ++ stack.rocqDeps;
-            phases = [ "buildPhase" "installPhase" ];
-            buildPhase = ''
-              set +e
-              export ROCQPATH="${kernelTheoryDir}''${ROCQPATH:+:}$ROCQPATH"
-              cp $src/tools/extract/extract.v .
-              cp $src/tools/corpus/driver.ml .
-              rocq compile extract.v > extract.log 2>&1
-              extract_rc=$?
-              grep -n -e "Error" -e "Closed under the global context" -e "Axioms:" extract.log
-              # `Extraction "timbda_eval.ml"` also emits timbda_eval.mli; compiling the
-              # interface first means the driver is type-checked against the extracted
-              # signature, not just against whatever constructors happen to be visible.
-              ocamlc -c timbda_eval.mli > ocamlc.log 2>&1
-              mli_rc=$?
-              ocamlc -o corpus-run timbda_eval.ml driver.ml >> ocamlc.log 2>&1
-              ocamlc_rc=$?
-              ./corpus-run $src/tests/corpus/m0.texpr > corpus-run.log 2>&1
-              driver_rc=$?
-              grep -n "^FAIL" corpus-run.log
-              {
-                echo "extract_rc=$extract_rc"
-                echo "extracted_lines=$(wc -l < timbda_eval.ml)"
-                echo "mli_rc=$mli_rc"
-                echo "ocamlc_rc=$ocamlc_rc"
-                echo "driver_rc=$driver_rc"
-                echo "summary=$(grep -E "^corpus corner: [0-9]+ cases" corpus-run.log | head -1)"
-                echo "cands_summary=$(grep -E "^cands corner: [0-9]+ groups" corpus-run.log | head -1)"
-              } > status.txt
-              cat status.txt
-              tail -3 corpus-run.log
-              # Same rule as the Coq corner: the phases must gate on the rc they recorded,
-              # otherwise `nix build .#…ocaml-corner` reports success on a corner that never
-              # compiled or never ran (measured on 2026-11-19: ocamlc_rc=2, driver_rc=127).
-              test "$extract_rc" = 0 || { echo "FAIL: rocq compile of tools/extract/extract.v exited $extract_rc"; exit 1; }
-              test -f timbda_eval.ml || { echo "FAIL: Extraction produced no timbda_eval.ml"; exit 1; }
-              test "$(wc -l < timbda_eval.ml)" -gt 200 || { echo "FAIL: extracted evaluator is not a substantial file"; exit 1; }
-              test "$mli_rc" = 0 || { echo "FAIL: ocamlc of timbda_eval.mli exited $mli_rc"; exit 1; }
-              test "$ocamlc_rc" = 0 || { echo "FAIL: ocamlc of the driver exited $ocamlc_rc, see ocamlc.log"; exit 1; }
-              test "$driver_rc" = 0 || { echo "FAIL: the corpus driver exited $driver_rc, see corpus-run.log"; exit 1; }
-            '';
-            installPhase = ''
-              mkdir -p $out
-              cp extract.log ocamlc.log corpus-run.log status.txt $out/
-              cp $src/tools/corpus/driver.ml $out/driver.ml
-              if test -f timbda_eval.ml; then
-                cp timbda_eval.ml $out/
-                test -f timbda_eval.mli && cp timbda_eval.mli $out/ || true
-              fi
-              grep -oE "corpus corner: [0-9]+ cases" corpus-run.log | head -1 |
-                cut -d" " -f3 > $out/case-count
-              grep -oE "cands corner: [0-9]+ groups" corpus-run.log | head -1 |
-                cut -d" " -f3 > $out/cands-count
-            '';
+          timbda-corpus-ocaml-corner = mkCorpusOcamlCorner {
+            cornerName = "timbda-corpus-ocaml-corner";
+            specFile = "tests/corpus/m0.texpr";
+          };
+          # The M2 pair (tools/corpus/README.md sec. 8): same readers, same evaluators,
+          # same anti-vacuity tests, spec file tests/corpus/m2-det.texpr.
+          timbda-corpus-coq-corner-m2 = mkCorpusCoqCorner {
+            cornerName = "timbda-corpus-coq-corner-m2";
+            specFile = "tests/corpus/m2-det.texpr";
+          };
+          timbda-corpus-ocaml-corner-m2 = mkCorpusOcamlCorner {
+            cornerName = "timbda-corpus-ocaml-corner-m2";
+            specFile = "tests/corpus/m2-det.texpr";
           };
 
           # Locks every pinned upstream on day one (PLAN sec. 6): a cheap derivation
@@ -450,37 +479,20 @@
           stack = coqStack pkgs;
           cornerCoq = self.packages.${system}.timbda-corpus-coq-corner;
           cornerOcaml = self.packages.${system}.timbda-corpus-ocaml-corner;
-        in
-        {
-          # Half of the pin-consistency story: pins.toml vs the nixpkgs-provided versions
-          # (the flake.lock / MODULE.bazel half is tools/pins/pins.py).
-          version-consistency = pkgs.runCommand "timbda-version-consistency" { }
-            (''
-                set -e
-              ''
-              + nixpkgs.lib.concatMapStrings (e:
-                  let
-                    got = (nixpkgs.lib.attrByPath
-                      (nixpkgs.lib.splitString "." e.nixpkgs_attr)
-                      { version = "<missing>"; } pkgs).version;
-                  in ''
-                    test "${e.version}" = "${got}" || { echo "VERSION MISMATCH ${e.nixpkgs_attr}: pins.toml=${e.version} nixpkgs=${got}" >&2; exit 1; }
-                  ''
-                ) pinVersionEntries
-              + ''
-                echo "timbda version-consistency ok (${builtins.toString (builtins.length pinVersionEntries)} pinned tool versions match)"
-                touch $out
-              '');
-
-          # The kernel + its Print Assumptions audit.
-          coq-kernel-tests = self.packages.${system}.timbda-kernel;
-
-          # The differential claim itself: one corpus file, two independent readers, two
-          # evaluators (Gallina native, and the OCaml that `Extraction` produced from the
-          # same Gallina function).  Both corners must accept every case, and the case
-          # counts each corner sees must match - otherwise "the corpus is the spec" would
-          # just mean "both corners inherit the same reader".
-          corpus-differential = pkgs.runCommand "timbda-corpus-differential" { }
+          cornerCoqM2 = self.packages.${system}.timbda-corpus-coq-corner-m2;
+          cornerOcamlM2 = self.packages.${system}.timbda-corpus-ocaml-corner-m2;
+          # One gate builder per spec file.  The shell body below is the
+          # pre-wiring corpus-differential text line-for-line (same status
+          # fields, same anti-vacuity tests, same report layout): only the
+          # derivation name, the report's corpus label, and the two corner
+          # paths became arguments, named exactly like the let bindings they
+          # shadow.  The m0 instantiation therefore builds the same check
+          # derivation name it built before the wiring (the DESIGN-NOTES sec.
+          # 12 measurements stay comparable); the m2 instantiation runs the
+          # identical comparison over tests/corpus/m2-det.texpr
+          # (tools/corpus/README.md sec. 8).
+          corpusDifferentialFor = { checkName, specFile, cornerCoq, cornerOcaml }:
+            pkgs.runCommand checkName { }
             (''
                 set -e
                 mkdir -p $out
@@ -548,7 +560,7 @@
 
                 {
                   echo "timbda differential corpus check (docs/PLAN.md sec. 6)"
-                  echo "  corpus:            tests/corpus/m0.texpr  ($reader_cases cases, $reader_cands with a candidate bag)"
+                  echo "  corpus:            ${specFile}  ($reader_cases cases, $reader_cands with a candidate bag)"
                   echo "  Coq corner:        $n_coq cases / $k_coq cand_bag claims, generated by corpus.py, all discharged by rocq"
                   echo "  extracted corner:  $n_ocaml cases / $k_ocaml cand_bag claims against timbda_eval.ml ($extracted_lines lines, Extraction'd from the same Gallina evaluator)"
                   echo "  generated corner:  $corner_lines lines of .v"
@@ -563,6 +575,56 @@
                 cp ${cornerOcaml}/corpus-run.log $out/corpus-run.log
                 echo "ok: $reader_cases corpus cases (incl. $reader_cands candidate bags) agree across corners (Gallina native vs extracted OCaml)"
               '');
+        in
+        {
+          # Half of the pin-consistency story: pins.toml vs the nixpkgs-provided versions
+          # (the flake.lock / MODULE.bazel half is tools/pins/pins.py).
+          version-consistency = pkgs.runCommand "timbda-version-consistency" { }
+            (''
+                set -e
+              ''
+              + nixpkgs.lib.concatMapStrings (e:
+                  let
+                    got = (nixpkgs.lib.attrByPath
+                      (nixpkgs.lib.splitString "." e.nixpkgs_attr)
+                      { version = "<missing>"; } pkgs).version;
+                  in ''
+                    test "${e.version}" = "${got}" || { echo "VERSION MISMATCH ${e.nixpkgs_attr}: pins.toml=${e.version} nixpkgs=${got}" >&2; exit 1; }
+                  ''
+                ) pinVersionEntries
+              + ''
+                echo "timbda version-consistency ok (${builtins.toString (builtins.length pinVersionEntries)} pinned tool versions match)"
+                touch $out
+              '');
+
+          # The kernel + its Print Assumptions audit.
+          coq-kernel-tests = self.packages.${system}.timbda-kernel;
+
+          # The differential claim itself: one corpus file, two independent readers, two
+          # evaluators (Gallina native, and the OCaml that `Extraction` produced from the
+          # same Gallina function).  Both corners must accept every case, and the case
+          # counts each corner sees must match - otherwise "the corpus is the spec" would
+          # just mean "both corners inherit the same reader".
+          # The m0 gate, spelled out: the derivation name, spec file and corner
+          # pair it always had - corpusDifferentialFor changed the corners' and
+          # the check's *text* (a parameterised function now builds it), which
+          # rebuilds the derivations but changes no compared quantity.
+          corpus-differential = corpusDifferentialFor {
+            checkName = "timbda-corpus-differential";
+            specFile = "tests/corpus/m0.texpr";
+            cornerCoq = cornerCoq;
+            cornerOcaml = cornerOcaml;
+          };
+          # The M2 gate (tools/corpus/README.md sec. 8): the same builder over
+          # the m2 corner pair.  A FAIL there is a finding about the m2 claims,
+          # never an m0 regression - the two checks share logic, not corpus or
+          # corners.
+          corpus-m2-differential = corpusDifferentialFor {
+            checkName = "timbda-corpus-m2-differential";
+            specFile = "tests/corpus/m2-det.texpr";
+            cornerCoq = cornerCoqM2;
+            cornerOcaml = cornerOcamlM2;
+          };
 
           # Every logical library the kernel Require-s resolves on the nix stack,
           # including the coinduction reification plugin (loaded via findlib/OCAMLPATH).

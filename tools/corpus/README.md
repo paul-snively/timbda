@@ -239,17 +239,30 @@ harness.
    `Admitted`/axiom gate (§ `DESIGN-NOTES` § 6).  If a case exposes a kernel bug, fixing the
    kernel re-runs that gate, which is the point.
 
-## 7. M2 gate corpus, draft (`tests/corpus/m2-det.texpr`, 2026-11-21)
+## 8. M2 gate corpus (`tests/corpus/m2-det.texpr`, 2026-11-21; wired 2026-11-22)
 
 The first M2 artifact, per decision 6's ritual: 29 cases carrying the four M2 gate rulings
 (docs/PLAN.md § 8 decision 8a-d, *accepted pending* Verse-team revision) as claims.  Expectations
 were derived by hand from the rule text (docs/VERSE-RULES.md sec. 2-5), already-pinned m0.texpr
 cases, pinned oracle citations, and kernel header comments - **before either engine ran against
-the file**.  Status at this commit: the Python reader parses it (29 cases, 7 candidate-bag
-claims, `R_Prim` x11, `R_Seq` x3, `R_Norm5` x2, `R_Norm4` x1; 12 deliberate `head none` claims);
-the flake's `corpus-differential` check still runs `m0.texpr` only, so **no corner has executed
-these claims yet** - wiring a second spec file into the check is the next infra step, awaiting
-review, and `tools/build/nix-gate.sh .#checks...` (§ 6 step 3) is the safe way to pay for it.
+the file**.  The Python reader parses it (29 cases, 7 candidate-bag claims, `R_Prim` x11,
+`R_Seq` x3, `R_Norm5` x2, `R_Norm4` x1; 12 deliberate `head none` claims).
+
+Wiring (2026-11-22): `flake.nix` parameterizes both corner builders by spec file
+(`mkCorpusCoqCorner` / `mkCorpusOcamlCorner`, defined in the packages `let`), instantiates the
+m0 pair under their original attribute names plus an m2 pair under
+`timbda-corpus-{coq,ocaml}-corner-m2`, and gates each pair with a check built from one shared
+comparator: `checks.corpus-differential` (m0 - a line-diff against the previous commit shows the
+gate's shell text unchanged apart from the parameterization itself, and the m0 instantiation
+reconstitutes the old text exactly) and the new `checks.corpus-m2-differential`.  Status at this
+commit: the four corners and both checks *evaluate* (`nix eval .#checks.…differential.drvPath`
+prints derivation store paths), but **no corner has executed the m2 claims yet**: the first two
+run attempts on 2026-11-22 were stopped by the gate's own host watchdog before any derivation
+started (`rc=124`, "target not attested"; the box had 10.0-10.4% MemAvailable against the gate's
+12% floor with a model server holding 43-50 GiB - see § 5's exit-code notes and
+tools/build/README.md).  The run bill is `tools/build/nix-gate.sh
+.#checks.x86_64-linux.corpus-m2-differential` (§ 7 step 3 applies to the m2 spec as it does to
+m0); until that bill is paid, every m2 pin is a claim awaiting measurement.
 
 Group A pins the division sign matrix with `[LADDER]`/`[SAME]` marks so Lower.v's floor-vs-
 C-truncation correction table is measured rung by rung (decision 8b).  Groups D pins out-of-order
