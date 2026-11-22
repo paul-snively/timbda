@@ -1089,22 +1089,33 @@ were present when read, and the durable record is the amendment commit and this 
 Re-measuring for the re-bill (2026-11-22 07:08, `tools/build/nix-gate.sh` preflight and
 `systemctl show nix-daemon`):
 
-- The nix daemon cgroup is **`MemoryHigh=4.0G` / `MemoryMax=5.0G`** (`/etc/systemd/system/nix-daemon.service.d/override.conf`,
-  re-read live: `MemoryHigh=4294967296`, `MemoryMax=5368709120`, `DelegateMemory=auto`,
-  `DelegateFragment=…Max=5368709120…`).  § 10 recorded 5.4G/7.4G on 2026-11-19; that envelope is
-  now a dated reading, not the live setting, and the difference matters operationally: at a 5G
-  daemon ceiling a daemon-sandboxed *kernel* build (peak 20.2 GiB, § 4.3) is not a thing to attempt,
-  which is precisely why § 4.3's split - `coq-build.sh` for kernel-scale builds inside a verified
-  4.0G/5.0G cgroup, the gate for the small corner/check derivations - is load-bearing and not
-  convenience.
-- Swap is 20.3 GiB (`swap free 15.1-15.2 GiB`, 74.7% free) against 62.4 GiB of RAM, and `earlyoom`
-  (v1.7, `/etc/earlyoom/earlyoom.env`: `SWAP_THRESHOLD=10`, `MT_THRESHOLD=10`, `--prefer
-  '(nvidia|python|rocq|dune)'`) is a live service with `Nice=10`, `CPUAccounting=yes`, enabled.
-  Nothing in the run windows killed anything.
-- Preflight readings for the re-bill: 6820-7029 MiB MemAvailable (10.67-10.99%), swap free 15156
-  MiB; held floors 5120 MiB mem / 1623 MiB swap at `TIMBDA_NIX_GATE_MIN=5G TIMBDA_NIX_GATE_GUARD=8`.
-  The re-bill took 2 s and 3 s (targets rc=0), re-attesting 29 cases / 7 candidate bags for m2 and
-  64 / 7 for m0 - the same counts § 11.2 records.
+- The nix daemon cgroup is **`MemoryHigh=4.0G` / `MemoryMax=5.0G`**
+  (`/etc/systemd/system/nix-daemon.service.d/override.conf` lines 2-3; re-read 2026-11-22
+  as `MemoryAccounting=yes`, `MemoryHigh=4294967296`, `MemoryMax=5368709120`,
+  `StartupMemoryMax=infinity`, `MemorySwapMax=infinity`, `Delegate=no`).  § 10 recorded
+  5.4G/7.4G on 2026-11-19, so that envelope is a dated reading, not the live setting.  Two
+  consequences worth having straight: `Delegate=no` means the envelope applies to the daemon's
+  own subtree (a build it spawns lands in that cgroup, so 5G is its hard ceiling today), and at
+  5G a kernel-scale derivation - § 4.3 measured 20.2 GiB peak, 53.9 GiB max-rss on one `coqc` -
+  does not fit there at all.  That is why § 4.3's division of labour (coq-build.sh runs
+  kernel-scale work inside its own envelope-checked cgroup, 4096M high / 5120M max; the gate
+  runs the small corner and check derivations) is load-bearing rather than tidy.  What I have
+  *not* done today is re-run a kernel build through the daemon at this envelope, so the claim
+  above is a capacity inference from recorded peaks, not a fresh measurement.
+- Swap is 20.3 GiB total; during the re-bill `swap free 15156 of 20291 MiB (74.71%)`, MemTotal
+  63916 MiB (62.4 GiB).  § 4.3's 2026-11-19 records measured 3,907 MiB of swap on an earlier
+  incarnation of this box, so the swap headroom described here (15 GiB free of 20) is a property of
+  today's configuration, not of those older runs.  `earlyoom` v1.7 is `enabled`, running as
+  `/usr/bin/earlyoom -r 3600` from `EnvironmentFile=-/etc/default/earlyoom` (which sets nothing but
+  `EARLYOOM_ARGS="-r 3600"`), `MemoryMax=50M`, `DynamicUser=yes`, `Restart=always`.  So its
+  trigger is the upstream default - mem avail <= 10% AND swap free <= 10% - and there is no
+  `--avoid`/`--prefer` configuration on this box, exactly as § 4.2 records as "deliberately not
+  applied".  The re-bill's journal window shows no OOM kill.
+- Target readings for the re-bill, as the gate printed them: at the m0 target, `start: MemAvailable
+  7027 of 63916 MiB (10.99%)  swap free 15156 of 20291 MiB (74.71%)`, low-water 7015 MiB; held
+  floors 5120 MiB mem / 1623 MiB swap at `TIMBDA_NIX_GATE_MIN=5G TIMBDA_NIX_GATE_GUARD=8`.  Both
+  targets rc=0 in single-digit seconds (the m0 line reads `elapsed 3s`), re-attesting 29 cases / 7
+  candidate bags for m2 and 64 / 7 for m0 - the same counts § 11.2 records.
 - A cache fact the re-bill makes visible rather than inferable: the check outputs have *new* store
   paths (`rc4g2jacvi0bvixwm0lqa0gp108md6b5-timbda-corpus-m2-differential`,
   `95ch4c3y81q67pbc92g04i4zyswrsjh2-timbda-corpus-differential`) purely because this file changed -
