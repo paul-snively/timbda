@@ -22,6 +22,18 @@
               above its own budget; § 13.2 records the two-fuel lemma that
               would additionally show the value is the same across fuels.
 
+      T5_swap_discarded  det_check (Seq (Seq e1 e2) e3) = true ->
+              denote (Seq (Seq e1 e2) e3) (e_fuel + k) ≈
+              denote (Seq (Seq e2 e1) e3) (e_fuel + k), same fuel both sides:
+              the accepted-fragment piece of PLAN § 3 item 5 (docs/DESIGN-NOTES.md
+              § 13.3).  The Seq arm discards the prefix's value (Semantics.v:218),
+              so a swap at a DISCARDED prefix position is Wbisim and the discarded
+              values never enter the proof.  The naive suffix swap is refuted
+              (T5_top_swap_needs_value), holds exactly under value equality
+              (T5_swap_equal_values), and the fold/reassociate half waits for the
+              denE_total_pairwise item of § 13.2 because its two sides query the
+              tail at different fuels.
+
      T4_eval  det_check e = true -> the evaluator's bag is a singleton:
               for every fuel f, exists nf, cand_bag (norm f e) = nf :: nil.
               Theorem T4_eval, in coq/ChecksEval.v, proves the stronger form, naming the
@@ -128,6 +140,10 @@ Import EquNotations.
 Import ListNotations.
 
 Require Import Timbda.Syntax Timbda.Rewriting Timbda.Semantics Timbda.Eval.
+(* T5's peeling idiom reuses Denotation.v's kernel-`sret` bridge bind_sret_l
+   (§ 12.2) rather than restating it; one direction, no cycle: Denotation.v
+   requires Syntax/Rewriting/Semantics only. *)
+Require Import Timbda.Denotation.
 
 (* Nat arithmetic for the fuel and cutoff reasoning.  Note the *explicit* `Nat.le`
    and `Nat.lt` in the statements below: with the ctrees imports in scope the
@@ -1447,4 +1463,118 @@ Proof.
      one step down. *)
   pose proof (equ_ret_inv _ _ Hpur) as Hi.
   now injection Hi.
+Qed.
+
+(* T5, accepted-fragment part (docs/PLAN.md § 3 item 5, measured route
+   docs/DESIGN-NOTES.md § 13.3).  Three results, one per what the kernel can
+   actually say, all set by the Seq arm (Semantics.v:218): `SOk _ => denE rho
+   e2 n` - a seq DISCARDS the prefix's value.
+
+   1. T5_swap_discarded: swapping two fragments at a DISCARDED prefix
+      position is Wbisim.  Both sides peel to the literal same tail term, so
+      there is no cross-fuel step and no coinduction: the fuel induction of
+      totality (denE_total) supplies the two component witnesses at exactly
+      the fuels the arms query, and § 12.2's peeling idiom (setoid_rewrite
+      the witness, rewrite bind_sret_l, cbn) finishes.  The discarded values
+      appear nowhere in the conclusion - that is what "discarded" buys.
+      Corpus witnesses: e_oo_left vs e_oo_swap in coq/tests/ChecksTest.v
+      (prefix swapped, `sub 9 1` tail shared), Group D of
+      tests/corpus/m2-det.texpr.
+   2. T5_swap_equal_values: a top-position swap holds when both fragments are
+      witnessed at the same value - the condition the Seq arm silently
+      imposes, stated with the witnesses as hypotheses.
+   3. T5_top_swap_needs_value: the naive reading of T5 is REFUTED - swapping
+      the surviving suffix changes the value, so seq (ret z1; ret z2) and its
+      swap are not even equ-bisimilar for z1 <> z2.  The negation is stated
+      at the equ level: at ≈ it would need the wbisim-side inversion § 13.2
+      recorded as unavailable to kernel trees (the B0 pin).
+
+   The fold/reassociate half of T5 (Seq (Seq e1 e2) e3 ≈ Seq e1 (Seq e2 e3))
+   is deliberately absent: peeling its two sides queries e3 at DIFFERENT
+   fuels, so it first needs the denE_total_pairwise item of § 13.2. *)
+
+Lemma T5_swap_discarded_equ : forall e1 e2 e3 f,
+  ws_expr 0 (Seq (Seq e1 e2) e3) = true ->
+  env_ok 0 nil = true ->
+  det_struct (Seq (Seq e1 e2) e3) = true ->
+  Nat.le (e_fuel (Seq (Seq e1 e2) e3)) (S (S f)) ->
+  denE nil (Seq (Seq e1 e2) e3) (S (S f))
+    ≅ denE nil (Seq (Seq e2 e1) e3) (S (S f)).
+Proof.
+  intros e1 e2 e3 f Hw Henv Hds Hfuel.
+  cbn [e_fuel] in Hfuel.
+  assert (Hle1 : Nat.le (e_fuel e1) f) by lia.
+  assert (Hle2 : Nat.le (e_fuel e2) f) by lia.
+  apply andb_and in Hw. destruct Hw as [Hw12 Hw3].
+  apply andb_and in Hw12. destruct Hw12 as [Hw1 Hw2].
+  apply det_struct_Seq_inv in Hds. destruct Hds as [Hds12 Hds3].
+  apply det_struct_Seq_inv in Hds12. destruct Hds12 as [Hds1 Hds2].
+  destruct (denE_total f e1 0 nil Hw1 Henv Hds1 Hle1) as [v1 He1].
+  destruct (denE_total f e2 0 nil Hw2 Henv Hds2 Hle2) as [v2 He2].
+  transitivity (denE nil e3 (S f)).
+  - (* forward order, peeled to the shared tail *)
+    cbn [denE].
+    setoid_rewrite He1. rewrite bind_sret_l. cbn [denE].
+    setoid_rewrite He2. rewrite bind_sret_l. cbn [denE].
+    reflexivity.
+  - (* swapped order, same tail, witnesses mirrored *)
+    cbn [denE].
+    setoid_rewrite He2. rewrite bind_sret_l. cbn [denE].
+    setoid_rewrite He1. rewrite bind_sret_l. cbn [denE].
+    reflexivity.
+Qed.
+
+Theorem T5_swap_discarded : forall e1 e2 e3 k,
+  det_check (Seq (Seq e1 e2) e3) = true ->
+  denote (Seq (Seq e1 e2) e3) (e_fuel (Seq (Seq e1 e2) e3) + k) ≈
+  denote (Seq (Seq e2 e1) e3) (e_fuel (Seq (Seq e1 e2) e3) + k).
+Proof.
+  intros e1 e2 e3 k Hc. apply det_check_components in Hc. destruct Hc as [Hw Hds].
+  assert (Henv : env_ok 0 nil = true) by (apply env_ok_mk; [lia | reflexivity]).
+  assert (Hfuel : Nat.le (e_fuel (Seq (Seq e1 e2) e3))
+                         (e_fuel (Seq (Seq e1 e2) e3) + k)) by lia.
+  (* a two-level Seq has e_fuel >= 2, so every sufficient budget is S (S f).
+     (pose, not an ex-assert: in this file's notation scope the bare `exists`
+     notation resolves to ctrees' indexed-family one - the same loadpath that
+     CTree Require Export re-exports - and its witness type is a category
+     carrier, not nat.) *)
+  pose (f := (e_fuel (Seq (Seq e1 e2) e3) + k - 2)%nat).
+  assert (HF : (e_fuel (Seq (Seq e1 e2) e3) + k)%nat = S (S f))
+    by (unfold f; cbn [e_fuel]; lia).
+  rewrite HF in Hfuel. rewrite HF.
+  unfold denote. apply equ_wbisim_subrelation.
+  exact (T5_swap_discarded_equ e1 e2 e3 f Hw Henv Hds Hfuel).
+Qed.
+
+Lemma T5_swap_equal_values : forall e1 e2 f v,
+  denE nil e1 f ≅ sret (SOk v) ->
+  denE nil e2 f ≅ sret (SOk v) ->
+  denE nil (Seq e1 e2) (S f) ≅ denE nil (Seq e2 e1) (S f).
+Proof.
+  intros e1 e2 f v He1 He2.
+  (* Peel each side to the surviving component FIRST, as separate equations:
+     on the combined goal the other component also occurs inside the Seq
+     continuation lambda, and a setoid_rewrite reaching into that lambda is
+     where ctrees' setoid machinery refuses (the same position-search
+     structure § 12.2 measured).  Split, each side has one occurrence. *)
+  assert (P1 : denE nil (Seq e1 e2) (S f) ≅ denE nil e2 f).
+  { cbn [denE]. setoid_rewrite He1. rewrite bind_sret_l. cbn [denE].
+    reflexivity. }
+  assert (P2 : denE nil (Seq e2 e1) (S f) ≅ denE nil e1 f).
+  { cbn [denE]. setoid_rewrite He2. rewrite bind_sret_l. cbn [denE].
+    reflexivity. }
+  rewrite P1, P2.
+  (* both survivors carry the shared witness - the swap closes *)
+  rewrite He2, He1. reflexivity.
+Qed.
+
+Lemma T5_top_swap_needs_value : forall z1 z2, z1 <> z2 ->
+  ~ (denote (Seq (Ret (VInt z1)) (Ret (VInt z2))) 3
+     ≅ denote (Seq (Ret (VInt z2)) (Ret (VInt z1))) 3).
+Proof.
+  intros z1 z2 Hz H. unfold denote in H. cbn [denE] in H.
+  setoid_rewrite bind_sret_l in H. cbn in H.
+  pose proof (equ_ret_inv _ _ H) as Hi.
+  injection Hi as Zlz.
+  exfalso. apply Hz. symmetry. exact Zlz.
 Qed.

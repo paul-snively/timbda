@@ -269,11 +269,18 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   *Status 2026-11-24:* M2's stability corollary `T4_value_unique` (`coq/Checks.v`, after `T4_sem`)
   pins what the fuel index does and does not buy: at a fixed fuel an accepted term has at most one
   value - with `T4_sem`'s existence, exactly one - while the cross-fuel statement needs the recorded
-  `denE_total_pairwise` strengthening, not a setoid chain.  docs/DESIGN-NOTES.md § 13 records the
-  fuel-vs-coinduction taxonomy and T5's route as the kernel's first explicit coinductive proof
-  (coq-coinduction `coinduction` tactic / ctrees' up-to-bind `bind_chain_gen`, witnessed by the
-  § 11.3 mirrored partial-shape pair).
-  What M2 still owes: T5, `Lower.v` for determinate fragments (T6, T7), and the golden test.
+  `denE_total_pairwise` strengthening, not a setoid chain.  The T5 draft ran the same day and
+  measured (docs/DESIGN-NOTES.md § 13.4): the naive out-of-order claim is refuted in the kernel
+  (`T5_top_swap_needs_value` - the `Seq` arm discards the prefix's value, Semantics.v:218; the
+  corpus had already pinned differing final components 9/6 in the amended Group D pair); the true
+  lemma is the swap at a DISCARDED prefix position (`T5_swap_discarded`, proved at `≈` for checked
+  terms; corpus witness `oo_swap_prefix_sem` discharges `e_oo_left` vs `e_oo_swap` through the
+  theorem), a top-position swap needs a shared value witness (`T5_swap_equal_values`), and the
+  fold/reassociate half waits for `denE_total_pairwise` - whose first consumer it now is.  No
+  coinduction was needed for any of it; § 13.3 keeps the coinduction route (`coinduction S CIH`,
+  up-to-bind `bind_chain_gen`) as machinery for the deferred claims - Iter-era M3 - not for T5.
+  What M2 still owes: T5's fold/reassociate half (via `denE_total_pairwise`), `Lower.v` for
+  determinate fragments (T6, T7), and the golden test.
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
   implementation with zero boost.context dependency.
 - M4: performance/streaming path. dcont lowering + generated ContextExtern annotations + shim;

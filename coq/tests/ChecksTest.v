@@ -35,7 +35,17 @@
 From Stdlib Require Import ZArith List.
 Import ListNotations.
 
+(* T5-side pins (after Group D) read the sem side, so this file also opens
+   the ctrees notation window the sem lemmas live in - ctrees FIRST, then the
+   Timbda requires, the same precedence Checks.v uses so that Syntax's `Ret`
+   stays the Expr constructor.  The eval-side audits and their Print
+   Assumptions results are unchanged by the window. *)
+From CTree Require Import CTree Eq.
+From CTree.Eq Require Import WBisim.
+Import WBisimNotations.
+Import EquNotations.
 Require Import Timbda.Syntax Timbda.Eval Timbda.Checks Timbda.ChecksEval.
+Require Import Timbda.Semantics.
 
 Local Open Scope bool_scope.
 
@@ -166,6 +176,26 @@ Example oo_swap_prefix_bag :
 Proof.
   rewrite (T4_eval e_oo_swap 24 oo_swap_prefix_det).
   rewrite oo_swap_prefix_norm. reflexivity.
+Qed.
+
+(* T5 at its corpus witnesses (docs/DESIGN-NOTES.md § 13.3).  e_oo_left vs
+   e_oo_swap is a swap at a DISCARDED prefix position - the inner seq's value
+   is discarded by the outer Seq - so the Wbisim is exactly what
+   T5_swap_discarded delivers.  And the refutation at literal values 9/6 -
+   the values the amended Group D block pins leave as their final components:
+   the naive suffix swap is provably false, so T5 is the discarded-position
+   lemma, not the general one. *)
+Example oo_swap_prefix_sem :
+  denote e_oo_left (e_fuel e_oo_left + 2) ≈ denote e_oo_swap (e_fuel e_oo_left + 2).
+Proof.
+  apply (T5_swap_discarded _ _ _ 2). exact oo_left_assoc_det.
+Qed.
+
+Example oo_naive_suffix_swap_refuted :
+  ~ (denote (Seq (Ret (VInt 9)) (Ret (VInt 6))) 3
+     ≅ denote (Seq (Ret (VInt 6)) (Ret (VInt 9))) 3).
+Proof.
+  apply (T5_top_swap_needs_value 9 6). intros HC. discriminate HC.
 Qed.
 
 (* The amended Group D pair (tests/corpus/README.md § 8): closed blocks, slot-disjoint,
@@ -325,3 +355,4 @@ Proof. reflexivity. Qed.
 Print Assumptions T4_eval.
 Print Assumptions T4_sem.
 Print Assumptions T4_value_unique.
+Print Assumptions T5_swap_discarded.

@@ -1308,8 +1308,9 @@ MemAvailable low-water 10.9 GiB.  The retactor did not move the cost elsewhere: 
 M2's theorems quantify over fuel - `T4_sem` reads `denote e (e_fuel e + k) ≈ sret (SOk v)` - and that
 invites a wrong worry: that kernel claims are verified "only up to some size" and that fixing that
 means rebuilding the semantics coinductively.  Both halves of the worry are false, and § 13.1 is why.
-§ 13.2 is the corollary that pins what fuel actually buys; § 13.3 records where coinduction *does*
-enter - as the proof shape M2's remaining item T5 demands.
+§ 13.2 is the corollary that pins what fuel actually buys; § 13.3 records where coinduction was
+expected to enter, and § 13.4 - the measured T5 draft - records where it actually does, which is not
+where § 13.3 predicted.
 
 ### 13.1 Fuel is a syntactic budget, and accepted fragments terminate by construction
 
@@ -1350,7 +1351,9 @@ Two honest boundaries, both learned from failed attempts and worth recording exa
   fuels share no middle node, so "the whole family `denote e (e_fuel e + k)` is pairwise `≈`" is not
   a setoid exercise at all.  What it needs is a two-fuel strengthening of the totality lemma -
   `denE_total` run with both budgets in one induction, producing related witnesses - recorded as the
-  **`denE_total_pairwise`** item and deferred with T5 (§ 13.3), whose induction machinery it shares.
+  **`denE_total_pairwise`** item; § 13.4 has meanwhile named its first consumer (the
+  fold/reassociate half of T5), which is the honest reason it is deferred as a work item rather
+  than waved away.
   That is the honest shape of "fuel does not change the value": a lemma about the induction, not
   about the setoid, exactly as § 13.1 predicts.
 - **The wbisim-side inversion is not available to kernel trees.**  ctrees' `wbisim_ret_inv`
@@ -1368,32 +1371,94 @@ documents, and `JMeq`-shaped axioms appear nowhere in the log.  The build ends `
 .vo artifacts present, dune exit 0` with zero `Error:`/`Admitted` lines, so the kernel gate's axiom
 audit is again unchanged by M2 work.
 
-### 13.3 Coinduction is on the relation side, and T5 is the kernel's first explicit coinductive proof
+### 13.3 Coinduction is on the relation side; T5 was expected to be the kernel's first explicit coinductive proof
 
-A grep audit of `coq/*.v` shows zero direct use of coinduction machinery (`coinduction`, `paco`,
-`pfold` - no hits): the kernel consumes the coinductively defined relations (`≅`, `≈`) only through
+A grep audit of `coq/*.v` shows zero tactic-position use of coinduction machinery (`coinduction`
+tactic, `paco*`, `pfold` - every occurrence of those strings in kernel files is prose in a comment):
+the kernel consumes the coinductively defined relations (`≅`, `≈`) only through
 ctrees' proved interface - `equ_wbisim_subrelation` (WBisim.v:310), the monad laws, the
 `Equivalence_wbisim` setoid (WBisim.v:423).  That is enough for T1-T4, whose obligations close by the
-fuel induction of § 13.1.  T5 is the first kernel item where it is not:
+fuel induction of § 13.1.  T5 was expected to be the first kernel item where it is not:
 
 > T5 (PLAN.md § 3 item 5): for independent fragments, Wbisim (sem (seq e1 e2)) (sem (seq e2 e1)).
 
-No structural or fuel induction reaches it.  The two denotations are `bind` chains of arbitrary
-length, and the proof must relate them up to permuted chain layers - a coinductive obligation by
-shape.  The recorded route, in the order it will be attempted:
+The pre-draft reading of that item - the two denotations are `bind` chains, the proof must relate
+them up to permuted layers, so the obligation is coinductive by shape - was measured against the
+kernel's actual `Seq` arm on 2026-11-24 and found partly wrong; § 13.4 is the measurement.  What
+survives of this section is the route, kept for the claims § 13.4 defers:
 
 1. **The machinery is already vendored.**  coq-coinduction 1.21 and paco 4.4 sit on the build's
-   loadpath, and ctrees' own bind proofs use exactly the tactic shape this proof needs -
-   `coinduction S CIH` (`Equ.v`: `bind_ret_r`, `bind_bind`) - so the kernel's first coinductive
-   proof starts from working local idioms, not new dependencies.
+   loadpath, and ctrees' own bind proofs use exactly the tactic shape a coinductive proof needs -
+   `coinduction S CIH` (`Equ.v`: `bind_ret_r`, `bind_bind`) - so the kernel's first genuinely
+   coinductive proof will start from working local idioms, not new dependencies.
 2. **Up-to-bind is the right shape.**  ctrees' `bind_chain_gen` (WBisim.v:574) lets a coinductive
-   proof step over `bind` chains as a whole instead of unfolding them layer by layer - exactly the
-   permuted-`seq` situation, where the witness must absorb `e1`'s layers to align with `e2`'s.
+   proof step over `bind` chains as a whole instead of unfolding them layer by layer - the shape
+   the divergent-component era (M3's Iter) will need.
 3. **The witnesses already exist.**  § 11.3's amended mirrored partial-shape pair is the pair of
-   trees T5 must relate; the corpus pins the statement before the proof machinery is built.
+   trees T5 relates; the corpus pins the statement before the proof machinery is built.
 
-The coinductive debt ledger is exactly three entries: T5 (above), the greatest-fixed-point
-characterization of `iter_step`'s chain that M3's Iter opens (a `bind_chain_gen`-style argument), and
-M4's Glob/host interaction.  Nothing on the term side needs coinduction as long as G2 and G5 hold;
-coinduction enters precisely where the language gains recursion or unbounded permutation.  That is
-the whole content of "fuel vs coinduction".
+The coinductive debt ledger, as corrected by § 13.4's measurement, has three entries: the
+greatest-fixed-point characterization of `iter_step`'s chain that M3's Iter opens (a
+`bind_chain_gen`-style argument), M4's Glob/host interaction, and whatever `≈`-level inversion the
+kernel will need when a claim must refute a `≈` rather than a `≅` (§ 13.2's B0 boundary again).
+Nothing on the term side needs coinduction as long as G2 and G5 hold; coinduction enters precisely
+where the language gains recursion.  "Unbounded permutation", which this section listed as a
+coinduction entry point, turned out not to need it - § 13.4.  That is the whole content of "fuel
+vs coinduction", with the ledger corrected by measurement.
+
+### 13.4 What the T5 draft measured (2026-11-24)
+
+The draft is in the kernel: `T5_swap_discarded_equ` / `T5_swap_discarded` / `T5_swap_equal_values` /
+`T5_top_swap_needs_value` (`coq/Checks.v`, after `T4_value_unique`) and the mirror examples
+`oo_swap_prefix_sem` and `oo_naive_suffix_swap_refuted` (`coq/tests/ChecksTest.v`).  Four findings,
+in order of how much they move the plan:
+
+- **Naive T5 is false, and a two-line kernel refutation pins that.**  The `Seq` arm
+  (`Semantics.v:218`) is `SOk _ => denE rho e2 n`: a seq DISCARDS the prefix's value and returns
+  the suffix's.  So `sem (seq e1 e2) ≈ sem (seq e2 e1)` fails whenever the two fragments carry
+  different values, and `T5_top_swap_needs_value` refutes it at the kernel's own literals
+  (`seq (ret z1; ret z2)` denotes to `ret z2`, the swap to `ret z1`), by `equ_ret_inv` plus
+  `injection`.  It is stated at `≅` because at `≈` the refutation would need exactly the inversion
+  § 13.2 recorded as unavailable to kernel trees (the `B0` pin) - the boundary showing up as a
+  proof-shape fact, not a comment.  The corpus had already said this the only way a corpus can:
+  the amended Group D block pins leave different final components, `9` fwd and `6` rev, and
+  `oo_naive_suffix_swap_refuted` pins that pair as values.
+- **The true claim is the swap at a DISCARDED prefix position, and it closes without coinduction.**
+  `T5_swap_discarded`: for a checked term, `denote (Seq (Seq e1 e2) e3) (e_fuel + k) ≈
+  denote (Seq (Seq e2 e1) e3) (e_fuel + k)`, the same fuel both sides.  The proof is totality (the
+  fuel induction of § 13.1) producing the component witnesses at exactly the fuels the arms query,
+  then § 12.2's peeling idiom bringing BOTH sides to the literal same tail term `denE nil e3 (S f)`
+  - one `transitivity` at that shared term, then `equ_wbisim_subrelation` transport in exactly
+  `T4_sem`'s shape.  The discarded values never appear in the proof; that is what "discarded" buys,
+  and it is why the kernel's first T5 attempt never asks for coinduction: `bind` chains of accepted
+  fragments are peelable because G2 and G5 make them finite.  Corpus witness: `oo_swap_prefix_sem`,
+  which discharges `e_oo_left` vs `e_oo_swap` - Group D's own swapped prefix over the shared
+  `sub 9 1` tail - through the theorem, using the corpus verdict pin as the hypothesis.
+- **A top-position swap holds exactly under a shared value witness.**  `T5_swap_equal_values` states
+  it with both fragments witnessed at the same value; peeling leaves `sret (SOk v)` both sides.
+  This is the condition the `Seq` arm silently imposes, now a kernel lemma instead of a footnote.
+- **The fold/reassociate half is blocked, and its blocker is § 13.2's recorded item.**  Peeling
+  `Seq (Seq e1 e2) e3 ≈ Seq e1 (Seq e2 e3)` reaches `denE nil e3` at DIFFERENT fuels on the two
+  sides - a cross-fuel statement, exactly the `denE_total_pairwise` shape.  The item has its first
+  named consumer; the item itself remains open.
+
+Four toolchain facts were measured on the way in, all silent until they bit - the first three bite
+only after `Checks.v`'s `Import WBisimNotations` (l.1410), which is why the same `exists` idiom
+works earlier in the same file:
+
+- a bare `exists` in an `assert` type resolves to ctrees' indexed-family quantifier, not Coq's
+  `ex` (the witness type comes back as `car (?ops ?n ?m)`);
+- `+` in a type whose expected type is not pinned (`x + k = S (S f)`) parses as ctrees' indexed
+  sum - `%nat` or a type-pinned context like `Nat.le _ (_ + _)` decides it;
+- `setoid_rewrite` reaching the other component's occurrence INSIDE a `Seq` continuation lambda is
+  refused by ctrees' setoid machinery - peel each side as its own `assert` equation, one
+  occurrence each, then `rewrite` the two equations into the goal;
+- `intros` auto-substitutes a `v1 = v2` introduced from the same `forall`'s binders and fuses the
+  two witness hypotheses - the lemma reads better with one shared witness.
+
+`Print Assumptions T5_swap_discarded` prints the same single `Eqdep.Eq_rect_eq.eq_rect_eq`, the
+coq-build audit stays at zero `Error:`/`Admitted` with all 11 `.vo`, and - the headline - the grep
+audit of § 13.3 still holds after the T5 draft: zero tactic-position use of coinduction machinery,
+every occurrence of those strings in kernel files being prose in a comment, the T5 block's own
+included.  The kernel's first explicit coinductive proof is still ahead of it, and § 13.3 now
+records honestly that it belongs to M3's Iter, not to T5.
