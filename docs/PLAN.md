@@ -1,6 +1,7 @@
 # Timbda-0 Verified Compiler — Master Plan
 
-Status: plan settled; ready to execute on agent switch. Last updated: 2026-11-16.
+Status: plan settled; per-milestone DoDs + statuses recorded at § 5.0 (M-1/M0 closed, M1 open,
+M2 paused behind M1 - decision 9). Last updated: 2026-11-25.
 Authoritative recapitulation. Supporting decision records are also stored in Strata memory
 (tags: timbda, gallina-kernel, ctrees, certirocq, boost-context, nix, bazel, hermetic-llvm,
 compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbda".
@@ -234,6 +235,65 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
 
 ## 5. Milestones
 
+### 5.0 Completion discipline (decision 9, 2026-11-25)
+
+A milestone is DONE-DONE only when every item of its recorded Definition of Done has landed on
+`main`, gate-attested, with no residue parked inside a later milestone's work; the next
+milestone's work begins only after that declaration. An audit confirming that hand-built pieces
+agree is not completion - completion is the pieces themselves. When execution lands a later
+milestone's item before an earlier milestone closed, the deviation is recorded here with cause
+and debt, not absorbed. Only M-1 ever had a written DoD (sec. 0); that gap caused the drift
+recorded under M1 below. Decision 9 closes the gap: every milestone carries its DoD in this
+section, written before its first commit lands against it.
+
+Per-milestone DoD and status (this section is the source of record; the gate lanes carry the
+attestations):
+
+- **M-1 - CLOSED.** DoD as stipulated in sec. 0 (both graphs hello-world green + pin-table
+  consistency). Standing witnesses: `checks.version-consistency`, `checks.golden-test` (still
+  the trivial ghc test by design - M2's real golden test is an M2 item, not an M-1 residue),
+  the bazel dialect seed.
+
+- **M0 - CLOSED.** DoD (from the M0 line plus decision 6): Syntax/Semantics/Rewriting kernel;
+  T1 at the core-rule scope (met: 15 named ctors + PrimSchema at both used arities,
+  docs/RULES-AUDIT.md); T2 br2 algebra; extracted evaluator; differential harness as a BUILD
+  GATE - the augustss `tester` corner was explicitly re-baselined to M3 (recorded amendment,
+  not residue). Standing witnesses: `checks.corpus-differential` (64 cases / 7 candidate bags)
+  and the kernel audit (zero `Admitted`, sole axiom `eq_rect_eq`).
+
+- **M1 - OPEN as of 2026-11-25.** Landed: `Timbda.td` ODS + 72 `TimbdaRuleRecord` rows; DRR
+  rewriters (`TimbdaPatterns.td` -> tblgen `.inc` -> `populateWithGenerated`). Remaining, per
+  decision 9's rulings:
+  1. `dialect/tblgen-rocq/` backend per sec. 2 - `-gen-rocq-ast`, `-gen-rocq-rules`,
+     `-gen-rocq-checker` generating into `coq/` for the rule-record family; hand-glued `Rew` /
+     AST artifacts retire as generated files land. `-gen-rocq-externs` ships with the
+     ContextExtern family at M4 (recorded binding).
+  2. pdll lit-test skeletons + flake checks `dialect-lit-tests` and `tblgen-rocq-golden`.
+  3. `tools/rules-audit.py` promoted from local ritual to a gate lane (`checks.rules-audit`);
+     once item 1 lands it also asserts generated-file provenance (generated artifacts marked,
+     no hand-written stand-ins behind them).
+  4. Bazel-side attestation: `bazel-native-tests` (dialect build + dialect test) wired per
+     sec. 6's "bazel builds, nix checks consume as prebuilt" contract. Today the bazel side has
+     no attested lane at all.
+  Recorded deviation: T4 (2026-11-23), T5 (2026-11-24), the CompCert toolchain (2026-11-25) and
+  T7 (2026-11-25) all landed while M1 stayed open - cause: no written DoD beyond M-1's, and
+  M2's kernel path has no hard dependency on M1 artifacts. The debt is paid by ordering, not
+  argument: T6, the CertiRocq wiring, and the real golden test do not start until M1 items 1-4
+  land and M1 is declared closed here.
+  Bound elsewhere (recorded so nothing floats): ContextExtern dual-side declarations +
+  annotation chain (sec. 2 artifact 5) -> M4; vendored DCont fork subtree (sec. 6) -> M4/M5
+  when the conversion passes start.
+
+- **M2 - OPEN; further work PAUSED behind M1 by decision 9.** Landed: T4 both legs +
+  `T4_value_unique`, T5 for the accepted fragment, T7, the m2-det gate corpus (29/7), CompCert
+  toolchain. Outstanding, in forced order: M1 closure, then T6 (with its pre-pinned design
+  obligations), then CertiRocq->C wiring (`Compile.v`), then the real golden test.
+
+- **M3 / M4 / M5 - NOT STARTED.** Per decision 9 each gets its DoD written into this section
+  before its first commit lands. Inherited bindings: M3 carries the augustss third corner
+  (decision 6); M4 carries the ContextExtern family, `-gen-rocq-externs`, and the DCont fork
+  subtree; M5 carries the WAMI pipeline and wasmtime pins.
+
 - M-1 (first action): build-infra skeleton, per sec. 0 + sec. 6.
 - M0: semantics spike. Syntax.v, Semantics.v, Rewriting.v; T1 for ~12 core rules, T2; extracted
   evaluator + T8 draft; differential harness vs augustss REPL. Transcribe rules from the SPJ
@@ -272,7 +332,8 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   (docs/DESIGN-NOTES.md § 4.2).
 - M1: dialect + generator. Timbda.td, DRR rewriters, tblgen-rocq backend, pdll tests, paper-rule
   coverage audit (every paper rule => a record + an MLIR pattern + a Rocq ctor — the audit IS the
-  completeness claim).
+  completeness claim).  *Open as of 2026-11-25: DoD, landed/remaining items, and the deviation
+  record are at § 5.0; decision 9 orders its closure before further M2 work.*
 - M2: the non-naive leg. Checks.v (T4), T5, Lower.v for determinate fragments (T6, T7),
   CertiRocq->C; golden test: out-of-order constant-expression programs compile to straight-line C
   with zero switch sites, proved.  *Status 2026-11-22:* M2's gate corpus `tests/corpus/m2-det.texpr`
@@ -327,6 +388,8 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   semantics cone and must decide those two axioms explicitly - allowlist, separate audit
   scope, or a float-avoiding formulation for int-only fragments - BEFORE the first proof
   line, not discovered mid-proof.
+  *Ordering 2026-11-25 (decision 9): what remains of M2 and the order it must land in are
+  pinned at § 5.0 - M1 closure first.*
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
   implementation with zero boost.context dependency.
 - M4: performance/streaming path. dcont lowering + generated ContextExtern annotations + shim;
@@ -562,6 +625,20 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
    corrects to M3 (PLAN § 5 puts T8 at M3), giving the C3 fuel-rebudget lemma a consistent home.
    The M2 golden-test corpus follows decision 6's ritual: claims written by hand before either
    engine runs.
+9. (2026-11-25) **Milestone discipline: done-done before moving on.**  A milestone closes only
+   when every item of its written Definition of Done (§ 5.0) has landed on `main` gate-attested,
+   with no residue parked inside a later milestone's work; later-milestone work does not begin
+   against an open milestone; a deviation that happened anyway is recorded with cause and debt,
+   not absorbed by an audit that merely confirms the hand-built pieces agree.  Scope rulings for
+   the open case (M1): (a) the generator contract stands as written in sec. 2 - build the
+   tblgen-rocq backends; audit+reconstruct may not substitute for generation; (b) M1's boundary
+   is the § 5 line plus sec. 2's five-artifact contract for TimbdaRule *rule* records, with the
+   ContextExtern artifacts explicitly bound to M4 and the DCont fork subtree to M4/M5 (recorded
+   bindings, nothing floats).  Forced order now: M1 close-out (tblgen-rocq backend; pdll lit
+   tests + `dialect-lit-tests`/`tblgen-rocq-golden` checks; `checks.rules-audit` gate lane; the
+   bazel attestation lane) precedes T6, the CertiRocq leg, and the real golden test.  Decision 9
+   reorders what remains; it does not re-litigate what landed - the M0/M2 status entries above
+   stand.  M3/M4/M5 must have their DoDs written in § 5.0 before their first commit lands.
 
 ## 9. Known reference anchors
 
