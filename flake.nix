@@ -413,6 +413,10 @@
                 || { echo "FAIL the T4 eval-side leg did not compile"; exit 1; }
               test -f _build/default/tests/ChecksTest.vo \
                 || { echo "FAIL the M2 checker tests did not compile"; exit 1; }
+              # M2 (2026-11-25): Lower.v is the T7 carrier; a build without it is
+              # the same vacuity this list has always guarded against.
+              test -f _build/default/Lower.vo \
+                || { echo "FAIL the Lower.v (T7) theory did not compile"; exit 1; }
               if grep -n "Admitted" build.log; then
                 echo "FAIL Admitted appeared in build output"; exit 1
               fi

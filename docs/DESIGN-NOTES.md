@@ -1601,3 +1601,67 @@ asserting it for weeks.  Consuming it is where the facts were:
 Ledger: the coinduction ledger (§ 13.3) is untouched; the kernel's own `.vo` set is unchanged
 (11 modules, `eq_rect_eq` sole axiom); the probe itself lives outside `coq/` on purpose —
 Lower.v will get its own probe-first draft like T5 did, with the axiom question settled first.
+
+### 13.8 T7 landed: `Lower.v` as a fuel-free structural `Fixpoint`, the syntax-cone audit lane, and CompCert's notation window (measured 2026-11-25)
+
+T7 (`det_check e = true -> no_switch (lower e)`, PLAN § 3 item 7) landed in `coq/Lower.v`,
+faithful to the PLAN wording and probe-first (p501–p511) like T5 was.  What the increment
+measured:
+
+- **Shape.**  `lstmt` is the kernel-side statement type: Clight statements wrapped as
+  `Lclight`, sequenced as `Lseq`, and — the point of T7 — an explicit `Lswitch e` marker
+  carrying the *kernel* `Expr` wherever `lower` declines to translate (Fail, Choice, Iter,
+  context-call shapes).  `lower : Expr -> lstmt` is a **total, fuel-free structural
+  `Fixpoint`** — legal under the CertiRocq-cone rule (§ 13.5) as the structurally-recursive
+  alternative to the fuel-bounded sketch in PLAN item 6.  `no_switch_l : lstmt -> bool`
+  decides absence of `Lswitch`; `T7_no_switch` is stated for `det_check` and proved through
+  `T7_no_switch_ws`, the depth-general form: the `ws_expr` guard is depth-indexed (a Block
+  body is checked at `Datatypes.length sl + d`, Checks.v's own convention), so the induction
+  carries the depth universally and the Block arm re-instantiates it.
+- **The measured fragment is purely straight-line.**  `app_node_ok_shape` (Checks.v:537) pins
+  what `det_check` admits at an `App`: only `App (Ret (VPrim p))` heads with literal
+  (`rets_of`) operands — no beta, no loops.  `Glob`/`Choice`/`Fail`/`Iter` are banned by
+  `bans_okE`, so their induction arms close by `discriminate` on the peeled guard; `Unify`
+  closes through `eq_pair_ok`'s `Sskip` arm; `TupE` through `tup_node_ok_rets`; only `Seq`
+  and `Block` recurse.  Arithmetic constants emit 64-bit: `Clight.Econst_long (Int64.repr n)
+  (Ctypes.Tlong Signed noattr)` (`Econst_int` is 32-bit `int` — p504).  Documented
+  placeholder arms (prims outside the arithmetic map, `TupE` layouts, `Some (VVar _)` slots,
+  `VLam`) are structurally present but semantically vacuous until T6 refines them.
+- **The § 13.7 audit question resolves for the half T7 touches.**  `Print Assumptions
+  T7_no_switch` — run *inside* the build via `coq/tests/LowerTest.v` — prints `Closed under
+  the global context`: T7 mentions only Clight *syntax* constructors (p502 had measured the
+  syntax cone axiom-free), never the step relations, so Flocq's `sig_not_dec`/`sig_forall_dec`
+  pair never enters and the kernel gate's `eq_rect_eq`-only pin is untouched.  The fresh-build
+  log audit was re-run with the flake's own grep before billing: exactly one axiom line, and
+  the new `Compute` emission dump (record fields like `Integers.Int64.intval := 6;`) does not
+  match the axiom-line pattern `^[A-Za-z][A-Za-z0-9_.]* :`.  The Flocq decision stays a T6
+  obligation, scoped to the *semantics* cone (`Clight.step`, `Csem.lred/rred`,
+  `ClightBigstep`).
+- **CompCert's notation window — the costliest ergonomic fact.**  `Require Import
+  Timbda.Lower` (hence CompCert) rebinds *parsing* for the rest of a file: `[..]` list
+  literals and `x :: l` stop resolving to stdlib lists ("Unknown interpretation for notation
+  _ :: _"), and bare numerals stop elaborating against the kernel's `Z` — `Check VInt` then
+  prints `BinNums.Z -> Val` and `VInt 2` fails with "2 has type nat while it is expected to
+  have type BinNums.Z" (CompCert 3.17 wraps stdlib `Z` in `BinNums.Z`; numeral overloading
+  does not see through the wrapper).  The test lane is written around it: kernel-side terms
+  are `Definition`s *before* the `Timbda.Lower` require, and every test file re-opens
+  `Import ListNotations` — a module's own `Import`s (Syntax.v:19) are not re-exported to
+  consumers.  Inside `Lower.v` itself only cons patterns (`(PAdd, a :: b :: nil)`) and
+  `Datatypes` spellings appear.
+- **Proof assembly idiom.**  The final T7 proof shares only the induction and the `intros`;
+  every bullet re-peels `det_struct_components` + `andb_and`/`andb3_and` because the guards'
+  `cbn` shapes are constructor-specific (Block's unify/apps/tup arms are already body-single
+  after `cbn`; bans/blocks/ws peel conjunctively).  A shared pre-bullet peel verified fine
+  on every single-branch probe (p511-style isolation) yet failed in the 10-bullet assembly —
+  per-branch self-containment is the idiom for this guard bundle.  9.1 Ltac1 detail that
+  bit once: intro-pattern names cannot be passed as Ltac1 variables ("cannot be coerced to a
+  variable"), which is why Checks.v destructs inline and Lower.v does too.
+- **Consumption fact for the distribution.**  `Lower.vo` is the first kernel artifact whose
+  import cone reaches CompCert: downstream users of `timbda-kernel`'s installed `.vo` set need
+  `compcert` on the loadpath (already true in the flake, `rocqDeps ⊂ buildInputs`), and the
+  kernel `.vo` set grows 11 → 13 (`Lower.vo`, `tests/LowerTest.vo`), mirrored in
+  `tools/build/coq-build.sh` `EXPECTED_VO` and the `flake.nix` buildPhase vacuity check.
+
+Ledger: coinduction ledger (§ 13.3) untouched (Lower.v adds no cofix or ctrees machinery);
+kernel axiom set unchanged (`eq_rect_eq` sole, T7's own cone prints *closed*); M2 debt now
+T6 + golden test.

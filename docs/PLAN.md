@@ -144,11 +144,18 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
    structurally recursive or fuel-indexed `Fixpoint` only - `lower_det` is written as a
    fuel-bounded function, which is exactly the shape CertiRocq lowers to plain `while` loops;
    no `CoFixpoint`, no ctrees cofix constructions (`bind`/`subst`, Denotation.v:77) enter the
-   compiled cone.  For checked terms the emitted fuel guard is provably never-false
+   compiled cone.  Measured 2026-11-25: the landed T7 `lower` (docs/DESIGN-NOTES.md § 13.8) is
+   the other legal shape — structurally recursive, fuel-free — and the two shapes meet on the
+   straight-line fragment `app_node_ok` pins.  For checked terms the emitted fuel guard is provably never-false
    (`T4_sem` runs at every `e_fuel e + k`), so the while loop is the unbounded idealization
    over precisely the accepted fragment.
 7. T7 No-context-call theorem: det_check e = true -> no_switch (lower e) — structural induction
    on the Gallina lowering function. The anti-naivety guarantee verbatim.
+   Landed 2026-11-25 (docs/DESIGN-NOTES.md § 13.8): `no_switch` is `no_switch_l` over
+   `coq/Lower.v`'s fuel-free structural `lower`; `T7_no_switch` proved through the
+   depth-general `ws_expr` form, `Print Assumptions T7_no_switch` printing `Closed under the
+   global context` in the build (coq/tests/LowerTest.v), so Flocq's pair (§ 13.7) stays on
+   the T6 side only.
 8. T8 Evaluator adequacy: candidate_set (eval_run e) = candidate_set (sem e), where the candidate
    model is ctrees `br2` branching and `=` is weak bisimilarity — i.e. Wbisim (denote (Eval.norm
    fuel e) f') (denote e f) under the uniform-fuel accounting of coq/Denotation.v.  The Gallina
@@ -308,14 +315,18 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   the peeled prim/tuple/literal trees are fuel-free, only Seq and Block recurse) — and with it T5's
   fold/reassociate half (`T5_swap_assoc`, corpus witness `oo_assoc_sem` discharging Group D's own
   assoc pair; docs/DESIGN-NOTES.md § 13.6).  T5 is now fully discharged for the accepted fragment.
-  What M2 still owes: `Lower.v` for determinate fragments (T6, T7) and the golden test.
-  Its toolchain prep landed 2026-11-25: CompCert 3.17 in `rocqDeps` (docs/DESIGN-NOTES.md
+  What M2 still owes: T6 and the golden test.  T7 landed 2026-11-25: `coq/Lower.v`'s
+  fuel-free structural `lower`/`no_switch_l` and `T7_no_switch`, build-audited by
+  `coq/tests/LowerTest.v` (docs/DESIGN-NOTES.md § 13.8).  Its toolchain prep landed
+  2026-11-25: CompCert 3.17 in `rocqDeps` (docs/DESIGN-NOTES.md
   § 13.7), consumption probed against the installed tree, and the T6-side surfaces measured
   - `Smallstep.forward_simulation` axiom-free, Clight's own semantics cone carrying Flocq's
-  two `ClassicalDedekindReals` axioms.  The kernel Print-Assumptions audit (hard-pinned to
-  `eq_rect_eq` alone) must decide those two axioms explicitly - allowlist, separate audit
-  scope, or a float-avoiding cone for int-only fragments - BEFORE Lower.v is written, not
-  discovered mid-proof.
+  two `ClassicalDedekindReals` axioms.  The audit decision has half-resolved: T7 touches only
+  Clight *syntax*, which is axiom-closed, so the kernel Print-Assumptions audit (hard-pinned
+  to `eq_rect_eq` alone) survived the increment untouched; T6's statement will meet the
+  semantics cone and must decide those two axioms explicitly - allowlist, separate audit
+  scope, or a float-avoiding formulation for int-only fragments - BEFORE the first proof
+  line, not discovered mid-proof.
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
   implementation with zero boost.context dependency.
 - M4: performance/streaming path. dcont lowering + generated ContextExtern annotations + shim;
