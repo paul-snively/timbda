@@ -198,6 +198,17 @@ Proof.
   apply (T5_top_swap_needs_value 9 6). intros HC. discriminate HC.
 Qed.
 
+(* T5's fold half at its corpus witness: e_oo_left vs e_oo_right is Group D's
+   own left- and right-associated pair - same three leaves, different Seq
+   nesting.  The two norm pins above already agree on the same normal form;
+   T5_swap_assoc turns that eval-side coincidence into a sem-side Wbisim at
+   the shared budget (e_fuel is S over a sum: both shapes cost the same). *)
+Example oo_assoc_sem :
+  denote e_oo_left (e_fuel e_oo_left + 2) ≈ denote e_oo_right (e_fuel e_oo_left + 2).
+Proof.
+  apply (T5_swap_assoc _ _ _ 2). exact oo_left_assoc_det.
+Qed.
+
 (* The amended Group D pair (tests/corpus/README.md § 8): closed blocks, slot-disjoint,
    one with an app body the M0 row set cannot reach (block 1 keeps its body), one that
    Subst does reach (body index 0 is slot 1, value 9).  The checker sees closed slots
@@ -356,3 +367,4 @@ Print Assumptions T4_eval.
 Print Assumptions T4_sem.
 Print Assumptions T4_value_unique.
 Print Assumptions T5_swap_discarded.
+Print Assumptions T5_swap_assoc.

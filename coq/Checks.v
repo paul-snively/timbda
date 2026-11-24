@@ -19,8 +19,10 @@
               idiom Denotation.v uses for every T1 row.
               Its corollary T4_value_unique (same file, after T4_sem) makes
               the accepted term's value unique at every fixed fuel at or
-              above its own budget; § 13.2 records the two-fuel lemma that
-              would additionally show the value is the same across fuels.
+              above its own budget; the two-fuel strengthening § 13.2 recorded
+              is now delivered as denE_total_pairwise (after denE_total):
+              evaluations at any two fuels at or above the budget are
+              equ-bisimilar (docs/DESIGN-NOTES.md § 13.6).
 
       T5_swap_discarded  det_check (Seq (Seq e1 e2) e3) = true ->
               denote (Seq (Seq e1 e2) e3) (e_fuel + k) ≈
@@ -30,9 +32,9 @@
               so a swap at a DISCARDED prefix position is Wbisim and the discarded
               values never enter the proof.  The naive suffix swap is refuted
               (T5_top_swap_needs_value), holds exactly under value equality
-              (T5_swap_equal_values), and the fold/reassociate half waits for the
-              denE_total_pairwise item of § 13.2 because its two sides query the
-              tail at different fuels.
+              (T5_swap_equal_values), and the fold/reassociate half (T5_swap_assoc)
+              closes over denE_total_pairwise (after denE_total), whose two-budget
+              induction bridges the tail's two fuels (docs/DESIGN-NOTES.md § 13.6).
 
      T4_eval  det_check e = true -> the evaluator's bag is a singleton:
               for every fuel f, exists nf, cand_bag (norm f e) = nf :: nil.
@@ -1418,6 +1420,197 @@ Proof.
       rewrite (bans_okE_not_iter ic b r) in Hban. discriminate Hban.
 Qed.
 
+(* ---------- denE_total_pairwise: the § 13.2 recorded item, delivered ----------
+   Totality run with BOTH budgets in one induction: for a checked node and any
+   two fuels at or above its own budget, the two evaluations are equ-bisimilar.
+   Same induction shape as denE_total (induction on the first fuel, everything
+   else reverted, the second fuel case-split per arm).  What the arms cost is
+   the interesting fact (docs/DESIGN-NOTES.md § 13.6): five arms close because
+   the peeled tree is FUEL-FREE - apply_c (Semantics.v:271) consumes its budget
+   at the head arm and the VPrim arm returns `sret (prim_sres ...)` with no
+   fuel anywhere, so App/TupE/Unify/Ret peel both sides to the literal same
+   tree and the bridge is reflexivity (the prim bridge lemmas, which only turn
+   that stuck tree into `SOk w`, are not needed - and with them unused, none of
+   the prim rows' ws_val side conditions are needed either).  Only Seq and
+   Block recurse, bridging the surviving component's two fuels through the IH.
+   G2 arms are contradictions, as in denE_total. *)
+
+(* The App arm's two-budget peel.  Both sides run the canonical node through
+   the same path analysis of app_node_ok_shape (shared hypotheses, destructed
+   once), then peel per side with the per-side k-split; the tails are the same
+   stuck prim tree on both sides, modulo the fuels that apply_c already ate. *)
+Lemma denE_App_pairwise : forall m1 m2 rho d p a,
+  env_ok d rho = true -> ws_expr d a = true ->
+  app_node_ok (Ret (VPrim p)) a = true ->
+  Nat.le (e_fuel (App (Ret (VPrim p)) a)) m1 ->
+  Nat.le (e_fuel (App (Ret (VPrim p)) a)) m2 ->
+  denE rho (App (Ret (VPrim p)) a) m1 ≅ denE rho (App (Ret (VPrim p)) a) m2.
+Proof.
+  intros m1 m2 rho d p a Henv Hws Hcanon Hf1 Hf2.
+  apply (app_node_ok_shape (Ret (VPrim p)) a) in Hcanon.
+  destruct Hcanon as [q [vs [Hq [Hops Hpath]]]]. inversion Hq. subst q.
+  cbn [e_fuel] in Hf1, Hf2.
+  assert (Hm1 : exists n, m1 = S (S n))
+    by (exists (m1 - 2); assert (Hfa := e_fuel_pos a); lia).
+  assert (Hm2 : exists n, m2 = S (S n))
+    by (exists (m2 - 2); assert (Hfa := e_fuel_pos a); lia).
+  destruct Hm1 as [n1 Hm1]. destruct Hm2 as [n2 Hm2].
+  rewrite Hm1, Hm2. cbn [e_fuel] in Hf1, Hf2.
+  destruct Hpath as [Hpath | [Hpath | Hpath]].
+  - (* (a) all-int operands, both encodings: peel each side to the same prim tree *)
+    apply andb_and in Hpath. destruct Hpath as [Hall Hres].
+    apply (prim_operand_vals_inv a vs) in Hops.
+    destruct Hops as [Hops | Hops].
+    + destruct Hops as [es [Ha Hret]]. subst a.
+      assert (Hmap : es = map Ret vs) by (exact (rets_of_map_rets es vs Hret)). subst es.
+      cbn [e_fuel sumE] in Hf1, Hf2. rewrite sumE_e_fuel_map_ret in Hf1, Hf2.
+      assert (Hk1 : exists k, n1 = S (length vs + k))
+        by (exists (n1 - S (length vs)); lia).
+      assert (Hk2 : exists k, n2 = S (length vs + k))
+        by (exists (n2 - S (length vs)); lia).
+      destruct Hk1 as [k1 Hk1]. destruct Hk2 as [k2 Hk2].
+      rewrite Hk1, Hk2.
+      cbn [denE denE_tup sret].
+      rewrite closeV_prim. cbn [sret].
+      setoid_rewrite bind_ret_l. cbn [sret].
+      setoid_rewrite (denE_tup_rets vs nil rho k1).
+      setoid_rewrite (denE_tup_rets vs nil rho k2).
+      cbn [rev app sret].
+      setoid_rewrite bind_ret_l. cbn [sret apply_c].
+      reflexivity.
+    + destruct Hops as [v [Ha Heqvs]]. subst a. subst vs.
+      cbn [denE denE_tup sret].
+      rewrite closeV_prim. cbn [sret].
+      setoid_rewrite bind_ret_l. cbn [sret].
+      setoid_rewrite bind_ret_l. cbn [sret apply_c].
+      reflexivity.
+  - (* (b) table operands through a TupE operand list *)
+    destruct Hpath as [es [Ha [Hret Hargs]]]. subst a.
+    assert (Hmap : es = map Ret vs) by (exact (rets_of_map_rets es vs Hret)). subst es.
+    cbn [e_fuel sumE] in Hf1, Hf2. rewrite sumE_e_fuel_map_ret in Hf1, Hf2.
+    assert (Hk1 : exists k, n1 = S (length vs + k))
+      by (exists (n1 - S (length vs)); lia).
+    assert (Hk2 : exists k, n2 = S (length vs + k))
+      by (exists (n2 - S (length vs)); lia).
+    destruct Hk1 as [k1 Hk1]. destruct Hk2 as [k2 Hk2].
+    rewrite Hk1, Hk2.
+    cbn [denE denE_tup sret].
+    rewrite closeV_prim. cbn [sret].
+    setoid_rewrite bind_ret_l. cbn [sret].
+    setoid_rewrite (denE_tup_rets vs nil rho k1).
+    setoid_rewrite (denE_tup_rets vs nil rho k2).
+    cbn [rev app sret].
+    setoid_rewrite bind_ret_l. cbn [sret apply_c].
+    reflexivity.
+  - (* (b') table operands through a bare `Ret v` operand *)
+    destruct Hpath as [v [Ha Hbare]]. subst a.
+    cbn [denE denE_tup sret].
+    rewrite closeV_prim. cbn [sret].
+    setoid_rewrite bind_ret_l. cbn [sret].
+    setoid_rewrite bind_ret_l. cbn [sret apply_c].
+    reflexivity.
+Qed.
+
+Lemma denE_total_pairwise : forall m1 m2 e d rho,
+  ws_expr d e = true -> env_ok d rho = true -> det_struct e = true ->
+  Nat.le (e_fuel e) m1 -> Nat.le (e_fuel e) m2 ->
+  denE rho e m1 ≅ denE rho e m2.
+Proof.
+  induction m1 as [| n1 IH]; intros m2 e d rho Hw Henv Hds Hf1 Hf2.
+  - assert (Hp := e_fuel_pos e). lia.
+  - destruct m2 as [| n2]; [assert (Hp := e_fuel_pos e); lia |].
+    destruct e as [v | gid | f a | es | e1 e2 | u1 u2 | c1 c2 | | sl body | ic b r].
+    + (* Ret *) cbn [denE]. reflexivity.
+    + (* Glob: G2 *)
+      apply det_struct_components in Hds. destruct Hds as [Hban _].
+      rewrite (bans_okE_not_glob gid) in Hban. discriminate Hban.
+    + (* App: G5 - the two-budget peel is denE_App_pairwise *)
+      apply det_struct_components in Hds. destruct Hds as [_ [_ [_ [Happs _]]]].
+      assert (Hnode := apps_okE_node f a Happs).
+      apply (app_node_ok_shape f a) in Hnode.
+      destruct Hnode as [p [vs [Hf [Hops Hpath]]]]. subst f.
+      cbn [ws_expr] in Hw. apply andb_and in Hw. destruct Hw as [_ Hwa].
+      exact (denE_App_pairwise (S n1) (S n2) rho d p a Henv Hwa
+               (apps_okE_node (Ret (VPrim p)) a Happs) Hf1 Hf2).
+    + (* TupE: G6 pins `map Ret vs`; both sides peel to the same closed tuple *)
+      apply det_struct_components in Hds. destruct Hds as [_ [_ [_ [_ Htup]]]].
+      apply (tup_rets_okE_node es) in Htup.
+      apply (tup_node_ok_rets es) in Htup.
+      destruct Htup as [vs Hret].
+      assert (Hmap : es = map Ret vs) by (exact (rets_of_map_rets es vs Hret)). subst es.
+      cbn [e_fuel sumE] in Hf1, Hf2. rewrite sumE_e_fuel_map_ret in Hf1, Hf2.
+      assert (Hk1 : exists k, n1 = S (length vs + k))
+        by (exists (n1 - S (length vs)); lia).
+      assert (Hk2 : exists k, n2 = S (length vs + k))
+        by (exists (n2 - S (length vs)); lia).
+      destruct Hk1 as [k1 Hk1]. destruct Hk2 as [k2 Hk2].
+      rewrite Hk1, Hk2. cbn [denE].
+      setoid_rewrite (denE_tup_rets vs nil rho k1).
+      setoid_rewrite (denE_tup_rets vs nil rho k2).
+      cbn [rev app]. reflexivity.
+    + (* Seq: peel each side to its own fuel of the surviving component, bridge with IH *)
+      apply (det_struct_Seq_inv e1 e2) in Hds. destruct Hds as [Hds1 Hds2].
+      apply andb_and in Hw. destruct Hw as [Hw1 Hw2].
+      cbn [e_fuel] in Hf1, Hf2.
+      assert (Hp1 := e_fuel_pos e1). assert (Hp2 := e_fuel_pos e2).
+      assert (Hle11 : Nat.le (e_fuel e1) n1) by lia.
+      assert (Hle12 : Nat.le (e_fuel e1) n2) by lia.
+      assert (Hle21 : Nat.le (e_fuel e2) n1) by lia.
+      assert (Hle22 : Nat.le (e_fuel e2) n2) by lia.
+      destruct (denE_total n1 e1 d rho Hw1 Henv Hds1 Hle11) as [v1a He1a].
+      destruct (denE_total n2 e1 d rho Hw1 Henv Hds1 Hle12) as [v1b He1b].
+      assert (P1 : denE rho (Seq e1 e2) (S n1) ≅ denE rho e2 n1).
+      { cbn [denE]. setoid_rewrite He1a. rewrite bind_sret_l. cbn [denE].
+        reflexivity. }
+      assert (P2 : denE rho (Seq e1 e2) (S n2) ≅ denE rho e2 n2).
+      { cbn [denE]. setoid_rewrite He1b. rewrite bind_sret_l. cbn [denE].
+        reflexivity. }
+      rewrite P1, P2.
+      refine (IH n2 e2 _ rho Hw2 Henv Hds2 Hle21 Hle22).
+    + (* Unify: G4 pins the EqK1 literal pair; both sides peel to `ret w1` *)
+      apply det_struct_components in Hds. destruct Hds as [_ [_ [Hu [_ _]]]].
+      apply (unify_okE_pair u1 u2) in Hu.
+      apply (eq_pair_ok_shape u1 u2) in Hu.
+      destruct Hu as [w1 [w2 [Hu1 [Hu2 [Hl1 [Hl2 Heq]]]]]]. subst u1 u2.
+      cbn [e_fuel] in Hf1, Hf2.
+      destruct n1 as [| f1]; [lia |]. destruct n2 as [| f2]; [lia |].
+      transitivity (sret (SOk w1)).
+      { cbn [denE]. cbn [sret].
+        setoid_rewrite bind_ret_l. cbn [sret].
+        setoid_rewrite bind_ret_l. cbn [sret].
+        rewrite (closeV_lit rho w1 Hl1). rewrite (closeV_lit rho w2 Hl2).
+        rewrite (unify_top_lit w1 w2 f1 Hl1 Hl2 Heq).
+        reflexivity. }
+      { symmetry. cbn [denE]. cbn [sret].
+        setoid_rewrite bind_ret_l. cbn [sret].
+        setoid_rewrite bind_ret_l. cbn [sret].
+        rewrite (closeV_lit rho w1 Hl1). rewrite (closeV_lit rho w2 Hl2).
+        rewrite (unify_top_lit w1 w2 f2 Hl1 Hl2 Heq).
+        reflexivity. }
+    + (* Choice: G2 *)
+      apply det_struct_components in Hds. destruct Hds as [Hban _].
+      rewrite (bans_okE_not_choice c1 c2) in Hban. discriminate Hban.
+    + (* Fail: G2 *)
+      apply det_struct_components in Hds. destruct Hds as [Hban _].
+      rewrite bans_okE_not_fail in Hban. discriminate Hban.
+    + (* Block: G3 - one closeSlots_int, the two body fuels bridge through IH *)
+      apply (det_struct_Block_inv sl body) in Hds. destruct Hds as [Hdsb Hslots].
+      apply andb_and in Hw. destruct Hw as [Hwslo Hwsb].
+      cbn [e_fuel] in Hf1, Hf2.
+      assert (Hle1 : Nat.le (e_fuel body) n1) by lia.
+      assert (Hle2 : Nat.le (e_fuel body) n2) by lia.
+      destruct (closeSlots_int sl rho d Hslots Hwslo Henv) as [rho' [HE Hint]].
+      assert (PB1 : denE rho (Block sl body) (S n1) ≅ denE rho' body n1).
+      { cbn [denE]. rewrite HE. cbn [denE]. reflexivity. }
+      assert (PB2 : denE rho (Block sl body) (S n2) ≅ denE rho' body n2).
+      { cbn [denE]. rewrite HE. cbn [denE]. reflexivity. }
+      rewrite PB1, PB2.
+      refine (IH n2 body _ rho' Hwsb Hint Hdsb Hle1 Hle2).
+    + (* Iter: G2 *)
+      apply det_struct_components in Hds. destruct Hds as [Hban _].
+      rewrite (bans_okE_not_iter ic b r) in Hban. discriminate Hban.
+Qed.
+
 (* T4_sem (docs/PLAN.md § 3 item 4, corpus shape per the header): a checked
    term denotes to exactly one value at every fuel at or above its own budget.
    The empty environment satisfies the int-frame invariant trivially; the
@@ -1489,9 +1682,11 @@ Qed.
       at the equ level: at ≈ it would need the wbisim-side inversion § 13.2
       recorded as unavailable to kernel trees (the B0 pin).
 
-   The fold/reassociate half of T5 (Seq (Seq e1 e2) e3 ≈ Seq e1 (Seq e2 e3))
-   is deliberately absent: peeling its two sides queries e3 at DIFFERENT
-   fuels, so it first needs the denE_total_pairwise item of § 13.2. *)
+   The fold/reassociate half (T5_swap_assoc below) was blocked on exactly one
+   thing, which the pairwise lemma right after denE_total now supplies: peeling
+   its two sides queries e3 at DIFFERENT fuels (S f vs f under a SHARED budget -
+   e_fuel is S over a sum, so both assoc shapes carry the same budget), and
+   denE_total_pairwise bridges that gap. *)
 
 Lemma T5_swap_discarded_equ : forall e1 e2 e3 f,
   ws_expr 0 (Seq (Seq e1 e2) e3) = true ->
@@ -1577,4 +1772,72 @@ Proof.
   pose proof (equ_ret_inv _ _ H) as Hi.
   injection Hi as Zlz.
   exfalso. apply Hz. symmetry. exact Zlz.
+Qed.
+
+(* T5's fold/reassociate half, delivered by denE_total_pairwise (the item
+   § 13.2 recorded, § 13.4 named its consumer for, § 13.6 closes).  The two
+   Seq shapes share e_fuel - `S` over a SUM is associative: both budgets are
+   `2 + e_fuel e1 + e_fuel e2 + e_fuel e3` - so the theorem states ONE fuel
+   for both.  Peeling at that shared budget: the left side survives as
+   `denE nil e3 (S f)`, the right as `denE nil e3 f` - the cross-fuel step
+   § 13.4 measured as the blocker, bridged by the pairwise lemma.  Corpus
+   witness: e_oo_left vs e_oo_right in coq/tests/ChecksTest.v (Group D's own
+   assoc pair over the shared `sub 9 1` tail). *)
+
+Lemma T5_swap_assoc_equ : forall e1 e2 e3 f,
+  ws_expr 0 (Seq (Seq e1 e2) e3) = true ->
+  env_ok 0 nil = true ->
+  det_struct (Seq (Seq e1 e2) e3) = true ->
+  Nat.le (e_fuel (Seq (Seq e1 e2) e3)) (S (S f)) ->
+  denE nil (Seq (Seq e1 e2) e3) (S (S f))
+    ≅ denE nil (Seq e1 (Seq e2 e3)) (S (S f)).
+Proof.
+  intros e1 e2 e3 f Hw Henv Hds Hfuel.
+  cbn [e_fuel] in Hfuel.
+  assert (Hp1 := e_fuel_pos e1). assert (Hp2 := e_fuel_pos e2).
+  assert (Hp3 := e_fuel_pos e3).
+  (* The inner Seq node is witnessed AS A NODE (its ws/det conditions are
+     needed whole), so its leaf splits go through pose proof - a plain
+     `destruct Hw12 as [Hw1 Hw2]` (the T5_swap_discarded_equ shape) would
+     clear Hw12 out of reach of the denE_total call below. *)
+  cbn [ws_expr] in Hw.
+  apply andb_and in Hw. destruct Hw as [Hw12 Hw3].
+  cbn [ws_expr] in Hw12.
+  pose proof (andb_and _ _ Hw12) as Hw12c. destruct Hw12c as [Hw1 Hw2].
+  apply det_struct_Seq_inv in Hds. destruct Hds as [Hds12 Hds3].
+  pose proof (det_struct_Seq_inv e1 e2 Hds12) as Hds12c.
+  destruct Hds12c as [Hds1 Hds2].
+  assert (Hle12 : Nat.le (e_fuel (Seq e1 e2)) (S f)) by (cbn [e_fuel]; lia).
+  assert (Hle1 : Nat.le (e_fuel e1) (S f)) by lia.
+  assert (Hle2 : Nat.le (e_fuel e2) f) by lia.
+  destruct (denE_total (S f) (Seq e1 e2) 0 nil Hw12 Henv Hds12 Hle12) as [v12 He12].
+  destruct (denE_total (S f) e1 0 nil Hw1 Henv Hds1 Hle1) as [v1 He1].
+  destruct (denE_total f e2 0 nil Hw2 Henv Hds2 Hle2) as [v2 He2].
+  assert (PL : denE nil (Seq (Seq e1 e2) e3) (S (S f)) ≅ denE nil e3 (S f)).
+  { cbn [denE]. setoid_rewrite He12. rewrite bind_sret_l. cbn [denE].
+    reflexivity. }
+  assert (PR : denE nil (Seq e1 (Seq e2 e3)) (S (S f)) ≅ denE nil e3 f).
+  { cbn [denE]. setoid_rewrite He1. rewrite bind_sret_l. cbn [denE].
+    setoid_rewrite He2. rewrite bind_sret_l. cbn [denE]. reflexivity. }
+  assert (Hle3a : Nat.le (e_fuel e3) (S f)) by lia.
+  assert (Hle3b : Nat.le (e_fuel e3) f) by lia.
+  rewrite PL, PR.
+  apply (denE_total_pairwise (S f) f e3 0 nil); assumption.
+Qed.
+
+Theorem T5_swap_assoc : forall e1 e2 e3 k,
+  det_check (Seq (Seq e1 e2) e3) = true ->
+  denote (Seq (Seq e1 e2) e3) (e_fuel (Seq (Seq e1 e2) e3) + k) ≈
+  denote (Seq e1 (Seq e2 e3)) (e_fuel (Seq (Seq e1 e2) e3) + k).
+Proof.
+  intros e1 e2 e3 k Hc. apply det_check_components in Hc. destruct Hc as [Hw Hds].
+  assert (Henv : env_ok 0 nil = true) by (apply env_ok_mk; [lia | reflexivity]).
+  assert (Hfuel : Nat.le (e_fuel (Seq (Seq e1 e2) e3))
+                         (e_fuel (Seq (Seq e1 e2) e3) + k)) by lia.
+  pose (f := (e_fuel (Seq (Seq e1 e2) e3) + k - 2)%nat).
+  assert (HF : (e_fuel (Seq (Seq e1 e2) e3) + k)%nat = S (S f))
+    by (unfold f; cbn [e_fuel]; lia).
+  rewrite HF in Hfuel. rewrite HF.
+  unfold denote. apply equ_wbisim_subrelation.
+  exact (T5_swap_assoc_equ e1 e2 e3 f Hw Henv Hds Hfuel).
 Qed.

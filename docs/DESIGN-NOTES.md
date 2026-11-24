@@ -1351,9 +1351,9 @@ Two honest boundaries, both learned from failed attempts and worth recording exa
   fuels share no middle node, so "the whole family `denote e (e_fuel e + k)` is pairwise `≈`" is not
   a setoid exercise at all.  What it needs is a two-fuel strengthening of the totality lemma -
   `denE_total` run with both budgets in one induction, producing related witnesses - recorded as the
-  **`denE_total_pairwise`** item; § 13.4 has meanwhile named its first consumer (the
-  fold/reassociate half of T5), which is the honest reason it is deferred as a work item rather
-  than waved away.
+  **`denE_total_pairwise`** item; § 13.4 named its first consumer (the
+  fold/reassociate half of T5), and § 13.6 records the item landing the same day -
+  deferred honestly, then discharged.
   That is the honest shape of "fuel does not change the value": a lemma about the induction, not
   about the setoid, exactly as § 13.1 predicts.
 - **The wbisim-side inversion is not available to kernel trees.**  ctrees' `wbisim_ret_inv`
@@ -1439,8 +1439,8 @@ in order of how much they move the plan:
   This is the condition the `Seq` arm silently imposes, now a kernel lemma instead of a footnote.
 - **The fold/reassociate half is blocked, and its blocker is § 13.2's recorded item.**  Peeling
   `Seq (Seq e1 e2) e3 ≈ Seq e1 (Seq e2 e3)` reaches `denE nil e3` at DIFFERENT fuels on the two
-  sides - a cross-fuel statement, exactly the `denE_total_pairwise` shape.  The item has its first
-  named consumer; the item itself remains open.
+  sides - a cross-fuel statement, exactly the `denE_total_pairwise` shape.  The item got its first
+  named consumer the same day, and § 13.6 records it landing: `T5_swap_assoc` is that fold half.
 
 Four toolchain facts were measured on the way in, all silent until they bit - the first three bite
 only after `Checks.v`'s `Import WBisimNotations` (l.1410), which is why the same `exists` idiom
@@ -1462,3 +1462,89 @@ audit of § 13.3 still holds after the T5 draft: zero tactic-position use of coi
 every occurrence of those strings in kernel files being prose in a comment, the T5 block's own
 included.  The kernel's first explicit coinductive proof is still ahead of it, and § 13.3 now
 records honestly that it belongs to M3's Iter, not to T5.
+
+### 13.5 The fuel idiom is also the lowering strategy (recorded 2026-11-24 as a design constraint)
+
+The question that opened this subsection, recorded as asked: *cofix closures cannot be lowered to
+CertiRocq for performance reasons - they must become induction over fuel so CertiRocq emits plain
+`while` loops - is that something to tackle now?*  The measured answer is that the kernel already
+made this transformation everywhere it concerns CODE, so there is nothing to tackle today; what the
+question produces is a rule, and rules are cheap to record before the unit that must obey them
+(`Lower.v`, T6/T9) is written.  What was checked:
+
+- **Zero cofix in kernel Gallina.**  `grep -e CoFixpoint -e cofix` over `coq/*.v` hits exactly one
+  comment - Denotation.v:77 - and that comment is itself the exposure statement: ctrees' own
+  `bind`/`subst` are cofixpoints and do not reduce definitionally.  They live on the spec side,
+  where sem-side proofs construct `ctree` trees for `≅`/`≈` claims; they are not in extracted code.
+- **The compiled cone is named, and it is fuel-indexed.**  `tools/extract/extract.v` extracts
+  "exactly the head-table cone of coq/Eval.v: the fuel-bounded normalizer, the head-redex selector,
+  the candidate-bag reader" (its own header) - the four names whose `Print Assumptions` is
+  `Closed under the global context` (§ 12): pure Gallina, no ctrees import.  That cone is what the
+  T9 CertiRocq composition feeds.
+- **The kernel's fuel idiom was born as exactly this transformation.**  `Semantics.v` header item
+  (2): the Fig. 13 iter-choice distribution "rebuilds a term as large as its input, so it is not
+  structurally recursive" - the kernel answered with the uniform-fuel `Fixpoint`, with the honesty
+  note already attached: "Fuel exhaustion yields SStuck - an artifact of the depth budget, not a
+  semantic rule."  A fuel-indexed `Fixpoint` is the shape CertiRocq turns into a `while` loop, and
+  § 13's theorem stack is what makes that lowering semantics-preserving rather than a semantic
+  change: `T4_sem` proves the checked term denotes its value at every fuel `e_fuel e + k`, and
+  `e_fuel` is the structural bound of § 13.1 - so for checked inputs the loop's fuel guard can
+  never fire, the `while` computes the same value as the unbounded idealization, and the guard
+  doubles as a totality guarantee for the compiled artifact.  (The artifact's failure mode is total by
+  construction: guard false means `SStuck`, a value, never undefined behavior.)
+
+The rule, recorded in PLAN § 3 item 6 and § 4: Gallina that enters the CertiRocq cone -
+`lower_det`, the M3 certified runtime, the future Iter-era evaluator - is structurally recursive or
+fuel-indexed `Fixpoint` only; no `CoFixpoint`, no ctrees cofix construction in the compiled cone.
+When M3's Iter arrives the shape is already pinned: `iter_step` (Semantics.v:286) decrements fuel
+on the sem side, the eval side handles the Fig. 13 rows through the same uniform-fuel idiom, and
+T8's uniform-fuel accounting is already a corpus fact.  Fuel, in other words, is not only the
+kernel's proof device (§ 13.1) - it is also the kernel's loop discipline, and coinduction stays
+where § 13.3 put it: in the proofs, erased before extraction.
+
+### 13.6 `denE_total_pairwise`: the cross-fuel bridge, and T5's fold half (2026-11-24)
+
+§ 13.2 recorded that a fixed-fuel uniqueness chain cannot cross fuels: witnesses
+`denote e m1 ≅ sret (SOk v1)` and `denote e m2 ≅ sret (SOk v2)` share no middle node, and "the whole
+family is pairwise related" needs totality run with both budgets in one induction.  That item is now
+a kernel lemma: `denE_total_pairwise` (`coq/Checks.v`, right after `denE_total`): for a checked node
+and any two fuels at or above `e_fuel e`, `denE rho e m1 ≅ denE rho e m2`.  The proof is
+`denE_total`'s induction run twice at once (induction on the first fuel, everything else reverted,
+the second fuel case-split per arm), and what the arms cost is the interesting fact:
+
+- **Five arms close for free: the peeled tree is fuel-free.**  Ret, TupE, Unify and App (via the
+  helper `denE_App_pairwise`) peel both sides to the literal same tree - `apply_c` (Semantics.v:271)
+  consumes its budget at the head arm, and the `VPrim` arm returns `sret (prim_sres ...)` with no
+  fuel anywhere - so the cross-fuel bridge is `reflexivity`.  Notably the prim bridge lemmas (which
+  only rewrite that stuck tree into `SOk w`) are not needed at all, and with them unused, none of
+  the prim rows' `ws_val` side conditions are needed either: the two-budget statement is provable
+  with strictly less machinery than the totality statement it bridges.
+- **Only two arms recurse.**  Seq peels each side to its own fuel of the surviving component (the
+  `denE_total` witnesses at exactly the arm fuels, § 12.2's peeling idiom) and bridges with the IH;
+  Block does one `closeSlots_int` and bridges the body's two fuels with the IH.
+- **Three arms are G2 contradictions**, exactly as in `denE_total` - the pairwise lemma inherits the
+  fragment's shape, not just its induction.
+
+With the bridge in place, T5's deferred fold/reassociate half is a peel-peel-bridge theorem:
+`T5_swap_assoc` - for checked terms, `denote (Seq (Seq e1 e2) e3) (e_fuel + k) ≈
+denote (Seq e1 (Seq e2 e3)) (e_fuel + k)`.  Two structural facts make it cheap: `e_fuel`'s `Seq`
+arm is `S` over a SUM, so the two assoc shapes carry literally the same budget
+(`2 + e_fuel e1 + e_fuel e2 + e_fuel e3`); and peeling at that shared budget leaves the tail `e3`
+at `S f` on the left and `f` on the right - the exact gap the pairwise lemma closes.  Corpus
+witness: `oo_assoc_sem` discharges `e_oo_left` vs `e_oo_right` - Group D's own left- and
+right-associated pair over the shared `sub 9 1` tail - through the theorem, and
+`Print Assumptions T5_swap_assoc` lands on the usual single `Eqdep.Eq_rect_eq.eq_rect_eq`.
+
+Two toolchain facts from the draft, both now recorded in the kernel's own comments: `apply` on an
+IH whose frame-count parameter does not appear in its conclusion leaves an unsolvable evar (the
+Checks.v Block-arm note) - `refine` with `_` is the fix, and `denE_total_pairwise` needs it in both
+of its recursing arms; and a `destruct` on a node-level conjunct CLEARS the node-level hypothesis
+(the `T5_swap_discarded_equ` shape is fine there because that proof never re-uses it) - T5's fold
+proof cannot afford that, because it witnesses the inner Seq node as a node, so its leaf splits go
+through `pose proof`.
+
+Ledger: § 13.3's coinduction ledger is unchanged by this - the cross-fuel bridge is a plain
+two-budget induction, and the grep audit (zero tactic-position `coinduction`/`paco`/`pfold` in
+kernel files) still holds after the landing.  With `T5_swap_assoc` in, T5 is fully discharged for
+the accepted fragment: swap (`T5_swap_discarded`), value condition (`T5_swap_equal_values`),
+refutation (`T5_top_swap_needs_value`), fold (`T5_swap_assoc`).

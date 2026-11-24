@@ -133,8 +133,20 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
 5. T5 Out-of-order lemma: for independent fragments, Wbisim (sem (seq e1 e2)) (sem (seq e2 e1))
    and fold/reassociate laws under det_check hypotheses; divergence handled by weak bisimulation.
    Machine-checked version of "constant expressions, even out-of-order".
+   Measured 2026-11-24 (docs/DESIGN-NOTES.md § 13.4/§ 13.6): the naive reading is false in this
+   kernel — the `Seq` arm discards the prefix value — so the delivered truth is
+   `T5_swap_discarded` (swap at a discarded prefix position) + `T5_swap_assoc` (fold/reassociate)
+   + `T5_swap_equal_values` (top swap under a shared value witness), with `T5_top_swap_needs_value`
+   refuting the naive claim.
 6. T6 Straight-line specialization: lower_det e = c -> Wbisim (sem e) (ClightSem c) against
-   CompCert's Clight semantics (library dep — see sec. 4).
+   CompCert's Clight semantics (library dep — see sec. 4).  CertiRocq-cone rule
+   (docs/DESIGN-NOTES.md § 13.5, measured 2026-11-24): the Gallina fed to CertiRocq is
+   structurally recursive or fuel-indexed `Fixpoint` only - `lower_det` is written as a
+   fuel-bounded function, which is exactly the shape CertiRocq lowers to plain `while` loops;
+   no `CoFixpoint`, no ctrees cofix constructions (`bind`/`subst`, Denotation.v:77) enter the
+   compiled cone.  For checked terms the emitted fuel guard is provably never-false
+   (`T4_sem` runs at every `e_fuel e + k`), so the while loop is the unbounded idealization
+   over precisely the accepted fragment.
 7. T7 No-context-call theorem: det_check e = true -> no_switch (lower e) — structural induction
    on the Gallina lowering function. The anti-naivety guarantee verbatim.
 8. T8 Evaluator adequacy: candidate_set (eval_run e) = candidate_set (sem e), where the candidate
@@ -156,6 +168,11 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
 
 - Proven span: Timbda-0 semantics -> Gallina kernel (rewrites, determinacy, lowering, evaluator)
   -> Clight. CertiRocq's Gallina->Clight proof is the last machine-checked link.
+- Compiled-cone rule (measured 2026-11-24, docs/DESIGN-NOTES.md § 13.5): everything the CertiRocq
+  leg compiles is structurally-recursive or fuel-indexed Gallina (the extraction cone today -
+  tools/extract/extract.v's four `Eval.v` names - already is); coinduction and ctrees' cofix
+  machinery live in the spec/proof side only and are erased before extraction.  CoFixpoint closures
+  are not lowered; unbounded iteration is expressed as fuel-indexed loops.
 - Trusted-but-observed span: Clight -> clang -> machine. Deliberate choice: Clight is valid C
   compiled routinely by gcc/clang (CertiRocq docs recommend gcc; CompCert listed as the optional
   alternative). Clight expressions are pure (calls only as statements, fixed order) and Clight is
@@ -279,8 +296,12 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   fold/reassociate half waits for `denE_total_pairwise` - whose first consumer it now is.  No
   coinduction was needed for any of it; § 13.3 keeps the coinduction route (`coinduction S CIH`,
   up-to-bind `bind_chain_gen`) as machinery for the deferred claims - Iter-era M3 - not for T5.
-  What M2 still owes: T5's fold/reassociate half (via `denE_total_pairwise`), `Lower.v` for
-  determinate fragments (T6, T7), and the golden test.
+  *Same-day follow-up:* the recorded `denE_total_pairwise` strengthening landed — totality at two
+  budgets in one induction (`coq/Checks.v`, after `denE_total`; five of the ten arms close because
+  the peeled prim/tuple/literal trees are fuel-free, only Seq and Block recurse) — and with it T5's
+  fold/reassociate half (`T5_swap_assoc`, corpus witness `oo_assoc_sem` discharging Group D's own
+  assoc pair; docs/DESIGN-NOTES.md § 13.6).  T5 is now fully discharged for the accepted fragment.
+  What M2 still owes: `Lower.v` for determinate fragments (T6, T7) and the golden test.
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
   implementation with zero boost.context dependency.
 - M4: performance/streaming path. dcont lowering + generated ContextExtern annotations + shim;
