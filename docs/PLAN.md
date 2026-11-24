@@ -266,6 +266,13 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   `Denotation.v`'s `t1_norm`/`t1_fold` retactored to a root-peeling `rewrite` loop over a kernel-`sret`
   bridge lemma, cold compile 708 s / 11.2 GiB down to 181 s / 1.9 GiB, statements and axiom audit
   untouched (docs/DESIGN-NOTES.md § 12.2).
+  *Status 2026-11-24:* M2's stability corollary `T4_value_unique` (`coq/Checks.v`, after `T4_sem`)
+  pins what the fuel index does and does not buy: at a fixed fuel an accepted term has at most one
+  value - with `T4_sem`'s existence, exactly one - while the cross-fuel statement needs the recorded
+  `denE_total_pairwise` strengthening, not a setoid chain.  docs/DESIGN-NOTES.md § 13 records the
+  fuel-vs-coinduction taxonomy and T5's route as the kernel's first explicit coinductive proof
+  (coq-coinduction `coinduction` tactic / ctrees' up-to-bind `bind_chain_gen`, witnessed by the
+  § 11.3 mirrored partial-shape pair).
   What M2 still owes: T5, `Lower.v` for determinate fragments (T6, T7), and the golden test.
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
   implementation with zero boost.context dependency.

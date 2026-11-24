@@ -324,3 +324,4 @@ Proof. reflexivity. Qed.
 
 Print Assumptions T4_eval.
 Print Assumptions T4_sem.
+Print Assumptions T4_value_unique.

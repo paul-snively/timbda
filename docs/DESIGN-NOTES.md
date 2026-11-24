@@ -1302,3 +1302,98 @@ its documented `HIGH=2G MAX=3G`, the setting every § 4.3 attempt died against) 
 peak **1936 MiB**, `memory.events` counters `high 0 max 0 oom_kill 0` - the build never touched the soft
 cap - `ok: all 11 expected .vo artifacts present, dune exit 0`, zero `Error:`/`Admitted` lines, and host
 MemAvailable low-water 10.9 GiB.  The retactor did not move the cost elsewhere: it removed it.
+
+## 13. Fuel is on the term side; coinduction is on the relation side (written 2026-11-24)
+
+M2's theorems quantify over fuel - `T4_sem` reads `denote e (e_fuel e + k) ≈ sret (SOk v)` - and that
+invites a wrong worry: that kernel claims are verified "only up to some size" and that fixing that
+means rebuilding the semantics coinductively.  Both halves of the worry are false, and § 13.1 is why.
+§ 13.2 is the corollary that pins what fuel actually buys; § 13.3 records where coinduction *does*
+enter - as the proof shape M2's remaining item T5 demands.
+
+### 13.1 Fuel is a syntactic budget, and accepted fragments terminate by construction
+
+- `e_fuel` (`Checks.v:594`) computes a node budget from the `Expr` itself - it is a structural bound,
+  not a numeric constant or an empirical cap - and `denE` (`Semantics.v:210`) is a total `Fixpoint`
+  decreasing in it.  Totality of checked terms is exactly the fuel induction of `denE_total`
+  (`Checks.v:1316`).
+- The accepted fragment has no recursion on the term side.  The `det_struct` ban arm (G2) excludes
+  Choice, Fail, Glob and Iter - the `Glob` and `Iter` arms of `denE_total` close by
+  `bans_okE_not_glob` / `bans_okE_not_iter` - and `apps_okE` (G5) forces every application head to be
+  `Ret (VPrim p)` (`app_node_ok_shape`, used in `denE_total`'s App arm).  There is no self-applying
+  lambda and no loop, so the denotation tree of an accepted term is finite in shape, with its bound
+  supplied by the syntax.  That is why every kernel claim about an accepted term is `forall k` (or
+  `forall fuel` on the eval leg) rather than a claim at a fixed size, and why the fixed fuels in
+  tests/corpus are witnesses of a quantified statement, not limits on it.  The checker's own verdict
+  is fuel-free: `det_check` takes no fuel argument.
+
+### 13.2 The stability lemma: `T4_value_unique`
+
+With § 13.1 in hand, the missing half of "what the fuel index buys" is uniqueness, and that is the
+corollary `coq/Checks.v` carries after `T4_sem`:
+
+```coq
+Theorem T4_value_unique : forall e m v w,
+  denote e m ≅ sret (SOk v) -> denote e m ≅ sret (SOk w) -> v = w.
+```
+
+With `T4_sem` (existence at every fuel `>= e_fuel e`): at each such fuel an accepted term denotes
+*exactly* one value.  The proof chains the two witnesses through their shared middle node
+(`transitivity` at `≅`) and ctrees' pure inversion `equ_ret_inv` (`Equ.v:296`) splits the resulting
+`sret (SOk v) ≅ sret (SOk w)` into `SOk v = SOk w`; the § 12.2 `sret`/`Ret` alias crosses through
+transparently, because `equ_ret_inv` matches up to conversion, and the inversion lands one layer up
+at the `SResult` peak, where plain `injection` finishes at `Val`.
+
+Two honest boundaries, both learned from failed attempts and worth recording exactly:
+
+- **A chain cannot cross fuel.**  Witnesses `A(j) ≈ sret vj` and `A(k) ≈ sret vk` at *different*
+  fuels share no middle node, so "the whole family `denote e (e_fuel e + k)` is pairwise `≈`" is not
+  a setoid exercise at all.  What it needs is a two-fuel strengthening of the totality lemma -
+  `denE_total` run with both budgets in one induction, producing related witnesses - recorded as the
+  **`denE_total_pairwise`** item and deferred with T5 (§ 13.3), whose induction machinery it shares.
+  That is the honest shape of "fuel does not change the value": a lemma about the induction, not
+  about the setoid, exactly as § 13.1 predicts.
+- **The wbisim-side inversion is not available to kernel trees.**  ctrees' `wbisim_ret_inv`
+  (WBisim.v:614) looks like the one-step twin of `equ_ret_inv`, but its statement carries the class
+  constraint `B0 -< C` for ctrees' own base event type `B0`; instance search against the kernel's
+  `B2` fails - `apply (wbisim_ret_inv _ _ H)` on `sret v ≈ sret w` in `ctree void1 B2 SResult`
+  errors `Could not find an instance for "B0 -< B2"`.  The inversion therefore lives at the equ
+  level, which is where `denE_total`'s witnesses live anyway, and the kernel's only route from `≅`
+  to `≈` remains the `equ_wbisim_subrelation` transport every T1 row and `T4_sem` already use.
+
+**Measured.**  `Print Assumptions T4_value_unique` - added to `coq/tests/ChecksTest.v` alongside the
+two existing ones - prints the same single `Eqdep.Eq_rect_eq.eq_rect_eq` fingerprint `T4_sem` prints:
+the `dependent induction` inside ctrees' `equ_ret_inv` is the machinery that fingerprint already
+documents, and `JMeq`-shaped axioms appear nowhere in the log.  The build ends `ok: all 11 expected
+.vo artifacts present, dune exit 0` with zero `Error:`/`Admitted` lines, so the kernel gate's axiom
+audit is again unchanged by M2 work.
+
+### 13.3 Coinduction is on the relation side, and T5 is the kernel's first explicit coinductive proof
+
+A grep audit of `coq/*.v` shows zero direct use of coinduction machinery (`coinduction`, `paco`,
+`pfold` - no hits): the kernel consumes the coinductively defined relations (`≅`, `≈`) only through
+ctrees' proved interface - `equ_wbisim_subrelation` (WBisim.v:310), the monad laws, the
+`Equivalence_wbisim` setoid (WBisim.v:423).  That is enough for T1-T4, whose obligations close by the
+fuel induction of § 13.1.  T5 is the first kernel item where it is not:
+
+> T5 (PLAN.md § 3 item 5): for independent fragments, Wbisim (sem (seq e1 e2)) (sem (seq e2 e1)).
+
+No structural or fuel induction reaches it.  The two denotations are `bind` chains of arbitrary
+length, and the proof must relate them up to permuted chain layers - a coinductive obligation by
+shape.  The recorded route, in the order it will be attempted:
+
+1. **The machinery is already vendored.**  coq-coinduction 1.21 and paco 4.4 sit on the build's
+   loadpath, and ctrees' own bind proofs use exactly the tactic shape this proof needs -
+   `coinduction S CIH` (`Equ.v`: `bind_ret_r`, `bind_bind`) - so the kernel's first coinductive
+   proof starts from working local idioms, not new dependencies.
+2. **Up-to-bind is the right shape.**  ctrees' `bind_chain_gen` (WBisim.v:574) lets a coinductive
+   proof step over `bind` chains as a whole instead of unfolding them layer by layer - exactly the
+   permuted-`seq` situation, where the witness must absorb `e1`'s layers to align with `e2`'s.
+3. **The witnesses already exist.**  § 11.3's amended mirrored partial-shape pair is the pair of
+   trees T5 must relate; the corpus pins the statement before the proof machinery is built.
+
+The coinductive debt ledger is exactly three entries: T5 (above), the greatest-fixed-point
+characterization of `iter_step`'s chain that M3's Iter opens (a `bind_chain_gen`-style argument), and
+M4's Glob/host interaction.  Nothing on the term side needs coinduction as long as G2 and G5 hold;
+coinduction enters precisely where the language gains recursion or unbounded permutation.  That is
+the whole content of "fuel vs coinduction".

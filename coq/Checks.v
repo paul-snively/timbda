@@ -17,6 +17,10 @@
               ctrees structural equality `≅` (equ, Equ.v) and transported to ≈
               by ctrees' own `equ_wbisim_subrelation` (WBisim.v:310), the same
               idiom Denotation.v uses for every T1 row.
+              Its corollary T4_value_unique (same file, after T4_sem) makes
+              the accepted term's value unique at every fixed fuel at or
+              above its own budget; § 13.2 records the two-fuel lemma that
+              would additionally show the value is the same across fuels.
 
      T4_eval  det_check e = true -> the evaluator's bag is a singleton:
               for every fuel f, exists nf, cand_bag (norm f e) = nf :: nil.
@@ -1413,4 +1417,34 @@ Proof.
   assert (Hfuel : Nat.le (e_fuel e) (e_fuel e + k)) by lia.
   destruct (denE_total (e_fuel e + k) e 0 nil Hw Henv Hds Hfuel) as [v He].
   exists v. apply equ_wbisim_subrelation. exact He.
+Qed.
+
+(* Fuel-independence corollaries (docs/DESIGN-NOTES.md § 13.2).  Part 1, here:
+   at a FIXED fuel the value of an accepted term is unique - two witnesses
+   chain through their shared middle node and ctrees' pure inversion
+   `equ_ret_inv` (Equ.v:296) splits the resulting pure pair.  Two honest
+   boundaries, both learned the hard way:
+   - The inversion lives at the EQU level (≅), which is exactly where
+     denE_total's witnesses live; the wbisim twin `wbisim_ret_inv`
+     (WBisim.v:614) is not applicable to kernel trees, because its class
+     constraint `B0 -< C` pins it to ctrees' own base event type B0 and
+     instance search fails against the kernel's B2.  The kernel's only route
+     from ≅ to ≈ remains the `equ_wbisim_subrelation` transport T4_sem uses.
+   - A chain cannot do the CROSS-fuel statement: witnesses `A(j) ≈ sret vj`
+     and `A(k) ≈ sret vk` at different fuels share no middle node, so
+     "the whole family is pairwise ≈" is not a setoid exercise.  It needs a
+     two-fuel strengthening of the totality lemma (denE_total running both
+     budgets in one induction), recorded as the `denE_total_pairwise` item
+     in § 13.2 - the honest shape of "fuel does not change the value". *)
+Theorem T4_value_unique : forall e m v w,
+  denote e m ≅ sret (SOk v) -> denote e m ≅ sret (SOk w) -> v = w.
+Proof.
+  intros e m v w Hj Hw.
+  assert (Hpur : sret (SOk v) ≅ sret (SOk w)).
+  { transitivity (denote e m). symmetry. exact Hj. exact Hw. }
+  (* `sret` is transparently `go (RetF .)`, so equ_ret_inv instantiates at
+     the SResult layer and yields `SOk v = SOk w`; constructor injection is
+     one step down. *)
+  pose proof (equ_ret_inv _ _ Hpur) as Hi.
+  now injection Hi.
 Qed.
