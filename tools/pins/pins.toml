@@ -46,9 +46,9 @@ nixpkgs_attr = "rocqPackages.rocq-core"
 version = "9.1.1"
 
 [formal.compcert]
-nixpkgs_attr = "compcert"
+nixpkgs_attr = "coqPackages_9_1.compcert"
 version = "3.17"
-note = "ccomp lane is license-gated (later milestone); build-time lib dep only for now"
+note = "ccomp lane is license-gated (later milestone); build-time lib dep only for now.  2026-11-25: attribute moved from `compcert` to `coqPackages_9_1.compcert` - the top-level attr is wired from coqPackages_9_0 (drv evidence: coqdevdir lib/coq/9.0/user-contrib), whose .vo are prover-9.0-locked and unusable on this stack's rocq 9.1.1; same 3.17 source, 9.1-series build."
 
 [formal.stdpp]
 nixpkgs_attr = "rocqPackages.stdpp"

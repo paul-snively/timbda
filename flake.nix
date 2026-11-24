@@ -33,7 +33,19 @@
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = f: builtins.listToAttrs (map (system: {
         name = system;
-        value = f system (import nixpkgs { inherit system; });
+        value = f system (import nixpkgs {
+          inherit system;
+          # Narrowed unfree gate (2026-11-25, M2 toolchain): CompCert only.
+          # pins.toml [formal.compcert] pins CompCert 3.17 (coqPackages_9_1) as the
+          # T6/T7 Lower.v library dep; its INRIA non-commercial license restricts use
+          # to evaluation/research, so the dep is build-time only and nothing
+          # from CompCert (neither ccomp nor its C output) is a flake artifact.
+          # allowUnfreePredicate keeps that scope machine-checked instead of a
+          # global allowUnfree: any future unfree package trips the eval.
+          config.allowUnfreePredicate = pkg:
+            builtins.elem (pkg.pname or (builtins.parseDrvName pkg.name).name)
+              [ "compcert" ];
+        });
       }) systems);
       pins = builtins.fromTOML (builtins.readFile ./tools/pins/pins.toml);
 
@@ -194,13 +206,36 @@
             buildInputs = [ coq-ext-lib rocq-coinduction coq-itree
               pkgs.rocqPackages.relation-algebra pkgs.coqPackages.equations ];
           };
+
+          # CompCert 3.17, nixpkgs-provided, from the coqPackages_9_1 namespace.
+          # Measured 2026-11-25: the TOP-LEVEL pkgs.compcert is wired from
+          # coqPackages_9_0 (all-packages.nix `inherit (coqPackages_9_0) compcert`),
+          # i.e. its .vo are compiled by prover 9.0 and land in lib/coq/9.0/
+          # user-contrib (drv evidence: -coqdevdir $lib/lib/coq/9.0/...); .vo files
+          # are prover-version-locked, so that variant is unusable in this flake's
+          # rocq 9.1.1 stack - and building it pulls a from-scratch stdlib 9.0
+          # rebuild that ate the gate's memory floor.  coqPackages_9_1.compcert is
+          # the 9.1-series build of the same pinned 3.17 (nixpkgs applies the Coq
+          # 9.1.1 compat patch); version-consistency now asserts pins.toml
+          # [formal.compcert] against exactly this attribute.
+          # .vo tree: lib output, user-contrib/compcert/{lib,common,backend,
+          # cfrontend,...}; the upstream Makefile compiles each source dir
+          # with `-R <dir> compcert.<dir>` so the .vo files record fully-qualified
+          # dependencies, and consumers need only the single root mapping:
+          # `Require Import compcert.common.AST compcert.cfrontend.Clight.` verified
+          # against a minimal tree probe on rocq 9.1.1 (2026-11-25), matching the
+          # README upstream installs next to the .vo tree.
+          compcert = pkgs.coqPackages_9_1.compcert;
         in
         {
           inherit rocq-core rocq-stdlib rocq-shims coqPathHook userContrib ocamlForRocq;
-          inherit coq-ext-lib paco rocq-coinduction coq-itree rocq-ctree;
-          # everything the kernel's `From X Require` lines resolve against
+          inherit coq-ext-lib paco rocq-coinduction coq-itree rocq-ctree compcert;
+          # everything the kernel's `From X Require` lines resolve against, plus
+          # CompCert for the T6/T7 Lower.v work (no coq/*.v imports it yet - it is
+          # the build-time library dep pins.toml records, not a shipped artifact)
           rocqDeps = [ rocq-core rocq-stdlib coq-ext-lib paco rocq-coinduction coq-itree
-            rocq-ctree pkgs.rocqPackages.relation-algebra pkgs.coqPackages.equations ];
+            rocq-ctree pkgs.rocqPackages.relation-algebra pkgs.coqPackages.equations
+            compcert ];
         };
     in
     {
@@ -213,6 +248,9 @@
             "timbda-coinduction" = stack.rocq-coinduction;
             "timbda-itrees" = stack.coq-itree;
             "timbda-ctrees" = stack.rocq-ctree;
+            # nixpkgs' compcert under our pin: a buildable name so the T6 dep can
+            # be materialized/attested standalone before any Lower.v exists.
+            "timbda-compcert" = stack.compcert;
           };
           # Where the kernel package's .vo trees land, for corners that `Require Import
           # Timbda.*` without going through dune (the two corpus corners).

@@ -1548,3 +1548,56 @@ two-budget induction, and the grep audit (zero tactic-position `coinduction`/`pa
 kernel files) still holds after the landing.  With `T5_swap_assoc` in, T5 is fully discharged for
 the accepted fragment: swap (`T5_swap_discarded`), value condition (`T5_swap_equal_values`),
 refutation (`T5_top_swap_needs_value`), fold (`T5_swap_assoc`).
+
+### 13.7 CompCert 3.17 as a build-time dependency: the namespace trap, the license gate, and T6's axiom surface (measured 2026-11-25)
+
+T6 (`lower_det e = c -> Wbisim (sem e) (ClightSem c)`, PLAN § 3 item 6) needs CompCert's
+Gallina library, and `pins.toml` has pinned `compcert 3.17` with the version-consistency gate
+asserting it for weeks.  Consuming it is where the facts were:
+
+- **Top-level `pkgs.compcert` is a prover-9.0 build.**  At the pinned nixpkgs, all-packages
+  wiring is `inherit (coqPackages_9_0) compcert`; the drv's own `configurePhase` says
+  `-coqdevdir $lib/lib/coq/9.0/user-contrib/compcert/`.  `.vo` files are prover-version-locked,
+  so those cannot load under this flake's rocq 9.1.1 — and building that variant starts a
+  from-scratch stdlib 9.0 rebuild: the first gate bill died 51 seconds in when the parallel
+  rebuild crossed the memory floor.  The usable attribute is **`pkgs.coqPackages_9_1.compcert`**:
+  same pinned 3.17, nixpkgs-applied Coq 9.1.1 compat patch, `coqdevdir lib/coq/9.1/user-contrib`,
+  142 `.vo` across `lib/common/backend/cfrontend/cparser/driver/export/x86/x86_64`.
+  pins.toml's `nixpkgs_attr` moved to the 9.1 attribute so the gate asserts the package this
+  flake actually consumes.
+- **cache.nixos.org carries the 9.1-series closure** (compcert, flocq 4.2.2, MenhirLib
+  20260203 all substituted; measured 384 s end to end with `cores = 2`, host low-water
+  6499 MiB — the 5 GiB `MemoryMax` nix-daemon containment did its job).  The 9.0 variant
+  is *not* substituted, consistent with hydra building only the supported series.
+- **License plumbing is scoped, not global.**  The nixpkgs import in `flake.nix` carries an
+  `allowUnfreePredicate` admitting exactly `compcert` (INRIA non-commercial license); any
+  future unfree package trips evaluation.  The dep is build-time Coq-library use only —
+  ccomp as a compiler stays the separate license-gated CI lane of PLAN § 4, and nothing in
+  `coq/` imports CompCert yet, so the shipped kernel `.vo` cone is unchanged.
+- **Loadpath plumbing needed no special casing** (measured, not assumed): CompCert compiles
+  each source dir with `-R <dir> compcert.<dir>`, so its `.vo` record fully-qualified internal
+  dependencies even though the sources write bare `Require Import AST`; a consumer needs only
+  the parent `user-contrib` on the loadpath.  Verified on a miniature tree built with that
+  mapping, then against the real one: `ROCQPATH` and `COQPATH` both carry `compcert` in
+  `nix develop .#rocq`, and `Require Import compcert.cfrontend.Clight.` just works.  One
+  rocq 9.1 quirk: `Print Assumptions` resolves *references*, not deep module paths under a
+  recursive `-R` — audit constants, not modules.
+- **T6's axiom surface — the most valuable measurement.**  In the installed tree:
+  `Smallstep.star` and `Smallstep.forward_simulation` (the generic closure and simulation
+  machinery any refinement statement must meet) print `Closed under the global context`;
+  `Clight.step`, `Csem.lred`, `Csem.rred` and `ClightBigstep.bigstep_program_terminates` each
+  carry Flocq's classical pair `ClassicalDedekindReals.sig_not_dec` + `sig_forall_dec`, pulled
+  in through `Clight.val -> Float -> R` in the step type itself.  Any T6 statement mentioning
+  Clight values drags those two axioms into `Print Assumptions` transitively, while the kernel
+  gate hard-pins `Eqdep.Eq_rect_eq.eq_rect_eq` as the sole axiom.  The audit decision —
+  allowlist, separate audit scope, or float-avoiding formulations for int-only fragments —
+  belongs in the Lower.v design, made before the first proof line.
+- **Surface facts** from the probe (`Check`-verified against the tree): `Clight.v` carries
+  Clight syntax *and* its small-step semantics (`Inductive state`/`step`; constructors
+  `Sskip`, `State`, `Callstate`; `step` is parameterized by the builtin-call semantics);
+  `Csem.v` is the CompCert C semantics as a file-level module; `export.Clightdefs` is the
+  Clight<->Csyntax bridge clightgen and CertiRocq both use.
+
+Ledger: the coinduction ledger (§ 13.3) is untouched; the kernel's own `.vo` set is unchanged
+(11 modules, `eq_rect_eq` sole axiom); the probe itself lives outside `coq/` on purpose —
+Lower.v will get its own probe-first draft like T5 did, with the axiom question settled first.

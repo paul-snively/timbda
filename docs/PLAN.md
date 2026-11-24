@@ -181,7 +181,14 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   binary-level differential testing + hardening flags below.
 - CompCert = nice-to-have (decision): stays as a BUILD-TIME LIBRARY dependency regardless
   (Clight definitions + PrintClight are CompCert code; nixpkgs builds it with -clightgen).
-  Invoking ccomp as a compiler is an optional, license-gated CI lane (INRIA non-commercial license).
+  That dep is in the toolchain since 2026-11-25: `.packages.x86_64-linux.timbda-compcert` =
+  `pkgs.coqPackages_9_1.compcert` 3.17, in the flake's `rocqDeps`.  Measured trap: the
+  top-level `pkgs.compcert` attribute is the `coqPackages_9_0` build of the same 3.17 -
+  prover-9.0-locked .vo files, unusable on this 9.1.1 stack (docs/DESIGN-NOTES.md § 13.7).
+  The nixpkgs import gates `compcert` alone through a scoped `allowUnfreePredicate`; the
+  consumption is Coq-library only (Clight syntax+semantics, Smallstep, export.Clightdefs -
+  nothing in coq/ imports them yet).  Invoking ccomp as a compiler remains an optional,
+  license-gated CI lane (INRIA non-commercial license).
 - Boundary hazard: TBAA/strict aliasing at Clight->clang (generated C + CertiRocq runtime: val
   tagging, gc_stack, boxed/unboxed floats, pointer punning — CompCert's memory model has no TBAA,
   clang's does). Mitigation: "Clight-boundary hardening" copts group (-fno-strict-aliasing first;
@@ -302,6 +309,13 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   fold/reassociate half (`T5_swap_assoc`, corpus witness `oo_assoc_sem` discharging Group D's own
   assoc pair; docs/DESIGN-NOTES.md § 13.6).  T5 is now fully discharged for the accepted fragment.
   What M2 still owes: `Lower.v` for determinate fragments (T6, T7) and the golden test.
+  Its toolchain prep landed 2026-11-25: CompCert 3.17 in `rocqDeps` (docs/DESIGN-NOTES.md
+  § 13.7), consumption probed against the installed tree, and the T6-side surfaces measured
+  - `Smallstep.forward_simulation` axiom-free, Clight's own semantics cone carrying Flocq's
+  two `ClassicalDedekindReals` axioms.  The kernel Print-Assumptions audit (hard-pinned to
+  `eq_rect_eq` alone) must decide those two axioms explicitly - allowlist, separate audit
+  scope, or a float-avoiding cone for int-only fragments - BEFORE Lower.v is written, not
+  discovered mid-proof.
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
   implementation with zero boost.context dependency.
 - M4: performance/streaming path. dcont lowering + generated ContextExtern annotations + shim;
