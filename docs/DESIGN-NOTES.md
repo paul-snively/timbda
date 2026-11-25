@@ -2057,3 +2057,27 @@ that cost a measurement each: pass the library name, not the `.vo` path
 ("contains library Timbda.Realize and not library Realize"); `-o` is the
 assumption dump; `-norec` is a trap here - it re-exports Stdlib internals
 as "axioms" instead of summarizing what is used.
+
+**T6 increment B (landed 2026-11-25; probe p524, sources at docs/probes/p524/; PLAN
+decision 11).**  `coq/Realize.v` now carries the general induction: `T6_exec_ws`
+(`ws_expr d e = det_struct e = range_ok e = true` gives a `Clight1.exec_stmt`
+derivation of `clight_of (lower e)` from `ge0`/`Clight.empty_env`/`PTree.empty val`/
+`Mem.empty` out to `Out_normal`, with the final `lower_res` pin equal to the monadic
+fold `lower_final e (le ! lower_res)`) and its `d = 0` corollary `T6_exec` at `le0`.
+The fold replaces an earlier `lower_final`/`lower_get` pair that was unsound for Seq
+(a `Some` write followed by a `None` claim).  The bridge layer (z64/prim_clight +
+`sem_*_long`, which pin CompCert's own semantics of `Cop.O*` at `Int64.int`) and the
+guard transfer (`prim_guard_ok`, `prim_guard_ok_canon`, `odiv_ready`) settle decision
+10d's three-way correspondence for every admitted App shape, including the PDiv
+guards, discharged from `app_node_ok_shape`'s three paths.  Arm skeletons mirror
+`T7_no_switch_ws` (Lower.v), including the bans-discriminate arms for Glob/Choice/
+Fail/Iter.  Toolchain findings that shaped the proof text (measured, not guessed):
+multi-goal `match goal`/`solve` in Rocq 9.1 dispatch silently under-covers after
+nested `destruct`s - only an explicit per-prim bullet dispatch is trustworthy;
+`destruct ... eqn:E` rewrites hypotheses that contain the destructed term (and in
+that case E's own statement is rewritten too, often into uselessness);
+`discriminate` is syntactic - two conversion-equal hypotheses with different hidden
+implicit args don't discriminate, rewrite one into the other first; `apply` fully
+applied (`apply (lemma a b le H)`) is the safe bracket-free form when premises are
+already hypotheses.  The cone sweep saw the increment unchanged: same thirteen
+pinned axioms, all `<none>` sections intact.

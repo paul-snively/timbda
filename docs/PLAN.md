@@ -154,6 +154,12 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
    `clight_of (lower e)` from the empty context, observed at tempvar `lower_res` and composed
    with `T4_sem`'s value witness, under a computable `range_ok` 64-bit guard; the whole-program
    reading defers to the golden-test design (docs/DESIGN-NOTES.md § 13.14).
+   *Increment B landed 2026-11-25 (probe p524):* `Realize.v`'s `T6_exec_ws`/`T6_exec` prove the
+   statement-level part outright - every tree with `ws_expr d e = det_struct e = range_ok e = true`
+   executes from `ge0`/`Clight.empty_env`/`Mem.empty`, and the final `lower_res` pin is
+   characterized by the monadic fold `lower_final` (decision 11).  What remains owed is the
+   composition with `T4_sem`'s value witness (increment C) and the Int64-to-kernel-Z bridges
+   for the corpus wiring.
 7. T7 No-context-call theorem: det_check e = true -> no_switch (lower e) — structural induction
    on the Gallina lowering function. The anti-naivety guarantee verbatim.
    Landed 2026-11-25 (docs/DESIGN-NOTES.md § 13.8): `no_switch` is `no_switch_l` over
@@ -456,7 +462,11 @@ attestations):
   landed the same day: `coq/Realize.v` (ge0/le0, clight_of, the `range_ok` guard, per-node
   realization lemmas, the add[2,3] / gt[3,2] / Ret corners) with the cone sweep wired into the
   `timbda-kernel` buildPhase (`rocq check -silent -o Timbda.Realize`, thirteen-axiom context
-  pinned verbatim); T6's full induction and the T4_sem composition remain owed.*
+  pinned verbatim).  *Increment B landed the same day (probe p524):* `T6_exec_ws` - the full
+  statement-level induction over the checked fragment, with the monadic `lower_final`
+  value-characterization and the `prim_guard_ok`/`prim_guard_ok_canon` transfer of the kernel's
+  div guards to CompCert's (decision 11) - plus `T6_exec` at `le0`; the T4_sem composition
+  remains owed (increment C).*
   *Ordering 2026-11-25 (decision 9): what remains of M2 and the order it must land in are
   pinned at § 5.0 - M1 closure first.*
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
@@ -744,6 +754,33 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
     `None`/`VVar` slots, `Unify`) gets exec-existence only; a lowered TupE claims "last ret
     wins" in the final temp env.  These rulings bind T6's first proof line; changing any of
     them requires amending this decision.
+ 11. (2026-11-25) **T6 increment B: the statement-level induction lands (`T6_exec_ws` in
+     `coq/Realize.v`); its formulation rulings.**  Probe p524 (sources at docs/probes/p524/),
+     compiled against the increment-A store tree before touching `Realize.v`.  (a) **Value
+     characterization** is the monadic computable fold `lower_final e o : option val` - the
+     value `clight_of (lower e)` leaves in `lower_res` when started from an incoming value
+     `o`: `Seq e1 e2` composes (`lower_final e2 (lower_final e1 o)`), Block's slot prelude
+     passes `o` through (slot tempvars never name `lower_res` - `lower_res_ne_slot`), TupE
+     claims "last ret wins" via `last_val`, and placeholder arms mirror `vconst`'s
+     `Int64.repr 0`.  An earlier non-monadic draft (a `lower_final`/`lower_get` pair) was
+     retired as unsound for Seq when the first half writes and the second half has no value
+     claim.  (b) **Div-guard transfer**: `prim_guard_ok p vs` states, syntactically for the
+     prim shape, exactly the guards `eval_bin64_Odiv` needs (nonzero divisor; not the
+     `min_signed / -1` overflow pair); `prim_guard_ok_canon` discharges it from kernel facts
+     - `prim_total_res` pins the operand shape to `VInt x :: VInt y :: nil`, `range_ok` of
+     the operand list pins in-range-ness, `prim_node_range_ok` pins the result range (hence
+     a nonzero divisor - `prim_total_res_PDiv_ne`), and the table/bare `app_node_ok_shape`
+     paths are vacuous because `prim_args_ok`/`prim_bare_ok` reject PDiv.  (c) **Toolchain
+     rulings measured during authoring**: Rocq 9.1 multi-goal `match goal`/`solve` silently
+     under-covers after a multi-`destruct` (a skipped goal surfaces only at `Qed`), so the
+     per-prim dispatch in `prim_expr_eval` is explicit 18-arm bullets with arity brackets;
+     `destruct ... eqn:E` rewrites hypotheses containing the destructed term and can consume
+     E itself; `discriminate` is purely syntactic (hidden implicit args break it) -
+     rewrite-first instead.  (d) **Depth and env threading**: `T6_exec_ws` carries the
+     ws_expr depth and the incoming temp env universally (Block checks its body at
+     `length sl + d`, `%nat`-pinned; Seq threads `le` through `exec_seq_close`); `T6_exec`
+     is the `d = 0`, `le = le0` corollary.  Increment C - the Int64-to-kernel-Z bridges and
+     the `T4_sem` composition - stays owed per decision 10b; these rulings bind it.
 
 ## 9. Known reference anchors
 
