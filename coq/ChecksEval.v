@@ -40,6 +40,7 @@ From Stdlib Require Import ZArith List.
 Import ListNotations.
 
 Require Import Timbda.Syntax Timbda.Rewriting Timbda.RewRules Timbda.Semantics Timbda.Eval.
+Require Import Timbda.RuleAst.   (* generated RuleID/selected_rows (M1 item 1) *)
 Require Import Timbda.Checks.
 
 (* `lia` for the two fuel/cutoff steps; `&&` needs the bool scope opened, not a direct

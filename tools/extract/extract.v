@@ -21,7 +21,7 @@ Require Import Timbda.Syntax Timbda.Rewriting Timbda.Semantics Timbda.Eval.
 
 Print Assumptions Timbda.Eval.norm.
 Print Assumptions Timbda.Eval.head_redex.
-Print Assumptions Timbda.Eval.selected_rows.
+Print Assumptions Timbda.RuleAst.selected_rows.   (* generated file since M1 item 1 *)
 Print Assumptions Timbda.Eval.cand_bag.
 
 (* rocq 9.1 defaults the extraction output directory to the compilation dir and
@@ -33,4 +33,4 @@ Set Extraction Output Directory ".".
    fields against the very function the Gallina kernel defines, not against a
    re-implementation of it (docs/DESIGN-NOTES.md sec. 9). *)
 Extraction "timbda_eval.ml" Timbda.Eval.norm Timbda.Eval.head_redex
-           Timbda.Eval.selected_rows Timbda.Eval.cand_bag.
+           Timbda.RuleAst.selected_rows Timbda.Eval.cand_bag.

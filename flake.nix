@@ -422,6 +422,13 @@
               # hand-glued copy (docs/PLAN.md § 5.0).
               test -f _build/default/RewRules.vo \
                 || { echo "FAIL the generated rule surface (RewRules.v) did not compile"; exit 1; }
+              # M1 item 1 completion: the eval-side RuleID/selected_rows and the
+              # soundness registry are generated files too; Eval.v now Requires
+              # RuleAst, so a build without them cannot even reach Eval.vo.
+              test -f _build/default/RuleAst.vo \
+                || { echo "FAIL the generated eval-side AST (RuleAst.v) did not compile"; exit 1; }
+              test -f _build/default/CheckerManifest.vo \
+                || { echo "FAIL the generated soundness registry (CheckerManifest.v) did not compile"; exit 1; }
               if grep -n "Admitted" build.log; then
                 echo "FAIL Admitted appeared in build output"; exit 1
               fi
@@ -797,12 +804,13 @@
           };
 
           # tblgen-rocq golden (docs/PLAN.md § 5.0 item 1): regenerate
-          # coq/RewRules.v from the committed records and byte-diff it against
-          # the committed artifact - "generated, not hand-glued" as gate
-          # evidence.  A second regeneration must be byte-identical to the
-          # first (the generator is deterministic), the ctor count must be the
-          # audit's 35, and the unimplemented modes must refuse (rc=2) rather
-          # than emit skeletons.
+          # coq/RewRules.v, coq/RuleAst.v and coq/CheckerManifest.v from the
+          # committed records and byte-diff each against its committed artifact
+          # - "generated, not hand-glued" as gate evidence.  A second
+          # regeneration must be byte-identical to the first (the generator is
+          # deterministic), the counts must match the audit's (35 ctors, 27
+          # RuleIDs, 35 manifest entries), and the unimplemented mode must
+          # refuse (rc=2) rather than emit a skeleton.
           tblgen-rocq-golden = pkgs.stdenv.mkDerivation {
             pname = "timbda-tblgen-rocq-golden";
             version = "0.1.0";
@@ -811,24 +819,36 @@
             phases = [ "buildPhase" "installPhase" ];
             buildPhase = ''
               set -e
-              tblgen-rocq -gen-rocq-rules $src/dialect/Timbda.td -o regen1.v
-              tblgen-rocq -gen-rocq-rules $src/dialect/Timbda.td -o regen2.v
-              cmp regen1.v regen2.v \
-                || { echo "FAIL regeneration is not byte-identical (nondeterministic backend)"; exit 1; }
-              cmp regen1.v $src/coq/RewRules.v \
+              for mode in rules ast checker; do
+                tblgen-rocq -gen-rocq-$mode $src/dialect/Timbda.td -o regen1-$mode.v
+                tblgen-rocq -gen-rocq-$mode $src/dialect/Timbda.td -o regen2-$mode.v
+                cmp regen1-$mode.v regen2-$mode.v \
+                  || { echo "FAIL -gen-rocq-$mode regeneration is not byte-identical (nondeterministic backend)"; exit 1; }
+              done
+              cmp regen1-rules.v $src/coq/RewRules.v \
                 || { echo "FAIL committed coq/RewRules.v differs from regeneration; run: tblgen-rocq -gen-rocq-rules dialect/Timbda.td -o coq/RewRules.v"; exit 1; }
-              n=$(grep -c '^| Rew' regen1.v)
+              cmp regen1-ast.v $src/coq/RuleAst.v \
+                || { echo "FAIL committed coq/RuleAst.v differs from regeneration; run: tblgen-rocq -gen-rocq-ast dialect/Timbda.td -o coq/RuleAst.v"; exit 1; }
+              cmp regen1-checker.v $src/coq/CheckerManifest.v \
+                || { echo "FAIL committed coq/CheckerManifest.v differs from regeneration; run: tblgen-rocq -gen-rocq-checker dialect/Timbda.td -o coq/CheckerManifest.v"; exit 1; }
+              n=$(grep -c '^| Rew' regen1-rules.v)
               test "$n" = 35 || { echo "FAIL generated ctor count $n != 35"; exit 1; }
+              m=$(grep -o 'R_[A-Za-z0-9]*' regen1-ast.v | sort -u | wc -l)
+              test "$m" = 27 || { echo "FAIL generated RuleID count $m != 27"; exit 1; }
+              k=$(grep -c '("Rew' regen1-checker.v)
+              test "$k" = 35 || { echo "FAIL manifest entry count $k != 35"; exit 1; }
               rc=0
-              tblgen-rocq -gen-rocq-ast $src/dialect/Timbda.td -o no1.v || rc=$?
-              test "$rc" = 2 || { echo "FAIL -gen-rocq-ast did not refuse with rc=2"; exit 1; }
+              tblgen-rocq -gen-rocq-externs $src/dialect/Timbda.td -o no1.v || rc=$?
+              test "$rc" = 2 || { echo "FAIL -gen-rocq-externs did not refuse with rc=2"; exit 1; }
               test ! -e no1.v || { echo "FAIL refusing mode wrote an output"; exit 1; }
-              echo "ok: coq/RewRules.v byte-identical to regeneration ($n ctors); unimplemented mode refused"
+              echo "ok: coq/RewRules.v, coq/RuleAst.v and coq/CheckerManifest.v byte-identical to regeneration ($n ctors, $m RuleIDs, $k manifest entries); -gen-rocq-externs refused"
             '';
             installPhase = ''
               mkdir -p $out
-              cp regen1.v $out/RewRules.v
-              echo "ok: tblgen-rocq-golden lane green (deterministic regeneration, byte-equal artifact, honest refusals)" > $out/status.txt
+              cp regen1-rules.v $out/RewRules.v
+              cp regen1-ast.v $out/RuleAst.v
+              cp regen1-checker.v $out/CheckerManifest.v
+              echo "ok: tblgen-rocq-golden lane green (deterministic regeneration, byte-equal artifacts, honest refusals)" > $out/status.txt
             '';
           };
 

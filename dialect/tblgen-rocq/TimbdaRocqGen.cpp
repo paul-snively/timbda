@@ -10,13 +10,21 @@
 // record fields, so "generated, not hand-glued" is gate evidence.
 //
 // Modes (the PLAN sec. 2 artifact families):
-//   -gen-rocq-rules    implemented: the RewRules.v rule surface (Inductive Rew
-//                      in TimbdaRuleGenOrder group order + the fixed
+//   -gen-rocq-rules    coq/RewRules.v: the Rew surface (Inductive Rew in
+//                      TimbdaRuleGenOrder group order + the fixed
 //                      rw_step/rewrites context-closure epilogue).
-//   -gen-rocq-ast      registered, refuses: not implemented until M1 item 1
-//                      completion (the checked-syntax artifact).
-//   -gen-rocq-checker  registered, refuses: not implemented until the M2 T4
-//                      wiring moves the checker statements into records.
+//   -gen-rocq-ast      coq/RuleAst.v: the eval-side rule AST surface -
+//                      `Inductive RuleID` in TimbdaRuleAstOrder group order +
+//                      `selected_rows` derived from the records' rank fields
+//                      (replaces the hand-glued block retired from coq/Eval.v).
+//   -gen-rocq-checker  coq/CheckerManifest.v: the soundness registry (per-rule
+//                      lemma inventory + status as Coq data). Deliberately a
+//                      registry, not lemma statements: measured against the 19
+//                      discharged RewSound_* lemmas, the statement text is
+//                      proof-side design (per-row fuel budgets, closeV-wrapped
+//                      hypotheses, added side conditions), and a deferred row
+//                      carries no statement by kernel policy
+//                      (docs/RULES-AUDIT.md sec. 4; docs/DESIGN-NOTES.md 13.12).
 // A mode that is not implemented must refuse, never emit a skeleton - an
 // honest refusal keeps the golden lane's "byte-identical regeneration" claim
 // meaningful for what it does cover.
@@ -31,6 +39,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <algorithm>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -54,8 +63,8 @@ static StringRef ProgramName = "tblgen-rocq";
 
 static void usage() {
   errs() << "usage: " << ProgramName
-         << " -gen-rocq-rules|-gen-rocq-ast|-gen-rocq-checker <input.td>"
-            " [-o <output>]\n";
+         << " -gen-rocq-rules|-gen-rocq-ast|-gen-rocq-checker|-gen-rocq-externs"
+            " <input.td> [-o <output>]\n";
 }
 
 //===----------------------------------------------------------------------===//
@@ -75,6 +84,11 @@ struct RocqCtor {
   std::string Fig;     // the record's `fig` field
   int Tier = 0;        // the record's `tier` field
   std::string PapForm;
+  std::string KernelTag;  // the eval-side RuleID name (R_...); empty = no RuleID
+  std::string Status;     // discharged | partial | deferred
+  int Selected = 0;       // the `selected` flag
+  int Rank = 0;           // selected_rows order; 0 = not selected
+  std::vector<std::string> SoundLemmas;  // RewSound_* names this row's evidence
 };
 
 // Collapse whitespace runs.  tools/rules-coqctor.py stores the fields
@@ -123,6 +137,12 @@ static bool collectCtors(const RecordKeeper &Records,
     C.Fig = collapseWS(R->getValueAsString("fig"));
     C.Tier = (int)R->getValueAsInt("tier");
     C.PapForm = collapseWS(R->getValueAsString("papForm"));
+    C.KernelTag = collapseWS(R->getValueAsString("kernelTag"));
+    C.Status = collapseWS(R->getValueAsString("status"));
+    C.Selected = (int)R->getValueAsInt("selected");
+    C.Rank = (int)R->getValueAsInt("rank");
+    for (StringRef L : R->getValueAsListOfStrings("soundLemmas"))
+      C.SoundLemmas.push_back(collapseWS(L));
     if (C.Tag.empty() || C.Lhs.empty() || C.Rhs.empty() || C.Fig.empty() ||
         C.PapForm.empty()) {
       errs() << ProgramName << ": record " << R->getName() << " carries ctor "
@@ -303,19 +323,41 @@ Inductive rw_step : Expr -> Expr -> Prop :=
 Definition rewrites (lhs rhs : Expr) : Prop := rw_step lhs rhs.
 )EPILOGUE";
 
-static int genRules(StringRef TDFile, StringRef OutFile) {
+static bool parseTD(StringRef TDFile, RecordKeeper &Records) {
   auto MBOrErr = MemoryBuffer::getFile(TDFile);
   if (!MBOrErr) {
     errs() << ProgramName << ": cannot open " << TDFile << "\n";
-    return 1;
+    return true;
   }
   SourceMgr SM;
   SM.AddNewSourceBuffer(std::move(*MBOrErr), SMLoc());
-  RecordKeeper Records;
   if (TableGenParseFile(SM, Records)) {
     errs() << ProgramName << ": tablegen parse failed\n";
-    return 1;
+    return true;
   }
+  return false;
+}
+
+static std::unique_ptr<raw_fd_ostream> openOut(StringRef OutFile,
+                                               raw_ostream *&OS) {
+  OS = &outs();
+  if (OutFile.empty())
+    return nullptr;
+  std::error_code EC;
+  auto Out = std::make_unique<raw_fd_ostream>(OutFile, EC, sys::fs::OF_None);
+  if (EC) {
+    errs() << ProgramName << ": cannot open " << OutFile << ": "
+           << EC.message() << "\n";
+    return nullptr;
+  }
+  OS = Out.get();
+  return Out;
+}
+
+static int genRules(StringRef TDFile, StringRef OutFile) {
+  RecordKeeper Records;
+  if (parseTD(TDFile, Records))
+    return 1;
 
   std::unordered_map<std::string, RocqCtor> Ctors;
   if (collectCtors(Records, Ctors))
@@ -324,18 +366,10 @@ static int genRules(StringRef TDFile, StringRef OutFile) {
   if (collectOrder(Records, Ctors, Groups))
     return 1;
 
-  std::unique_ptr<raw_fd_ostream> OSOut;
-  raw_ostream *OS = &outs();
-  if (!OutFile.empty()) {
-    std::error_code EC;
-    OSOut = std::make_unique<raw_fd_ostream>(OutFile, EC, sys::fs::OF_None);
-    if (EC) {
-      errs() << ProgramName << ": cannot open " << OutFile << ": "
-             << EC.message() << "\n";
-      return 1;
-    }
-    OS = OSOut.get();
-  }
+  raw_ostream *OS = nullptr;
+  auto OSOut = openOut(OutFile, OS);
+  if (!OSOut && !OutFile.empty())
+    return 1;
 
   *OS << Prologue;
   *OS << "Inductive Rew : Expr -> Expr -> Type :=\n";
@@ -360,6 +394,230 @@ static int genRules(StringRef TDFile, StringRef OutFile) {
   return 0;
 }
 
+//===----------------------------------------------------------------------===//
+// -gen-rocq-ast: coq/RuleAst.v - the eval-side RuleID/selected_rows surface
+//===----------------------------------------------------------------------===//
+
+static const char *RuleAstPrologue = R"ASTEOF((* =====================================================================
+    RuleAst.v - GENERATED FILE (M1 item 1, docs/PLAN.md sec. 5.0): the eval-side
+    rule AST surface.  `RuleID` carries one constructor per distinct non-empty
+    `kernelTag` field of the ctor rows in dialect/TimbdaRules.td, grouped in
+    TimbdaRuleAstOrder order with the group comments the records carry;
+    `selected_rows` lists the ctor rows flagged `selected` in `rank` order,
+    deduplicated by kernelTag (the two SCHEMA rows share R_Prim / R_PrimFail).
+    The hand-glued block this replaces was retired from coq/Eval.v.  Regenerate:
+        tblgen-rocq -gen-rocq-ast dialect/Timbda.td -o coq/RuleAst.v
+    checks.tblgen-rocq-golden byte-diffs this file against regeneration and
+    tools/rules-audit.py section 3 asserts the record provenance; hand edits
+    here are a gate failure, not a contribution.
+    ===================================================================== *)
+
+From Stdlib Require Import List.
+Import ListNotations.
+)ASTEOF";
+
+static int genAst(StringRef TDFile, StringRef OutFile) {
+  RecordKeeper Records;
+  if (parseTD(TDFile, Records))
+    return 1;
+  std::unordered_map<std::string, RocqCtor> Ctors;
+  if (collectCtors(Records, Ctors))
+    return 1;
+
+  const Record *Order = Records.getDef("TimbdaRuleAstOrder");
+  if (!Order) {
+    errs() << ProgramName << ": TimbdaRuleAstOrder not found (run "
+              "tools/rules-coqctor.py)\n";
+    return 1;
+  }
+  std::unordered_map<std::string, unsigned> TagCount;
+  for (const auto &KV : Ctors)
+    if (!KV.second.KernelTag.empty())
+      TagCount[KV.second.KernelTag]++;
+
+  SmallVector<const Record *, 8> Groups;
+  std::unordered_set<std::string> Seen;
+  for (StringRef GName : Order->getValueAsListOfStrings("groups")) {
+    const Record *G = Records.getDef(GName);
+    if (!G || !G->isSubClassOf("TimbdaRuleAstGroup")) {
+      errs() << ProgramName << ": RuleID group '" << GName
+             << "' missing or not a TimbdaRuleAstGroup\n";
+      return 1;
+    }
+    for (StringRef Id : G->getValueAsListOfStrings("ruleIds")) {
+      if (!TagCount.count(Id.str())) {
+        errs() << ProgramName << ": RuleID '" << Id << "' names no kernelTag\n";
+        return 1;
+      }
+      if (!Seen.insert(Id.str()).second) {
+        errs() << ProgramName << ": RuleID '" << Id << "' in two groups\n";
+        return 1;
+      }
+    }
+    Groups.push_back(G);
+  }
+  if (Seen.size() != TagCount.size()) {
+    errs() << ProgramName << ": RuleID groups cover " << Seen.size()
+           << " of " << TagCount.size() << " distinct kernelTags\n";
+    return 1;
+  }
+
+  SmallVector<const RocqCtor *, 32> Sel;
+  for (const auto &KV : Ctors)
+    if (KV.second.Selected)
+      Sel.push_back(&KV.second);
+  std::sort(Sel.begin(), Sel.end(),
+            [](const RocqCtor *A, const RocqCtor *B) { return A->Rank < B->Rank; });
+  std::unordered_set<std::string> SelSeen;
+  SmallVector<std::string, 32> SelIds;
+  for (const RocqCtor *C : Sel) {
+    if (C->KernelTag.empty() || C->Rank <= 0) {
+      errs() << ProgramName << ": selected ctor " << C->Name
+             << " has no kernelTag/rank to select\n";
+      return 1;
+    }
+    if (SelSeen.insert(C->KernelTag).second)
+      SelIds.push_back(C->KernelTag);
+  }
+
+  raw_ostream *OS = nullptr;
+  auto OSOut = openOut(OutFile, OS);
+  if (!OSOut && !OutFile.empty())
+    return 1;
+
+  *OS << RuleAstPrologue << "\nInductive RuleID : Type :=\n";
+  for (unsigned I = 0; I < Groups.size(); ++I) {
+    const Record *G = Groups[I];
+    auto Ids = G->getValueAsListOfStrings("ruleIds");
+    std::string Comment = collapseWS(G->getValueAsString("comment"));
+    std::string Line = "| ";
+    for (unsigned J = 0; J < Ids.size(); ++J) {
+      if (J)
+        Line += " | ";
+      Line += Ids[J];
+      if (I + 1 == Groups.size() && J + 1 == Ids.size())
+        Line += ".";  // the inductive terminator rides the last ctor
+    }
+    std::string Tail = Comment.empty() ? "" : "        (* " + Comment + " *)";
+    if (Comment.empty() || Line.size() + Tail.size() <= 78) {
+      *OS << Line << Tail << "\n";
+    } else {
+      emitWrapped(*OS, Line, 0, 2, 78);
+      emitWrapped(*OS, "(* " + Comment + " *)", 2, 2, 78);
+    }
+  }
+  *OS << "\n(* selected_rows: the ctor rows flagged `selected` in `rank` order,\n"
+         "   deduplicated by kernelTag *)\n"
+         "Definition selected_rows : list RuleID :=\n";
+  std::string ListStr = "[";
+  for (unsigned I = 0; I < SelIds.size(); ++I) {
+    if (I)
+      ListStr += ";";
+    ListStr += " " + SelIds[I];
+  }
+  ListStr += "].";
+  emitWrapped(*OS, ListStr, 2, 2, 78);
+  OS->flush();
+
+  errs() << ProgramName << ": -gen-rocq-ast emitted " << Seen.size()
+         << " RuleIDs from " << Groups.size() << " groups; selected_rows has "
+         << SelIds.size() << " entries";
+  if (!OutFile.empty())
+    errs() << " -> " << OutFile;
+  errs() << "\n";
+  return 0;
+}
+
+//===----------------------------------------------------------------------===//
+// -gen-rocq-checker: coq/CheckerManifest.v - the soundness registry
+//===----------------------------------------------------------------------===//
+
+static const char *ManifestPrologue = R"MEOF((* =====================================================================
+    CheckerManifest.v - GENERATED FILE (M1 item 1, docs/PLAN.md sec. 5.0): the
+    soundness REGISTRY for the 35 ctor rows - ctor name, audit tag, status, and
+    the RewSound_* lemma names that row's kernel evidence consists of (a
+    deferred row carries none, and no statement either - docs/RULES-AUDIT.md
+    sec. 4).  Registry, not statements: per-row lemma statements are proof-side
+    design (fuel budgets, closeV-wrapped hypotheses and added side conditions
+    were measured against the discharged lemmas - docs/DESIGN-NOTES.md 13.12),
+    so each proof lands in coq/Denotation.v while the audit lane re-checks this
+    registry against both the records and the kernel lemma inventory.  This
+    file carries no proof surface at all.  Regenerate:
+        tblgen-rocq -gen-rocq-checker dialect/Timbda.td -o coq/CheckerManifest.v
+    ===================================================================== *)
+
+From Stdlib Require Import List Strings.String.
+Import ListNotations.
+Open Scope string_scope.
+
+Definition soundness_manifest : list (string * string * string * list string) :=
+)MEOF";
+
+static int genChecker(StringRef TDFile, StringRef OutFile) {
+  RecordKeeper Records;
+  if (parseTD(TDFile, Records))
+    return 1;
+  std::unordered_map<std::string, RocqCtor> Ctors;
+  if (collectCtors(Records, Ctors))
+    return 1;
+  // Reuse the rules-side group validation: manifest order is the emission
+  // order, and the same exact-coverage claim is checked the same way.
+  SmallVector<const Record *, 8> Groups;
+  if (collectOrder(Records, Ctors, Groups))
+    return 1;
+
+  for (const auto &KV : Ctors) {
+    const RocqCtor &C = KV.second;
+    unsigned N = C.SoundLemmas.size();
+    bool ok = (C.Status == "discharged" && N == 1) ||
+              (C.Status == "partial" && N == 2) ||
+              (C.Status == "deferred" && N == 0);
+    if (!ok) {
+      errs() << ProgramName << ": ctor " << C.Name << " status '" << C.Status
+             << "' inconsistent with " << N << " soundLemmas\n";
+      return 1;
+    }
+    for (const std::string &L : C.SoundLemmas)
+      if (!StringRef(L).starts_with("RewSound_") || L.find('"') != std::string::npos) {
+        errs() << ProgramName << ": ctor " << C.Name << " carries lemma '" << L
+               << "' outside the RewSound_* family (or quote-bearing)\n";
+        return 1;
+      }
+  }
+
+  raw_ostream *OS = nullptr;
+  auto OSOut = openOut(OutFile, OS);
+  if (!OSOut && !OutFile.empty())
+    return 1;
+
+  *OS << ManifestPrologue;
+  unsigned Emitted = 0;
+  for (const Record *G : Groups) {
+    for (StringRef Name : G->getValueAsListOfStrings("ctors")) {
+      const RocqCtor &C = Ctors.find(Name.str())->second;
+      std::string Entry = "(\"" + C.Name + "\", \"" + C.Tag + "\", \"" +
+                          C.Status + "\", [";
+      for (unsigned I = 0; I < C.SoundLemmas.size(); ++I) {
+        if (I)
+          Entry += "; ";
+        Entry += "\"" + C.SoundLemmas[I] + "\"";
+      }
+      Entry += "])";
+      *OS << (Emitted == 0 ? "  [" : "  ; ") << Entry << "\n";
+      ++Emitted;
+    }
+  }
+  *OS << "  ].\n";
+  OS->flush();
+
+  errs() << ProgramName << ": -gen-rocq-checker emitted " << Emitted
+         << " manifest entries";
+  if (!OutFile.empty())
+    errs() << " -> " << OutFile;
+  errs() << "\n";
+  return 0;
+}
+
 } // end anonymous namespace
 
 int main(int argc, char **argv) {
@@ -371,7 +629,7 @@ int main(int argc, char **argv) {
   for (int I = 1; I < argc; ++I) {
     StringRef A = argv[I];
     if (A == "-gen-rocq-rules" || A == "-gen-rocq-ast" ||
-        A == "-gen-rocq-checker") {
+        A == "-gen-rocq-checker" || A == "-gen-rocq-externs") {
       if (!Mode.empty()) {
         errs() << ProgramName << ": multiple modes given\n";
         return 1;
@@ -397,12 +655,16 @@ int main(int argc, char **argv) {
 
   if (Mode == "-gen-rocq-rules")
     return genRules(TDFile, OutFile);
+  if (Mode == "-gen-rocq-ast")
+    return genAst(TDFile, OutFile);
+  if (Mode == "-gen-rocq-checker")
+    return genChecker(TDFile, OutFile);
 
-  // Registered-but-unimplemented modes refuse loudly (see the header note).
+  // -gen-rocq-externs is the ContextExtern family: registered, lands at M4
+  // (docs/PLAN.md sec. 5.0 binding), refuses until then.
   errs() << ProgramName << ": " << Mode
-         << " is registered but not implemented yet (docs/PLAN.md sec. 5.0:"
-         << " -gen-rocq-ast lands with the M1 item 1 completion, "
-            "-gen-rocq-checker with the M2 T4 wiring).  Refusing to emit "
-            "anything.\n";
+         << " is registered but not implemented yet (-gen-rocq-externs ships "
+            "with the ContextExtern record family at M4, docs/PLAN.md sec. 5.0)"
+            ".  Refusing to emit anything.\n";
   return 2;
 }

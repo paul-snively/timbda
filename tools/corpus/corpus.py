@@ -391,6 +391,7 @@ COQ_HEADER = """\
    collision (DESIGN-NOTES sec. 7.3) is unreachable from this file. *)
 From Stdlib Require Import ZArith List.
 Require Import Timbda.Syntax Timbda.Rewriting Timbda.Semantics Timbda.Eval.
+Require Import Timbda.RuleAst.   (* generated RuleID (M1 item 1) *)
 Import ListNotations.
 
 (* The row tag alone, so a case can name the row that fired without restating

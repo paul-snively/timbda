@@ -12,11 +12,17 @@ record + an MLIR pattern + a Rocq ctor"; the audit IS the claim):
      fields re-rendered (the tblgen-rocq byte contract), and the
      TimbdaRuleGenOrder/TimbdaRuleGroup defs partition the 35 ctor rows and
      match the generated emission order.
+  1c. generated AST/registry provenance (coq/RuleAst.v + coq/CheckerManifest.v):
+     the RuleID groups match the TimbdaRuleAstGroup defs and cover every
+     distinct kernelTag exactly once; selected_rows is the record rank order;
+     coq/Eval.v carries no hand-glued RuleID/selected_rows anymore; the
+     manifest's per-row lemma inventory equals both the record soundLemmas
+     fields and the kernel's RewSound_* inventory.
   2. Record arithmetic: 72 TimbdaRuleRecord rows = 35 ctor rows + 37 audit
      records; categories 18 matching + 4 essential-verse + 10 verification +
      3 open-lambda + 2 kernel-adjacent; statuses 15 discharged / 2 partial /
      18 deferred; 3 TimbdaExtern records.
-  3. `selected` column <-> coq/Eval.v selected_rows (26 selected ctor rows,
+  3. `selected` column <-> coq/RuleAst.v selected_rows (26 selected ctor rows,
      19 selected RuleIDs, 27 RuleIDs, 8 never fired).
   4. status column <-> RewSound_* lemma presence in coq/Denotation.v; zero
      Admitted and no Axiom/Hypothesis/Parameter/Conjecture in coq/.
@@ -136,25 +142,15 @@ def parse_rewriting_tags(raw):
 
 
 def parse_rule_ids(raw):
-    """The `Inductive RuleID := R_a | ... | R_z.` block from coq/Eval.v."""
-    collecting = False
-    names = set()
-    for line in raw.splitlines():
-        if not collecting:
-            if "Inductive RuleID" in line:
-                collecting = True
-            continue
-        names.update(re.findall(r"\bR_\w+\b", line))
-        if line.rstrip().endswith("."):
-            break
-    return names
+    """The `Inductive RuleID` ctor set (coq/RuleAst.v, the generated file)."""
+    return {n for _, ids in parse_ruleid_group_lines(raw) for n in ids}
 
 
 def parse_selected_rows(raw):
     m = re.search(r"Definition selected_rows : list RuleID :=\s*\[([^\]]+)\]", raw)
     if not m:
-        return set()
-    return set(re.findall(r"\bR_\w+\b", m.group(1)))
+        return []
+    return re.findall(r"\bR_\w+\b", m.group(1))
 
 
 def parse_td_records(raw):
@@ -256,6 +252,47 @@ def parse_gen_groups(raw):
     return [(g, defs[g]) for g in order if g in defs], order, defs
 
 
+def parse_ruleid_group_lines(raw):
+    """Generated coq/RuleAst.v RuleID block -> [(comment, [R_names])].  A group
+    may wrap its ctor list and/or its comment onto continuation lines."""
+    groups = []
+    for line in raw[raw.index("Inductive RuleID : Type :="):].splitlines()[1:]:
+        s = line.strip()
+        if s.startswith("| R_"):
+            cm = re.search(r"\(\* (.*?) \*\)", s)
+            head = s[:cm.start()] if cm else s
+            groups.append({"comment": cm.group(1) if cm else "",
+                           "ids": re.findall(r"\bR_\w+\b", head)})
+            if head.rstrip().endswith("."):
+                break
+        elif groups and s.startswith("(*"):
+            cm = re.search(r"\(\* (.*?) \*\)", s)
+            if cm and not groups[-1]["comment"]:
+                groups[-1]["comment"] = cm.group(1)
+    return [(g["comment"], g["ids"]) for g in groups]
+
+
+def parse_ast_groups(raw):
+    """TimbdaRuleAstGroup defs + TimbdaRuleAstOrder -> ([(group, comment,
+    [ruleIds])], order, defs)."""
+    defs = {}
+    for name, body in re.findall(r"def (\w+) : TimbdaRuleAstGroup \{(.*?)\n\}", raw, re.S):
+        m = re.search(r"let ruleIds = \[([^\]]*)\];", body)
+        ids = re.findall(r"\"([^\"]+)\"", m.group(1)) if m else []
+        cm = re.search(r'let comment = "((?:[^"\\]|\\.)*)";', body)
+        defs[name] = (ids, td_unescape(cm.group(1)) if cm else "")
+    m = re.search(r"def TimbdaRuleAstOrder \{\s*list<string> groups = \[([^\]]*)\];", raw)
+    order = re.findall(r"\"([^\"]+)\"", m.group(1)) if m else []
+    return [(g, defs[g][1], defs[g][0]) for g in order if g in defs], order, defs
+
+
+def parse_manifest(raw):
+    """coq/CheckerManifest.v entries -> [(ctor, tag, status, [lemma names])]."""
+    return [(c, t, s, re.findall(r"\"([^\"]+)\"", lemmas))
+            for c, t, s, lemmas in re.findall(
+                r'\("(\w+)", "(\w+)", "(\w+)", \[([^\]]*)\]\)', coq_strip(raw))]
+
+
 def parse_group_vocabulary(doc_text):
     """docs/VERSE-RULES.md sec. 5: group names from the code-fenced comma list."""
     for chunk in doc_text.split("```"):
@@ -267,6 +304,7 @@ def parse_group_vocabulary(doc_text):
 def main():
     rewriting_raw = read("coq/RewRules.v")   # the generated rule surface (M1 item 1)
     eval_raw = read("coq/Eval.v")
+    ast_raw = read("coq/RuleAst.v")          # the generated eval-side AST (M1 item 1)
     denotation_code = coq_strip(read("coq/Denotation.v"))
     lemma_suffixes = set(re.findall(r"RewSound_(\w+)", denotation_code))
 
@@ -282,8 +320,8 @@ def main():
     ctor_names, tags_by_ctor = parse_rewriting_tags(rewriting_raw)
     gen_blocks = parse_generated_rewrites(rewriting_raw)
     gen_order = [name for name, _, _ in gen_blocks]
-    rule_ids = parse_rule_ids(eval_raw)
-    selected_coq = parse_selected_rows(eval_raw)
+    rule_ids = parse_rule_ids(ast_raw)
+    selected_coq = parse_selected_rows(ast_raw)
 
     kernel_recs = [r for r in records.values() if r.get("ctor")]
     audit_recs = [r for r in records.values() if not r.get("ctor")]
@@ -357,6 +395,71 @@ def main():
     check(not missing_defs, "every group named by TimbdaRuleGenOrder has a def",
           ", ".join(missing_defs))
 
+    print("== 1c. generated AST/registry provenance (coq/RuleAst.v + coq/CheckerManifest.v) ==")
+    check("Inductive RuleID : Type" not in eval_raw
+          and "Definition selected_rows" not in eval_raw,
+          "coq/Eval.v carries no hand-glued RuleID/selected_rows (they moved)")
+    coq_ast = parse_ruleid_group_lines(ast_raw)
+    td_ast, ast_order, ast_defs = parse_ast_groups(td_raw)
+    check(len(ast_order) == len(ast_defs) and [g for g, _, _ in td_ast] == ast_order,
+          "TimbdaRuleAstOrder lists every TimbdaRuleAstGroup def",
+          f"order {ast_order} defs {sorted(ast_defs)}")
+    check([c for _, c, _ in td_ast] == [c for c, _ in coq_ast]
+          and [i for _, _, i in td_ast] == [i for _, i in coq_ast],
+          f"RuleAst.v RuleID groups == AstGroup defs ({len(ast_order)} groups, "
+          "names, comments and order)",
+          "; ".join(f"{g}: {c}" for g, c, _ in td_ast))
+    flat_ast_ids = [r for _, _, ids in td_ast for r in ids]
+    kernel_tags = {str(r.get("kernelTag", "")) for r in kernel_recs
+                   if str(r.get("kernelTag", ""))}
+    check(len(flat_ast_ids) == len(set(flat_ast_ids)) == 27
+          and set(flat_ast_ids) == rule_ids == kernel_tags,
+          "AST groups partition the 27 RuleIDs == distinct record kernelTags",
+          f"got {len(flat_ast_ids)}/{len(set(flat_ast_ids))} ids, "
+          f"{len(kernel_tags)} kernelTags, {len(rule_ids)} RuleIDs")
+    ranked, seen_rank = [], set()
+    for rec in sorted(kernel_recs, key=lambda r: int(r.get("rank", 0))):
+        t = str(rec.get("kernelTag", ""))
+        if int(rec.get("selected", 0)) == 1 and t and t not in seen_rank:
+            seen_rank.add(t)
+            ranked.append(t)
+    check(ranked == list(selected_coq),
+          "selected_rows in RuleAst.v == record selected/rank order (deduplicated)",
+          f"records: {ranked}\ncoq: {list(selected_coq)}")
+    manifest_raw = read("coq/CheckerManifest.v")
+    manifest = parse_manifest(manifest_raw)
+    check(len(manifest) == 35 and [m[0] for m in manifest] == flat_group_ctors,
+          "manifest lists the 35 ctor rows in generated emission order",
+          f"got {len(manifest)} entries")
+    man_bad = []
+    for ctor, tag, status, lems in manifest:
+        rec = rec_by_ctor.get(ctor)
+        if rec is None:
+            man_bad.append(f"{ctor}: manifest entry with no ctor row")
+            continue
+        if tag != str(rec.get("coqTag", "")):
+            man_bad.append(f"{ctor}: manifest tag {tag} != coqTag {rec.get('coqTag')}")
+        if status != str(rec.get("status", "")):
+            man_bad.append(f"{ctor}: manifest status {status} != record {rec.get('status')}")
+        want = sorted(str(x) for x in (rec.get("soundLemmas") or []))
+        if sorted(lems) != want:
+            man_bad.append(f"{ctor}: manifest lemmas {sorted(lems)} != record "
+                           f"soundLemmas {want}")
+        if ctor in SCHEMA_LEMMAS:
+            kernel = {f"RewSound_{s}" for s in SCHEMA_LEMMAS[ctor] & lemma_suffixes}
+        else:
+            kernel = {f"RewSound_{ctor[3:]}"} if ctor[3:] in lemma_suffixes else set()
+        if set(lems) != kernel:
+            man_bad.append(f"{ctor}: lemma inventory {sorted(lems)} != kernel "
+                           f"RewSound_* evidence {sorted(kernel)}")
+        want_n = {"discharged": 1, "partial": 2, "deferred": 0}.get(status)
+        if want_n is None or len(lems) != want_n:
+            man_bad.append(f"{ctor}: status {status} with {len(lems)} lemmas")
+    check(not man_bad, "manifest == record soundLemmas == kernel lemma inventory, "
+                       "status-consistent counts (35/35)", "; ".join(man_bad))
+    check("Admitted" not in manifest_raw and not re.search(r"(?m)^Lemma ", manifest_raw),
+          "CheckerManifest.v carries no proof surface (registry data only)")
+
     print("== 2. record arithmetic (dialect/TimbdaRules.td) ==")
     check(len(records) == 72, "72 TimbdaRuleRecord rows", f"got {len(records)}")
     check(len(kernel_recs) == 35 and len(audit_recs) == 37,
@@ -402,7 +505,7 @@ def main():
           "categories account for all 37 audit rows",
           f"{sum(len(v) for v in buckets.values())} bucketed")
 
-    print("== 3. selected column <-> coq/Eval.v ==")
+    print("== 3. selected column <-> coq/RuleAst.v (generated) ==")
     sel_bad = []
     for rec in kernel_recs:
         tag_name = str(rec.get("kernelTag", ""))
@@ -415,10 +518,10 @@ def main():
     n_selected = len([r for r in kernel_recs if int(r.get("selected", 0)) == 1])
     n_named = len([r for r in kernel_recs if "SCHEMA" not in (r.get("tags") or [])])
     check(n_selected == 26, "26 selected ctor rows", f"got {n_selected}")
-    check(len(selected_coq) == 19, "19 selected_rows in coq/Eval.v",
+    check(len(selected_coq) == 19, "19 selected_rows in coq/RuleAst.v",
           f"got {len(selected_coq)}")
-    check(len(rule_ids) == 27, "27 RuleIDs in coq/Eval.v", f"got {len(rule_ids)}")
-    never_fired = sorted(rule_ids - selected_coq)
+    check(len(rule_ids) == 27, "27 RuleIDs in coq/RuleAst.v", f"got {len(rule_ids)}")
+    never_fired = sorted(rule_ids - set(selected_coq))
     check(len(never_fired) == 8, "8 never-fired RuleIDs", ", ".join(never_fired))
 
     print("== 4. status column <-> RewSound_* lemma evidence (coq/Denotation.v) ==")

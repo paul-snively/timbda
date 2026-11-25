@@ -1804,3 +1804,82 @@ The one-way move § 13.10's closing paragraph demanded, executed as one incremen
   `Inductive Rew`, and the generated file carries the context closure.  The
   `.td` record parser in the audit gained a quote-aware list regex (the coq*
   fields put `]` and `\"` inside strings - e.g. Subst's papForm).
+
+### 13.12 M1 item 1 completion: `-gen-rocq-ast` and `-gen-rocq-checker` land; the checker artifact is a registry, not statements (landed 2026-11-25, probe p516)
+
+The two registered modes became real generators, and the last hand-glued
+rule artifact retired:
+
+- **The AST generation rule, fixed from record fields** (the measurement
+  question 13.11's landing left open): the eval-side `Inductive RuleID` has
+  one constructor per *distinct non-empty `kernelTag`* of the ctor rows - the
+  SCHEMA arity variants sharing `R_Prim`/`R_PrimFail` are why 35 ctor rows
+  map to 27 RuleIDs and 26 selected ctor rows to 19 `selected_rows`.  Group
+  structure is not derived: `coq/Eval.v`'s fig grouping (12, 9, 11, 10, 8,
+  13, never-selected) is historical kernel text, so it rides the records as
+  seven `TimbdaRuleAstGroup` defs + `TimbdaRuleAstOrder`, transcribed verbatim
+  by `tools/rules-coqctor.py` - same one-way direction as the ctor surface.
+  `selected_rows` IS derived: ctor rows with `selected = 1`, `rank`-ascending,
+  deduplicated by `kernelTag`; the tool measured the rank order reproduces
+  `Eval.v`'s list exactly (19/19), which is what licenses generating it.
+  `coq/RuleAst.v` is the emitted file; `coq/Eval.v` retired its hand block and
+  now `Require Import Timbda.RuleAst`.  Group comments must be stored
+  stripped: `Eval.v`'s column-aligned padding (`(* fig:9  *)`) leaked a
+  trailing space into the first transcription - the tool strips, the C++
+  backend collapses whitespace, and the golden lane pins the emitted bytes.
+- **`-gen-rocq-checker` measured before choosing its shape**: PLAN sec. 2's
+  "per-rule soundness-lemma skeleton" would mean *generating lemma
+  statements*.  Measured against the 19 kernel `RewSound_*` statements (15
+  discharged rows + the 2 partial SCHEMA rows at their 1-ary/2-ary arities):
+  **zero** statements match a template rebuilt from the record fields alone.
+  Every discharged statement is proof-side design on top of the record
+  semantics - deeper fuel groups than `S (S f)` (Add runs at `S (S (S (S (S
+  f))))`), `closeV`-wrapped hypotheses (`prim_total p [closeV 0 rho v0] =
+  PRes (closeV 0 rho v)`), and the Prim family statements over `prim_app`
+  with their own arity.  And 18 deferred rows carry *no* statement at all by
+  kernel policy (docs/RULES-AUDIT.md sec. 4: no `RewSound_*` lemma, no
+  `Admitted`).  A generated skeleton would therefore be fiction: statements
+  with the wrong fuel budget, or 18 statements the kernel refuses to have.
+  The artifact is instead the **soundness registry** `coq/CheckerManifest.v`:
+  per ctor row `(ctor, tag, status, [lemma names])` as Coq *data*, in the
+  generated emission order, carrying no `Lemma`/`Proof` surface at all.  The
+  proof statements stay in `coq/Denotation.v` (hand-designed, proof-carrying);
+  the registry makes the per-row evidence machine-readable, and audit sec. 1c
+  asserts the triple identity manifest == record `soundLemmas` == kernel
+  `RewSound_*` inventory, 35/35 with status-consistent counts (1/2/0).
+  The `.td` gained the `soundLemmas` field per ctor row (17 rows nonempty:
+  15 discharged + 2 partial); `tools/rules-coqctor.py` transcribed it from
+  `coq/Denotation.v` and now verifies idempotently - re-`--apply` is a proven
+  no-op on the records.
+- **Refusal boundary after this increment**: `-gen-rocq-rules`,
+  `-gen-rocq-ast`, `-gen-rocq-checker` all emit; only `-gen-rocq-externs`
+  stays registered-and-refusing (rc=2, no output), the ContextExtern family
+  bound to M4 (PLAN sec. 5.0).  The golden lane now regenerates all three
+  emitted artifacts twice, byte-diffs regeneration against each committed
+  file, counts 35 ctors / 27 RuleIDs / 35 manifest entries, and asserts the
+  one remaining refusal.
+- **Gate shape after this increment**: `rules-audit` sec. 1c asserts the
+  provenance from the Coq side (AstGroup defs == generated block, RuleIDs ==
+  distinct kernelTags, `selected_rows` == rank order, manifest == records ==
+  kernel inventory, `Eval.v` carries no hand block, manifest has no proof
+  surface); `EXPECTED_VO` and the kernel buildPhase witnesses gained
+  `RuleAst` and `CheckerManifest` (16 expected .vo), and Eval.v's compile
+  *depends* on RuleAst now - a kernel build missing the generated AST cannot
+  reach `Eval.vo` at all.  Backend plumbing note: the three modes share
+  `openOut`/`parseTD` helpers; `raw_ostream *&` binding needs the base
+  pointer type at the call site (`raw_ostream *OS`, not `raw_fd_ostream *`).
+- **Two Rocq 9.1 teeth the first kernel run billed, now encoded in the
+  backend's prologues**: (a) a `Definition` body that opens with `[` parses
+  as `[reduce]`-annotation territory unless list notation is actually in
+  scope - `From Stdlib Require Import List. Import ListNotations.` is what
+  makes a list body legal (measured: without it, `Definition f : T :=\n  [(…)]`
+  is a syntax error in the pinned 9.1.1); and (b) a *string*-typed registry
+  needs `Strings.String` imported *and* `Open Scope string_scope.` opened -
+  `Import StringScope` is not a thing (scopes are `Open Scope`, and the
+  literal `""` has "no interpretation" until the scope is open).  The
+  manifest prologue now carries all three lines.  Third gotcha for consumers:
+  Coq `Require Import` is not transitively re-exported, so the files that
+  mention `RuleID`/`R_*` (`ChecksEval.v`, `tests/KernelTest.v`) `Require
+  Import Timbda.RuleAst` explicitly - the same discipline increment A applied
+  to `Timbda.RewRules`, and `tools/extract/extract.v`'s qualified names moved
+  to `Timbda.RuleAst.selected_rows` for the same reason.

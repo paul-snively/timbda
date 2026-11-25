@@ -3,8 +3,8 @@
 M0 seed of the per-rule audit rows required by `docs/VERSE-RULES.md` (header item 3:
 "an entry in `docs/RULES-AUDIT.md` with tier and proof status").  At M1
 (`docs/PLAN.md` § 5) `tools/rules-audit.py` becomes the generator: it diffs this file's
-rows against the `audit:` tags of the `Rew` constructors in `coq/Rewriting.v`, the
-`RuleID`/`selected_rows` tables in `coq/Eval.v`, and the `TimbdaRule` records in
+rows against the `audit:` tags of the `Rew` constructors in the generated `coq/RewRules.v`, the
+`RuleID`/`selected_rows` tables in the generated `coq/RuleAst.v`, and the `TimbdaRule` records in
 `dialect/Timbda.td` — the diff IS the completeness claim (PLAN § 11.2).  Until that tool
 exists this file is hand-maintained and is the source of record for proof status.
 
@@ -77,7 +77,8 @@ VERSE-RULES § 7's "33 constructors" excludes the 2 SCHEMA records (its own § 3
 reconciliation in § 2 below.
 
 **Selected vs discharged is not the same column, and the M0 close-out widened the gap.**
-`coq/Eval.v`'s `selected_rows` now lists 19 `RuleID`s.  They stand in for 26 of the 35
+`coq/RuleAst.v`'s `selected_rows` — generated from the records since M1 item 1, formerly
+hand-glued in `coq/Eval.v` — lists 19 `RuleID`s.  They stand in for 26 of the 35
 ctor rows: 24 rewrite ctors (`Seq`, `Norm1-5`, `EqK1`, `EqK2`, `EqTup1`, `EqTup2`,
 `EqFail`, `BetaL`, `BetaT`, `BetaT0`, `Subst`, `PromoteL`, `PromoteR` + the seven named
 Fig. 10 ctors `Add`, `Gt1`, `Gt2`, `IsInt1`, `IsInt2`, `Cons`, `DotDot`, which fire through
@@ -231,7 +232,8 @@ lists the two there as kernel-side facts rather than as dialect rewrites.
   calibration's "M0 gate: ≥ 10 full proofs" is met with 15 discharged ctors + 2
   partials + the T2 algebra.
 * Extracted-corner evidence (`tools/extract/extract.v`, compiled by the corpus corner): `Print
-  Assumptions` on `Timbda.Eval.norm`, `Timbda.Eval.head_redex`, `Timbda.Eval.selected_rows` and
+  Assumptions` on `Timbda.Eval.norm`, `Timbda.Eval.head_redex`, `Timbda.RuleAst.selected_rows` (the
+  generated AST file since M1 item 1) and
   `Timbda.Eval.cand_bag` prints **`Closed under the global context`** for all four.  The Gallina
   evaluator the C++ side will eventually inherit carries no axiom at all — unlike the `≈`-level
   lemmas above, whose `eq_rect_eq` footprint comes from the ctrees layer.
@@ -246,15 +248,18 @@ lists the two there as kernel-side facts rather than as dialect rewrites.
 
 ## 7. M1 reconciliation checklist (`tools/rules-audit.py`)
 
-The checklist is a script now: `python3 tools/rules-audit.py` runs 31 checks and exits
-non-zero on any failure.  At the M1 build all 31 are green, and that run is the M1
+The checklist is a script now: `python3 tools/rules-audit.py` runs 46 checks and exits
+non-zero on any failure.  At the M1 build all 46 are green, and that run is the M1
 coverage claim (docs/PLAN.md § 5: every paper rule ⇒ a record + an MLIR pattern + a Rocq
 ctor).  Beyond the five items below it also checks: the 72-row arithmetic and the 3
 `TimbdaExtern` records; the audit-row categories 18 matching / 4 essential / 10
 verification / 3 open-lambda / 2 kernel-adjacent, with no row left un-categorized; the
-15/2/18 discharged/partial/deferred split; the `sel` column against
-`coq/Eval.v`'s `selected_rows` row by row (19 selected `RuleID`s of 27, 8 never fired);
-the status column as *evidence* rather than assertion — `discharged` ⇔ a `RewSound_<rule>`
+15/2/18 discharged/partial/deferred split; the generated-file provenance of all three
+tblgen-rocq artifacts (sec. 1b/1c: every generated ctor == its record's coq* fields
+re-rendered, the AstGroup defs == the generated `RuleID` block, RuleIDs == distinct
+kernelTags, `selected_rows` == the records' `rank` order, manifest == record
+`soundLemmas` == the kernel `RewSound_*` inventory with status-consistent counts); the
+status column as *evidence* rather than assertion — `discharged` ⇔ a `RewSound_<rule>`
 lemma in `coq/Denotation.v` (the 2 SCHEMA rows at their 1-ary and 2-ary arities),
 `partial` ⇔ those lemma pairs, `deferred` ⇔ no lemma, no orphan lemma — plus zero
 `Admitted` and no `Axiom`/`Parameter`/`Hypothesis`/`Conjecture` declaration anywhere in
@@ -272,7 +277,7 @@ if `bazel build //dialect:TimbdaCanonicalization` has not been run.
 1. `audit:` tag ↔ ctor ↔ § 1 row: 35/35 match, tier equal.
 2. § 2 records ↔ `TimbdaRule`/`TimbdaExtern` records in `dialect/Timbda.td` (72-row
    arithmetic, § 2 note).
-3. `sel` column ↔ `coq/Eval.v` `selected_rows`/`RuleID` (19 selectable rows of 27 `RuleID` ctors at
+3. `sel` column ↔ `coq/RuleAst.v` `selected_rows`/`RuleID` (generated; 19 selectable rows of 27 `RuleID` ctors at
    M0; `corpus.py --summary` prints which fired and names the 8 never exercised).
 4. Status column ↔ `RewSound_*` lemma existence + the `Print Assumptions` one-axiom
    pattern (§ 6).

@@ -30,6 +30,7 @@ Local Open Scope ctree_scope.
 
 Require Import Timbda.Syntax Timbda.Rewriting Timbda.RewRules Timbda.Semantics
                 Timbda.Denotation Timbda.Eval.
+Require Import Timbda.RuleAst.   (* generated RuleID/selected_rows (M1 item 1) *)
 
 (* ---------- A. ctor <-> discharged-rule pairs ---------- *)
 

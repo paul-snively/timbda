@@ -52,19 +52,18 @@
    they need no soundness input at all. *)
 
 From Stdlib Require Import ZArith Bool List.
-Require Import Timbda.Syntax Timbda.Rewriting Timbda.Semantics.
+Require Import Timbda.Syntax Timbda.Rewriting Timbda.Semantics Timbda.RuleAst.
 Import ListNotations.
 
 (* ---------- audit-aligned rule tags ---------- *)
 
-Inductive RuleID : Type :=
-| R_Seq | R_Norm1 | R_Norm2 | R_Norm3 | R_Norm4 | R_Norm5        (* fig:12 *)
-| R_EqK1 | R_EqK2 | R_EqTup1 | R_EqTup2 | R_EqFail               (* fig:9  *)
-| R_BetaL | R_BetaT | R_BetaT0                                   (* fig:11 *)
-| R_Prim | R_PrimFail                                            (* fig:10 *)
-| R_Subst | R_Gc1 | R_PromoteL | R_PromoteR                      (* fig:8  *)
-| R_IterFail | R_IterChoice | R_IterIf | R_IterAll | R_IterFor   (* fig:13 *)
-| R_HpAlpha | R_LamAlpha.                                        (* never selected *)
+(* The `Inductive RuleID` this section used to carry is generated now (M1 item
+   1, docs/PLAN.md § 5.0): coq/RuleAst.v, one constructor per distinct
+   `kernelTag` field of the ctor records in dialect/TimbdaRules.td, in
+   TimbdaRuleAstOrder group order with the fig comments the records carry.
+   The arm order below is the kernel's fixed selection strategy, unchanged;
+   the generated group comments record the paper-figure alignment the audit
+   lane re-checks. *)
 
 (* ---------- redex recognisers for the selected head groups ---------- *)
 
@@ -343,10 +342,6 @@ Fixpoint cand_bag (e : Expr) : list Expr :=
    R_HpAlpha/R_LamAlpha/Gc1 never fire; the iter rows wait for the M3 CtxC matcher
    machinery).  Selection is not proof: R_BetaL/R_BetaT/R_Subst/R_PromoteL/
    R_PromoteR are selected while their RewSound_* lemmas stay deferred, which the
-   audit table records row by row (docs/RULES-AUDIT.md sec. 1 `sel` column). *)
-
-Definition selected_rows : list RuleID :=
-  [R_Seq; R_Norm1; R_Norm2; R_Norm3; R_Norm4; R_Norm5;
-   R_EqK1; R_EqK2; R_EqTup1; R_EqTup2; R_EqFail;
-   R_BetaL; R_BetaT; R_BetaT0; R_Prim; R_PrimFail;
-   R_Subst; R_PromoteL; R_PromoteR].
+   audit table records row by row (docs/RULES-AUDIT.md sec. 1 `sel` column).
+   The list itself is generated now: `selected_rows` rides coq/RuleAst.v,
+   derived from the ctor rows' `selected`/`rank` fields. *)

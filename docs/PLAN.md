@@ -286,8 +286,19 @@ attestations):
      `tools/rules-coqctor.py`, `coq/RewRules.v` regenerated inside the dune unit, the
      hand-glued ctor block retired from `Rewriting.v`, `checks.tblgen-rocq-golden`
      byte-diffs regeneration (it also closes item 2's golden half early), and rules-audit
-     sec. 1b asserts record-field provenance (35/35) plus the group partition. Remaining:
-     `-gen-rocq-ast` (registered, refuses today) and the AST artifact it generates.
+     sec. 1b asserts record-field provenance (35/35) plus the group partition.
+     **AST + registry halves landed 2026-11-25** (DESIGN-NOTES sec. 13.12):
+     `-gen-rocq-ast` emits `coq/RuleAst.v` - the eval-side `RuleID` from the ctor rows'
+     distinct `kernelTag` fields in `TimbdaRuleAstOrder` group order, `selected_rows`
+     derived from the records' `selected`/`rank` fields - retiring the hand-glued
+     block from `Eval.v`, which now `Require`s the generated file; `-gen-rocq-checker`
+     emits `coq/CheckerManifest.v`, a soundness REGISTRY (per-row `RewSound_*` lemma
+     inventory as Coq data - deliberately not statements, measured against the
+     discharged lemmas: statement text is proof-side design). The golden lane
+     regenerates all three files, rules-audit sec. 1c asserts their provenance, and
+     the kernel witnesses + `EXPECTED_VO` gained `RuleAst`/`CheckerManifest`.
+     Item 1 is now closed for the rule-record family; the only registered mode left
+     refusing is `-gen-rocq-externs`, bound to M4 above.
      Toolchain resolved 2026-11-25
      (DESIGN-NOTES sec. 13.10, probes p512/p513): the generator is the Nix-side half of sec. 6,
      built against the new `[formal.mlir_gen]` pin (nixpkgs llvmPackages_23 = 23.1.0, classic

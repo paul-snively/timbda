@@ -49,6 +49,10 @@ class TimbdaRuleRecord {
   string coqLhs = "";             // lhs term of the `Rew lhs rhs` conclusion
   string coqRhs = "";             // rhs term (one group or an atom)
   string papForm = "";            // audit-comment text after `tier:<n> | `
+  list<string> soundLemmas = [];  // RewSound_* lemma names this row's kernel
+                                  // evidence consists of (transcribed from
+                                  // coq/Denotation.v; a deferred row carries
+                                  // none - docs/RULES-AUDIT.md sec. 4)
 }
 
 // The dcont extern surface (docs/PLAN.md sec. 4.2): M4 records only.  At M1 the
@@ -86,6 +90,7 @@ def EqK1Record : TimbdaRuleRecord {
   let coqLhs = "(Unify (Ret v) (Ret v))";
   let coqRhs = "(Ret v)";
   let papForm = "k = k -> k (line 432; k ranges over the literals unit/true/false/int — the kernel states the literal-general form, recorded in docs/RULES-AUDIT.md; eqtup1 handles tuples, eqfail the rest)";
+  let soundLemmas = ["RewSound_EqK1"];
 }
 def EqK2Record : TimbdaRuleRecord {
   let ctor = "RewEqK2";
@@ -110,6 +115,7 @@ def EqK2Record : TimbdaRuleRecord {
   let coqLhs = "(Unify (Ret v1) (Ret v2))";
   let coqRhs = "Fail";
   let papForm = "k1 = k2 -> fail if k1 <> k2 (line 433)";
+  let soundLemmas = ["RewSound_EqK2"];
 }
 def EqTup1Record : TimbdaRuleRecord {
   let ctor = "RewEqTup1";
@@ -133,6 +139,7 @@ def EqTup1Record : TimbdaRuleRecord {
   let coqLhs = "(Unify (Ret (VTup vs)) (Ret (VTup ws)))";
   let coqRhs = "(eq_seq vs ws (Ret (VTup vs)))";
   let papForm = "⟨v1..vn⟩ = ⟨w1..wn⟩ -> v1=w1; .. ; vn=wn; ⟨v1..vn⟩";
+
 }
 def EqTup2Record : TimbdaRuleRecord {
   let ctor = "RewEqTup2";
@@ -157,6 +164,7 @@ def EqTup2Record : TimbdaRuleRecord {
   let coqLhs = "(Unify (Ret (VTup vs)) (Ret (VTup ws)))";
   let coqRhs = "Fail";
   let papForm = "⟨v1..vn⟩ = ⟨w1..wm⟩ -> fail if n <> m";
+  let soundLemmas = ["RewSound_EqTup2"];
 }
 def EqFailRecord : TimbdaRuleRecord {
   let ctor = "RewEqFail";
@@ -181,6 +189,7 @@ def EqFailRecord : TimbdaRuleRecord {
   let coqLhs = "(Unify (Ret v1) (Ret v2))";
   let coqRhs = "Fail";
   let papForm = "hnf1 = hnf2 -> fail if different root shapes; NO rule when either side is a bare variable or both are lambdas (no_eq_rule_pair, lines 441-445): those stay stuck";
+  let soundLemmas = ["RewSound_EqFail"];
 }
 def AddRecord : TimbdaRuleRecord {
   let ctor = "RewAdd";
@@ -203,6 +212,7 @@ def AddRecord : TimbdaRuleRecord {
   let coqLhs = "(prim_app PAdd [Ret (VInt a); Ret (VInt b)])";
   let coqRhs = "(Ret (VInt (a + b)))";
   let papForm = "add[ki1, ki2] -> ki1 + ki2";
+  let soundLemmas = ["RewSound_Add"];
 }
 def Gt1Record : TimbdaRuleRecord {
   let ctor = "RewGt1";
@@ -227,6 +237,7 @@ def Gt1Record : TimbdaRuleRecord {
   let coqLhs = "(prim_app PGt [Ret (VInt a); Ret (VInt b)])";
   let coqRhs = "(Ret (VInt a))";
   let papForm = "gt[ki1, ki2] -> ki1 if ki1 > ki2";
+  let soundLemmas = ["RewSound_Gt1"];
 }
 def Gt2Record : TimbdaRuleRecord {
   let ctor = "RewGt2";
@@ -251,6 +262,7 @@ def Gt2Record : TimbdaRuleRecord {
   let coqLhs = "(prim_app PGt [Ret (VInt a); Ret (VInt b)])";
   let coqRhs = "Fail";
   let papForm = "gt[ki1, ki2] -> fail if ki1 <= ki2";
+  let soundLemmas = ["RewSound_Gt2"];
 }
 def IsInt1Record : TimbdaRuleRecord {
   let ctor = "RewIsInt1";
@@ -273,6 +285,7 @@ def IsInt1Record : TimbdaRuleRecord {
   let coqLhs = "(prim_app PIsInt [Ret (VInt a)])";
   let coqRhs = "(Ret (VInt a))";
   let papForm = "isInt[ki] -> ki";
+  let soundLemmas = ["RewSound_IsInt1"];
 }
 def IsInt2Record : TimbdaRuleRecord {
   let ctor = "RewIsInt2";
@@ -297,6 +310,7 @@ def IsInt2Record : TimbdaRuleRecord {
   let coqLhs = "(prim_app PIsInt [Ret v])";
   let coqRhs = "Fail";
   let papForm = "isInt[v] -> fail if v not an integer";
+  let soundLemmas = ["RewSound_IsInt2"];
 }
 def ConsRecord : TimbdaRuleRecord {
   let ctor = "RewCons";
@@ -319,6 +333,7 @@ def ConsRecord : TimbdaRuleRecord {
   let coqLhs = "(prim_app PCons [Ret v0; Ret (VTup vs)])";
   let coqRhs = "(Ret (VTup (v0 :: vs)))";
   let papForm = "cons[v0, ⟨v1..vn⟩] -> ⟨v0, v1, .., vn⟩";
+  let soundLemmas = ["RewSound_Cons"];
 }
 def DotDotRecord : TimbdaRuleRecord {
   let ctor = "RewDotDot";
@@ -341,6 +356,7 @@ def DotDotRecord : TimbdaRuleRecord {
   let coqLhs = "(prim_app PDotDot [Ret (VInt a); Ret (VInt b)])";
   let coqRhs = "(Ret (VTup (map VInt (seq_z a b))))";
   let papForm = "dotdot[ki1, ki2] -> ki1 (ki1+1) .. ki2; kernel form: the range literal is materialised as a tuple of ints";
+  let soundLemmas = ["RewSound_DotDot"];
 }
 def PrimSchemaRecord : TimbdaRuleRecord {
   let ctor = "RewPrim";
@@ -364,6 +380,7 @@ def PrimSchemaRecord : TimbdaRuleRecord {
   let coqLhs = "(prim_app p (map Ret vs))";
   let coqRhs = "(Ret v)";
   let papForm = "op[gv ..] -> result of the total primop table; SCHEMA record, not one of the 33 named rule rows (VERSE-RULES § 3)";
+  let soundLemmas = ["RewSound_Prim1", "RewSound_Prim2"];
 }
 def PrimSchemaFailRecord : TimbdaRuleRecord {
   let ctor = "RewPrimFail";
@@ -388,6 +405,7 @@ def PrimSchemaFailRecord : TimbdaRuleRecord {
   let coqLhs = "(prim_app p (map Ret vs))";
   let coqRhs = "Fail";
   let papForm = "explicit-failure branch of the same schema (gt2/isInt2 are the named instances); SCHEMA record";
+  let soundLemmas = ["RewSound_PrimFail1", "RewSound_PrimFail2"];
 }
 def BetaLRecord : TimbdaRuleRecord {
   let ctor = "RewBetaL";
@@ -410,6 +428,7 @@ def BetaLRecord : TimbdaRuleRecord {
   let coqLhs = "(App (Ret (VLam t b)) e)";
   let coqRhs = "(Block [(t, @None Val)] (Seq (Unify (Ret (VVar 0)) (liftE 1 0 e)) b))";
   let papForm = "(λx.b)[e] -> block{∃x{}. x = e; block{b}}";
+
 }
 def BetaTRecord : TimbdaRuleRecord {
   let ctor = "RewBetaT";
@@ -434,6 +453,7 @@ def BetaTRecord : TimbdaRuleRecord {
   let coqLhs = "(App (Ret (VTup vs)) e)";
   let coqRhs = "(Block [(@TAny, @None Val)] (Seq (Unify (Ret (VVar 0)) (liftE 1 0 e)) (choice_list (beta_t_cands 0 vs))))";
   let papForm = "⟨v0,..,vn⟩[e] -> block{∃x{}. x = e; ((∃{}. x = 0; v0) .. (∃{}. x = n; vn))}; narrowing; the paper's `∃{}` is an empty slot list, hence index-neutral";
+
 }
 def BetaT0Record : TimbdaRuleRecord {
   let ctor = "RewBetaT0";
@@ -456,6 +476,7 @@ def BetaT0Record : TimbdaRuleRecord {
   let coqLhs = "(App (Ret (VTup (@nil Val))) e)";
   let coqRhs = "Fail";
   let papForm = "base case of beta-t: ⟨⟩[e] -> fail (line 475); KERNEL-SIDE named rule extracted from that note";
+  let soundLemmas = ["RewSound_BetaT0"];
 }
 def SeqRecord : TimbdaRuleRecord {
   let ctor = "RewSeq";
@@ -478,6 +499,7 @@ def SeqRecord : TimbdaRuleRecord {
   let coqLhs = "(Seq (Ret v) e)";
   let coqRhs = "e";
   let papForm = "v ; e -> e";
+  let soundLemmas = ["RewSound_Seq"];
 }
 def Norm1Record : TimbdaRuleRecord {
   let ctor = "RewNorm1";
@@ -500,6 +522,7 @@ def Norm1Record : TimbdaRuleRecord {
   let coqLhs = "(Unify (Ret v) (Seq e1 e2))";
   let coqRhs = "(Seq e1 (Unify (Ret v) e2))";
   let papForm = "v = (e1 ; e2) -> e1 ; v = e2";
+
 }
 def Norm2Record : TimbdaRuleRecord {
   let ctor = "RewNorm2";
@@ -522,6 +545,7 @@ def Norm2Record : TimbdaRuleRecord {
   let coqLhs = "(Unify (Ret v) (Unify e1 e2))";
   let coqRhs = "(Seq (Unify (Ret v) e1) (Unify (Ret v) e2))";
   let papForm = "v = (e1 = e2) -> v = e1 ; v = e2";
+
 }
 def Norm3Record : TimbdaRuleRecord {
   let ctor = "RewNorm3";
@@ -544,6 +568,7 @@ def Norm3Record : TimbdaRuleRecord {
   let coqLhs = "(Unify (Seq e1 e2) e3)";
   let coqRhs = "(Seq e1 (Unify e2 e3))";
   let papForm = "(e1 ; e2) = e3 -> e1 ; e2 = e3";
+
 }
 def Norm4Record : TimbdaRuleRecord {
   let ctor = "RewNorm4";
@@ -566,6 +591,7 @@ def Norm4Record : TimbdaRuleRecord {
   let coqLhs = "(Unify (Unify (Ret v) e1) e2)";
   let coqRhs = "(Seq (Unify (Ret v) e1) (Unify (Ret v) e2))";
   let papForm = "(v = e1) = e2 -> v = e1 ; v = e2 (progress note, lines 502-503: unifying x with 5 may unlock p)";
+
 }
 def Norm5Record : TimbdaRuleRecord {
   let ctor = "RewNorm5";
@@ -588,6 +614,7 @@ def Norm5Record : TimbdaRuleRecord {
   let coqLhs = "(Seq (Seq e1 e2) e3)";
   let coqRhs = "(Seq e1 (Seq e2 e3))";
   let papForm = "(e1 ; e2) ; e3 -> e1 ; (e2 ; e3) (de-clutter, line 504)";
+
 }
 def HpAlphaRecord : TimbdaRuleRecord {
   let ctor = "RewHpAlpha";
@@ -611,6 +638,7 @@ def HpAlphaRecord : TimbdaRuleRecord {
   let coqLhs = "(Block slots body)";
   let coqRhs = "(Block slots body)";
   let papForm = "∃X,x{hp}. e <-> ∃X,y{hp[y/x]}. e[y/x] if y ∉ fvs(hp,e); representationally trivial under de Bruijn (renaming = identity), so this constructor is audit-only and Eval.v's strategy table never selects it. The named-syntax rename lives in the dialect (M1).";
+  let soundLemmas = ["RewSound_HpAlpha"];
 }
 def LamAlphaRecord : TimbdaRuleRecord {
   let ctor = "RewLamAlpha";
@@ -634,6 +662,7 @@ def LamAlphaRecord : TimbdaRuleRecord {
   let coqLhs = "(Ret (VLam t e))";
   let coqRhs = "(Ret (VLam t e))";
   let papForm = "λx.e <-> λy.e[x/y]; same treatment as HpAlpha";
+  let soundLemmas = ["RewSound_LamAlpha"];
 }
 def FloatRecord : TimbdaRuleRecord {
   let ctor = "RewFloat";
@@ -657,6 +686,7 @@ def FloatRecord : TimbdaRuleRecord {
   let coqLhs = "(Block sx (Block sy body))";
   let coqRhs = "(Block (sx ++ sy) body)";
   let papForm = "∃X{hx}. C[block{∃Y{hy}. e}] -> ∃X,Y{hx,hy}. C[e] if X # Y, Y ∉ fvs(C), fvsol(rng(hy)) # X. Two kernel-side restrictions, both recorded: (i) the constructor states C = □ (the C-general form needs the flatten-substitution lemma, M3/T1); (ii) under the outermost-first slot convention the merge is *free* — `sx ++ sy` lists the outer slots first, so every slot value and the body keep their indices and the paper's freshness side conditions hold by construction.";
+
 }
 def SubstRecord : TimbdaRuleRecord {
   let ctor = "RewSubst";
@@ -681,6 +711,7 @@ def SubstRecord : TimbdaRuleRecord {
   let coqLhs = "(Block slots (fillS k (Ret (VVar (slot_body_idx (length slots) p)))))";
   let coqRhs = "(Block slots (fillS k (Ret (slotValueFromBody (length slots) p v))))";
   let papForm = "existsX{hp, x v}. S[x] -> existsX{hp, x v}. S[v] if x not in bvs(S); binder-free-S kernel restriction + CtxS closure recorded";
+
 }
 def Gc1Record : TimbdaRuleRecord {
   let ctor = "RewGc1";
@@ -706,6 +737,7 @@ def Gc1Record : TimbdaRuleRecord {
   let coqLhs = "(Block slots body)";
   let coqRhs = "(Block (dropSlot (length slots) p slots) (shrinkE (slot_body_idx (length slots) p) body))";
   let papForm = "existsX,Y{hp}. e -> existsX{hp_Y}. e for Y a single unused value binding; the paper's SCC form (recursive heaps) is the admitted Tier-2 row `Gc-Rec` (VERSE-RULES 3.2), and the non-recursive M0 restriction is recorded there too";
+
 }
 def PromoteLRecord : TimbdaRuleRecord {
   let ctor = "RewPromoteL";
@@ -730,6 +762,7 @@ def PromoteLRecord : TimbdaRuleRecord {
   let coqLhs = "(Block slots (fillC k (Unify (Ret (VVar (slot_body_idx (length slots) p))) (Ret v))))";
   let coqRhs = "(Block (fillSlot p (bodyToSlotV (length slots) p v) slots) (fillC k (Ret v)))";
   let papForm = "existsX,x{hp}. C[x = v] -> existsX,x{hp[v/x], x v}. C[v]; Tier 2: the constructor carries the successful promotion (fill slot + discharge unification to `Ret v`, matching eqk1's \"unification returns its value\"), while `hp[v/x]` is restricted to the identity by `promote_hp_ok` — the general evolving-heap form is admitted until M3/T1";
+
 }
 def PromoteRRecord : TimbdaRuleRecord {
   let ctor = "RewPromoteR";
@@ -755,6 +788,7 @@ def PromoteRRecord : TimbdaRuleRecord {
   let coqLhs = "(Block slots (fillC k (Unify (Ret v) (Ret (VVar (slot_body_idx (length slots) p))))))";
   let coqRhs = "(Block (fillSlot p (bodyToSlotV (length slots) p v) slots) (fillC k (Ret v)))";
   let papForm = "existsX,x{hp}. C[v = x] -> ... just like promote-l (line 417); kept as its own constructor because the paper rules out a swap rule (lines 425-428: x = y could loop)";
+
 }
 def IterFailRecord : TimbdaRuleRecord {
   let ctor = "RewIterFail";
@@ -777,6 +811,7 @@ def IterFailRecord : TimbdaRuleRecord {
   let coqLhs = "(Iter ic (Block slots (fillC k Fail)) e)";
   let coqRhs = "e";
   let papForm = "iter(ic){B[C[fail]]}{e} -> e";
+
 }
 def IterChoiceRecord : TimbdaRuleRecord {
   let ctor = "RewIterChoice";
@@ -801,6 +836,7 @@ def IterChoiceRecord : TimbdaRuleRecord {
   let coqLhs = "(Iter ic (Block slots (fillC k (Choice e1 e2))) e)";
   let coqRhs = "(Iter ic (Block slots (fillC k (Block nil e1))) (Iter ic (Block slots (fillC k (Block nil e2))) e))";
   let papForm = "iter(ic){B[C[b1 b2]]}{e} -> iter(ic){B[C[block{b1}]]}{iter(ic){B[C[block{b2}]]}{e}} if leftChoiceFree(C); the figure prints the inner continuation as `e3` (line 517-518) — read as the shared continuation `e`, as transcribed in VERSE-RULES 3.4; kernel Choice = select, `block{b}` = Block nil; the ctrees-side soundness of this rule IS the bind/br2 interchange (Denotation.v)";
+
 }
 def IterIfRecord : TimbdaRuleRecord {
   let ctor = "RewIterIf";
@@ -823,6 +859,7 @@ def IterIfRecord : TimbdaRuleRecord {
   let coqLhs = "(Iter IIf (Block slots (Ret (VDelay e1))) e2)";
   let coqRhs = "(Block nil (Block slots e1))";
   let papForm = "iter(if){B[delay{e1}]}{e2} -> block{B[e1]}";
+
 }
 def IterAllRecord : TimbdaRuleRecord {
   let ctor = "RewIterAll";
@@ -845,6 +882,7 @@ def IterAllRecord : TimbdaRuleRecord {
   let coqLhs = "(Iter IAll (Block slots (Ret v)) e)";
   let coqRhs = "(prim_app PCons [Block slots (Ret v); e])";
   let papForm = "iter(all){B[v]}{e} -> cons[B[v], e]; `cons[...]` takes open expressions, hence prim_app over TupE";
+
 }
 def IterForRecord : TimbdaRuleRecord {
   let ctor = "RewIterFor";
@@ -868,6 +906,7 @@ def IterForRecord : TimbdaRuleRecord {
   let coqLhs = "(Iter IFor (Block slots (Ret v)) e)";
   let coqRhs = "(Block [(@TAny, @None Val)] (prim_app PCons2 [TupE [Ret (VVar 0); liftE 1 0 (Block slots (Ret v))]; liftE 1 0 e]))";
   let papForm = "iter(for){B[v]}{e} -> block{exists x{}. cons2[<x, B[v]>, e]}; the new slot x is declared-unvalued (`exists x{}`), and B[v] and e move *inside* it, hence the explicit lift-1 (docs/DESIGN-NOTES.md 1); x = body index 0.";
+
 }
 def Gc_RecRecord : TimbdaRuleRecord {
   let ctor = "";
@@ -1533,4 +1572,45 @@ def GenGroupFig13 : TimbdaRuleGroup {
 }
 def TimbdaRuleGenOrder {
   list<string> groups = ["GenGroupFig9", "GenGroupFig10", "GenGroupFig11", "GenGroupFig12", "GenGroupFig8", "GenGroupFig13"];
+}
+
+// ---------- -gen-rocq-ast emission groups (coq/Eval.v's RuleID block:
+// linewise ctor groups + their fig comments, transcribed verbatim by
+// tools/rules-coqctor.py; the audit lane asserts the groups cover every
+// distinct kernelTag exactly once and that selected_rows is the record
+// `rank` order). ----------
+class TimbdaRuleAstGroup {
+  list<string> ruleIds = [];
+  string comment = "";
+}
+def AstGroupFig12 : TimbdaRuleAstGroup {
+  let ruleIds = ["R_Seq", "R_Norm1", "R_Norm2", "R_Norm3", "R_Norm4", "R_Norm5"];
+  let comment = "fig:12";
+}
+def AstGroupFig9 : TimbdaRuleAstGroup {
+  let ruleIds = ["R_EqK1", "R_EqK2", "R_EqTup1", "R_EqTup2", "R_EqFail"];
+  let comment = "fig:9";
+}
+def AstGroupFig11 : TimbdaRuleAstGroup {
+  let ruleIds = ["R_BetaL", "R_BetaT", "R_BetaT0"];
+  let comment = "fig:11";
+}
+def AstGroupFig10 : TimbdaRuleAstGroup {
+  let ruleIds = ["R_Prim", "R_PrimFail"];
+  let comment = "fig:10";
+}
+def AstGroupFig8 : TimbdaRuleAstGroup {
+  let ruleIds = ["R_Subst", "R_Gc1", "R_PromoteL", "R_PromoteR"];
+  let comment = "fig:8";
+}
+def AstGroupFig13 : TimbdaRuleAstGroup {
+  let ruleIds = ["R_IterFail", "R_IterChoice", "R_IterIf", "R_IterAll", "R_IterFor"];
+  let comment = "fig:13";
+}
+def AstGroupNeverSelected : TimbdaRuleAstGroup {
+  let ruleIds = ["R_HpAlpha", "R_LamAlpha"];
+  let comment = "never selected";
+}
+def TimbdaRuleAstOrder {
+  list<string> groups = ["AstGroupFig12", "AstGroupFig9", "AstGroupFig11", "AstGroupFig10", "AstGroupFig8", "AstGroupFig13", "AstGroupNeverSelected"];
 }

@@ -5,13 +5,13 @@ bazel_version=bazel 9.3.2
 bazelversion_file=9.3.2
 llvm_bazel_dep=bazel_dep(name = "llvm", version = "0.8.27")
 build_targets=//dialect:timbda_dialect_test //dialect:TimbdaCanonicalization //dialect:TimbdaCanonicalizationIncGen //dialect:TimbdaDialect
-build_completed=INFO: Build completed successfully, 1 total action
+build_completed=INFO: Build completed successfully, 12 total actions
 test_summary=//dialect:timbda_dialect_test                                   (cached) PASSED in 0.1s
 bazel_rc=0
 === source hashes ===
 97f26cc3d41fef8093be30dce5fc304fb20c05a03f5f7f2c3d5ac2e37dfaffc7  dialect/Timbda.td
 78c2d0a9e30ad810983d5b644b53021288acb0df65e9938138ffc5a8fe04f478  dialect/TimbdaPatterns.td
-6ed867ff1c790cd3c8ba766a08edb93e87175fb4dce0f9f2cca09a7c74457e05  dialect/TimbdaRules.td
+d63249487589806e1a7009574d9a4e2b748d7429685de68025ac58dfb79ba706  dialect/TimbdaRules.td
 c1a99673bc415d647b91a6a1422d483928149d90eb7aca3d7a5abc19d9be8345  dialect/TimbdaCanonicalization.cpp
 de328558e7a682a1ac351fc56d09560dce78880e7f15c4e1dcb3a9f761d41dcb  dialect/TimbdaDialect.cpp
 61278af948a7274e15ee893270d68a4ca24f766d7ac19cc32269cc0094a461d8  dialect/TimbdaOps.cpp
