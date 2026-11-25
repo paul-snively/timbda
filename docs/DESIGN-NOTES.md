@@ -1745,3 +1745,62 @@ pinned vintage.  It can, and the shape of the job is now measured:
   proof-compatible.  Reproducing the hand-glued ctor signatures byte-exactly needs the record
   schema to carry the Coq-side fields (binders/hyps/lhs/rhs per ctor are currently bespoke in
   `coq/Rewriting.v`, prose-only in the `.td`) - the schema step precedes the emitter step.
+
+### 13.11 M1 item 1, rules half: the ctor surface moves into the records, and `RewRules.v` becomes a generated file (landed 2026-11-25, probes p514/p515)
+
+The one-way move § 13.10's closing paragraph demanded, executed as one increment:
+
+- **Schema step**: `tools/rules-coqctor.py` transcribes the 35 hand-glued `Rew`
+  ctor signatures out of `coq/Rewriting.v` into structured record fields -
+  `coqTag`/`coqForall`/`coqHyps`/`coqLhs`/`coqRhs`/`papForm` on
+  `TimbdaRuleRecord` - plus six `TimbdaRuleGroup` defs and a
+  `TimbdaRuleGenOrder` carrying the emission order (the file's actual group
+  order: Fig 9, 10, 11, 12, 8, 13).  The tool self-checks by re-rendering every
+  ctor from its fields (whitespace-normalized, 35/35 exact, audit comments
+  included) before touching the `.td`; the transcription is lossless and
+  mechanical, and the hand-glued ctor block is then cut from `Rewriting.v`
+  (helpers + a pointer note stay; the file's header now says so).  `coqTag`
+  exists because the audit tag may differ from the ctor suffix (`RewPrim`
+  carries tag `PrimSchema`) - the audit already knew that from the Coq side,
+  now the records do too.
+- **Emitter step**: `dialect/tblgen-rocq/TimbdaRocqGen.cpp` - the PLAN sec. 2
+  backend - built on `[formal.mlir_gen]` (llvmPackages_23) exactly as 13.10's
+  recipe.  Modes: `-gen-rocq-rules` implemented; `-gen-rocq-ast` and
+  `-gen-rocq-checker` registered but refuse with rc=2 (an unimplemented mode
+  must refuse, never emit a skeleton - the golden lane's byte claim only means
+  something for what is actually generated).  Output is a pure function of the
+  `.td` content: hand-tracked word wrapping at fixed columns, no timestamps,
+  the `rw_step`/`rewrites` context closure carried as fixed backend text (it
+  is paper machinery, not record-derived; the dcont extern surface remains
+  `-gen-rocq-externs` at M4).
+- **Measured facts** (p515): generated `coq/RewRules.v` ctor-for-ctor equals
+  the retired hand-glued block after whitespace flattening, 35/35 including
+  audit-comment text, emission order preserved; all 11 bazel `TdGenerate`
+  actions re-run on the rewritten `.td` and stay green (bazel's action cache
+  is content-keyed - `TimbdaRules.td` demonstrably an input); the `.#rocq`
+  dune unit compiles the generated inductive with every existing proof intact
+  (Denotation's 35 `RewSound_*` lemmas, KernelTest unchanged).
+- **13.10's placement prediction refined by measurement**: the "outside the
+  dune unit" reservation was about generated *soundness skeletons* (proofs).
+  A generated *statement* file - inductives and definitions only - joins the
+  dune unit immediately: proofs against the same ctor surface recompile
+  untouched.  `EXPECTED_VO` and the kernel buildPhase gained `RewRules` as
+  anti-vacuity witnesses.
+- **Two toolchain teeth learned the hard way, now encoded**: (a) `StringMap`
+  keys must outlive the values they index - indexing ctor names by
+  `StringRef`s into moved `std::string` members compiled but found nothing at
+  lookup; the backend keys a `std::unordered_map` instead; (b) LLVM 23.1
+  `raw_fd_ostream` dropped the `(path, string&)` ctor - it is `(path,
+  std::error_code&, sys::fs::OF_None)` now.  Also C++17, not 20: no
+  `map::contains`.
+- **Gate shape**: `checks.tblgen-rocq-golden` (regenerate twice, byte-diff the
+  two regenerations and the committed artifact, count 35, assert the refusing
+  modes refuse) enters the gate chain's default set (seven lanes) as item 2's
+  golden half landing early; `tools/rules-audit.py` section 1b asserts the
+  provenance from the Coq side: every generated ctor == its record fields
+  re-rendered (a second, independent implementation of the render contract in
+  python), tag/fig/tier/papForm equality, the six groups partition the 35 ctor
+  rows exactly once and match the generated order, `Rewriting.v` carries no
+  `Inductive Rew`, and the generated file carries the context closure.  The
+  `.td` record parser in the audit gained a quote-aware list regex (the coq*
+  fields put `]` and `\"` inside strings - e.g. Subst's papForm).

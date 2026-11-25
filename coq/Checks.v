@@ -141,7 +141,7 @@ Import WBisimNotations.
 Import EquNotations.
 Import ListNotations.
 
-Require Import Timbda.Syntax Timbda.Rewriting Timbda.Semantics Timbda.Eval.
+Require Import Timbda.Syntax Timbda.Rewriting Timbda.RewRules Timbda.Semantics Timbda.Eval.
 (* T5's peeling idiom reuses Denotation.v's kernel-`sret` bridge bind_sret_l
    (§ 12.2) rather than restating it; one direction, no cycle: Denotation.v
    requires Syntax/Rewriting/Semantics only. *)

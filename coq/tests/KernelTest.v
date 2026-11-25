@@ -28,7 +28,7 @@ Import ListNotations.
 Import CTreeNotations.
 Local Open Scope ctree_scope.
 
-Require Import Timbda.Syntax Timbda.Rewriting Timbda.Semantics
+Require Import Timbda.Syntax Timbda.Rewriting Timbda.RewRules Timbda.Semantics
                 Timbda.Denotation Timbda.Eval.
 
 (* ---------- A. ctor <-> discharged-rule pairs ---------- *)

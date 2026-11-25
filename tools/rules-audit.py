@@ -5,7 +5,13 @@ Bijections and arithmetic checked (docs/PLAN.md sec. 5: "every paper rule => a
 record + an MLIR pattern + a Rocq ctor"; the audit IS the claim):
 
   1. coq ctor <-> `audit:` tag <-> ctor row in dialect/TimbdaRules.td (35/35,
-     tier equal coq audit tag vs record).
+     tier equal coq audit tag vs record); the ctors are read from the GENERATED
+     coq/RewRules.v (M1 item 1), and coq/Rewriting.v must NOT carry a hand-
+     glued `Inductive Rew` anymore.
+  1b. generated-file provenance: every generated ctor equals its record's coq*
+     fields re-rendered (the tblgen-rocq byte contract), and the
+     TimbdaRuleGenOrder/TimbdaRuleGroup defs partition the 35 ctor rows and
+     match the generated emission order.
   2. Record arithmetic: 72 TimbdaRuleRecord rows = 35 ctor rows + 37 audit
      records; categories 18 matching + 4 essential-verse + 10 verification +
      3 open-lambda + 2 kernel-adjacent; statuses 15 discharged / 2 partial /
@@ -104,6 +110,10 @@ def coq_strip(text):
     return "".join(out)
 
 
+def flatten_ws(text):
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def parse_rewriting_tags(raw):
     """ctor names + audit tags; a tag belongs to the ctor block it sits in."""
     ctor_pos = [(m.group(1), m.start())
@@ -151,13 +161,17 @@ def parse_td_records(raw):
     records = {}
     for name, body in re.findall(r"def (\w+) : TimbdaRuleRecord \{(.*?)\n\}", raw, re.S):
         fields = {}
-        for m in re.finditer(r"let (\w+) = (\[[^\[\]]*\]|\"(?:[^\"\\]|\\.)*\"|[-\w]+);",
-                                body, re.S):
+        # A list item is a double-quoted string that may contain anything
+        # (the coq* fields put `]` and `\"` inside strings); bare brackets
+        # only appear as the list delimiters.
+        for m in re.finditer(r"let (\w+) = (\[((?:[^\"[\]]|\"(?:\\.|[^\"\\])*\")*)\]"
+                             r"|\"(?:[^\"\\]|\\.)*\"|[-\w]+);", body, re.S):
             key, val = m.group(1), m.group(2)
             if val.startswith("["):
-                fields[key] = re.findall(r"\"([^\"]+)\"", val)
+                fields[key] = [td_unescape(v)
+                               for v in re.findall(r"\"((?:\\.|[^\"\\])*)\"", val)]
             elif val.startswith('"'):
-                fields[key] = val[1:-1]
+                fields[key] = td_unescape(val[1:-1])
             else:
                 try:
                     fields[key] = int(val)
@@ -180,6 +194,68 @@ def parse_td_ext_tags(raw):
     return sorted(re.findall(r"\"([^\"]+)\"", m.group(1))) if m else []
 
 
+def td_unescape(v):
+    return v.replace('\\"', '"').replace("\\\\", "\\")
+
+
+def parse_generated_rewrites(raw):
+    """The generated ctor blocks of coq/RewRules.v, in emission order.
+
+    Returns [(ctor, signature_flattened_without_audit, audit_dict)]; a block
+    runs from `| Rew<Name> :` to the next ctor / group header / inductive
+    terminator, wrapping is irrelevant because everything is flattened."""
+    start = raw.index("Inductive Rew : Expr -> Expr -> Type :=")
+    end = raw.index("(* ---------- Context closure")
+    lines = raw[start:end].splitlines()
+    out, i = [], 0
+    while i < len(lines):
+        if not lines[i].startswith("| Rew"):
+            i += 1
+            continue
+        name = re.match(r"\| (Rew\w+) : ", lines[i]).group(1)
+        block = [lines[i]]
+        i += 1
+        while i < len(lines):
+            nxt = lines[i]
+            if (nxt.startswith("| Rew") or nxt.startswith("(* ----------")
+                    or nxt.rstrip() == "."):
+                break
+            block.append(nxt)
+            i += 1
+        block = "\n".join(block)
+        m = re.search(r"\(\* audit: (\w+) \| fig:(\d+) \| tier:(\d+) \| (.*?) \*\)\s*$",
+                      block, re.S)
+        assert m, f"generated ctor {name} carries no audit comment"
+        out.append((name,
+                    flatten_ws(block[:m.start()]),
+                    {"name": m.group(1), "fig": int(m.group(2)),
+                     "tier": int(m.group(3)), "pap": flatten_ws(m.group(4))}))
+    return out
+
+
+def render_ctor_from_record(rec):
+    """Re-render a ctor signature from its record coq* fields - the same
+    contract dialect/tblgen-rocq implements in C++; byte equality after
+    whitespace flattening is the provenance claim (M1 item 1)."""
+    sig = "| " + rec["ctor"] + " : "
+    if rec.get("coqForall"):
+        sig += "forall " + rec["coqForall"] + ", "
+    for h in (rec.get("coqHyps") or []):
+        sig += h + " -> "
+    return sig + "Rew " + rec["coqLhs"] + " " + rec["coqRhs"]
+
+
+def parse_gen_groups(raw):
+    """TimbdaRuleGroup defs + TimbdaRuleGenOrder -> [(group, [ctors])]."""
+    defs = {}
+    for name, body in re.findall(r"def (\w+) : TimbdaRuleGroup \{(.*?)\n\}", raw, re.S):
+        m = re.search(r"let ctors = \[((?:[^\"]|\")*)\];", body)
+        defs[name] = re.findall(r"\"([^\"]+)\"", m.group(1)) if m else []
+    m = re.search(r"def TimbdaRuleGenOrder \{\s*list<string> groups = \[([^\]]*)\];", raw)
+    order = re.findall(r"\"([^\"]+)\"", m.group(1)) if m else []
+    return [(g, defs[g]) for g in order if g in defs], order, defs
+
+
 def parse_group_vocabulary(doc_text):
     """docs/VERSE-RULES.md sec. 5: group names from the code-fenced comma list."""
     for chunk in doc_text.split("```"):
@@ -189,7 +265,7 @@ def parse_group_vocabulary(doc_text):
 
 
 def main():
-    rewriting_raw = read("coq/Rewriting.v")
+    rewriting_raw = read("coq/RewRules.v")   # the generated rule surface (M1 item 1)
     eval_raw = read("coq/Eval.v")
     denotation_code = coq_strip(read("coq/Denotation.v"))
     lemma_suffixes = set(re.findall(r"RewSound_(\w+)", denotation_code))
@@ -204,6 +280,8 @@ def main():
     drr_def_names = sorted(re.findall(r"(?m)^def (Rew\w+) : ", patterns_raw))
 
     ctor_names, tags_by_ctor = parse_rewriting_tags(rewriting_raw)
+    gen_blocks = parse_generated_rewrites(rewriting_raw)
+    gen_order = [name for name, _, _ in gen_blocks]
     rule_ids = parse_rule_ids(eval_raw)
     selected_coq = parse_selected_rows(eval_raw)
 
@@ -214,7 +292,7 @@ def main():
     print("== 1. coq ctor <-> audit tag <-> ctor row (dialect/TimbdaRules.td) ==")
     clash = [c for c, tag in tags_by_ctor.items() if tag.get("clash")]
     check(len(ctor_names) == 35 and len(set(ctor_names)) == 35,
-          "35 distinct Rew ctors in coq/Rewriting.v", f"got {len(ctor_names)}")
+          "35 distinct Rew ctors in generated coq/RewRules.v", f"got {len(ctor_names)}")
     check(not clash, "no ctor carries two audit tags", f"clashes: {clash}")
 
     name_bad = []
@@ -240,6 +318,44 @@ def main():
             tier_bad.append(f"{ctor}: record tier {rec.get('tier')} vs coq tag "
                             f"tier {tag['tier']}")
     check(not tier_bad, "tier column == coq audit-tag tier", "; ".join(tier_bad))
+
+    print("== 1b. generated-file provenance (coq/RewRules.v <-> record coq* fields) ==")
+    check("Inductive Rew :" not in read("coq/Rewriting.v"),
+          "coq/Rewriting.v carries no hand-glued Inductive Rew (it moved)")
+    check("Inductive rw_step :" in rewriting_raw
+          and "Definition rewrites" in rewriting_raw,
+          "generated file carries the rw_step/rewrites context closure")
+    gen_bad = []
+    for ctor, sig_flat, audit in gen_blocks:
+        rec = rec_by_ctor.get(ctor)
+        if rec is None:
+            gen_bad.append(f"{ctor}: generated ctor with no ctor row")
+            continue
+        if flatten_ws(render_ctor_from_record(rec)) != sig_flat:
+            gen_bad.append(f"{ctor}: record coq* fields re-render != generated ctor")
+        if audit["name"] != str(rec.get("coqTag", "")):
+            gen_bad.append(f"{ctor}: audit tag {audit['name']} != coqTag {rec.get('coqTag')}")
+        if audit["fig"] != int(str(rec.get("fig", "-1"))):
+            gen_bad.append(f"{ctor}: audit fig {audit['fig']} != record fig {rec.get('fig')}")
+        if audit["tier"] != int(str(rec.get("tier", "-1"))):
+            gen_bad.append(f"{ctor}: audit tier {audit['tier']} != record tier {rec.get('tier')}")
+        if audit["pap"] != flatten_ws(str(rec.get("papForm", ""))):
+            gen_bad.append(f"{ctor}: papForm != generated audit-comment form text")
+    check(not gen_bad,
+          "every generated ctor == its record fields re-rendered (35/35)",
+          "; ".join(gen_bad))
+    groups, group_order, group_defs = parse_gen_groups(td_raw)
+    flat_group_ctors = [c for _, ctors in groups for c in ctors]
+    check(len(flat_group_ctors) == 35 and len(set(flat_group_ctors)) == 35
+          and set(flat_group_ctors) == set(rec_by_ctor),
+          f"emission groups ({len(group_order)}) partition the 35 ctor rows exactly once",
+          f"got {len(flat_group_ctors)} ({len(set(flat_group_ctors))} distinct)")
+    check(flat_group_ctors == gen_order,
+          "generated ctor order == TimbdaRuleGenOrder group order",
+          "; ".join(f"{g}:{len(c)}" for g, c in groups))
+    missing_defs = sorted(set(group_order) - set(group_defs))
+    check(not missing_defs, "every group named by TimbdaRuleGenOrder has a def",
+          ", ".join(missing_defs))
 
     print("== 2. record arithmetic (dialect/TimbdaRules.td) ==")
     check(len(records) == 72, "72 TimbdaRuleRecord rows", f"got {len(records)}")

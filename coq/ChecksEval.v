@@ -39,7 +39,7 @@
 From Stdlib Require Import ZArith List.
 Import ListNotations.
 
-Require Import Timbda.Syntax Timbda.Rewriting Timbda.Semantics Timbda.Eval.
+Require Import Timbda.Syntax Timbda.Rewriting Timbda.RewRules Timbda.Semantics Timbda.Eval.
 Require Import Timbda.Checks.
 
 (* `lia` for the two fuel/cutoff steps; `&&` needs the bool scope opened, not a direct

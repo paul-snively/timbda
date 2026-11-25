@@ -417,6 +417,11 @@
               # the same vacuity this list has always guarded against.
               test -f _build/default/Lower.vo \
                 || { echo "FAIL the Lower.v (T7) theory did not compile"; exit 1; }
+              # M1 item 1 (2026-11-25): RewRules.v is the generated rule surface;
+              # the kernel must compile against the generated ctors, not a
+              # hand-glued copy (docs/PLAN.md § 5.0).
+              test -f _build/default/RewRules.vo \
+                || { echo "FAIL the generated rule surface (RewRules.v) did not compile"; exit 1; }
               if grep -n "Admitted" build.log; then
                 echo "FAIL Admitted appeared in build output"; exit 1
               fi
@@ -435,6 +440,43 @@
               cp -r --no-preserve=mode _build/default/tests/. \
                      $out/${stack.userContrib}/TimbdaTests/
               find $out \( -name "*.aux" -o -name "*.theory.d" \) -delete
+            '';
+          };
+
+          # ---- tblgen-rocq: the Coq-side generator (PLAN sec. 2, M1 item 1) -----
+          # Built on nixpkgs llvmPackages_23 - the [formal.mlir_gen] pin
+          # (version-consistency checks it; docs/DESIGN-NOTES.md sec. 13.10).
+          # That distribution ships no MLIR TableGen *library*, so the backend
+          # parses through the classic llvm::TableGen API; bazel keeps compiling
+          # the dialect C++/DRR with mlir-tblgen and generated text is the only
+          # cross-graph interface (PLAN sec. 6).
+          timbda-tblgen-rocq = pkgs.stdenv.mkDerivation {
+            pname = "timbda-tblgen-rocq";
+            version = "0.1.0";
+            src = ./.;
+            nativeBuildInputs = [ pkgs.stdenv.cc
+              pkgs.llvmPackages_23.llvm.dev pkgs.llvmPackages_23.mlir.dev
+              pkgs.llvmPackages_23.llvm.lib ];
+            phases = [ "buildPhase" "installPhase" ];
+            LLVM_INC = "${pkgs.llvmPackages_23.llvm.dev}/include";
+            MLIR_INC = "${pkgs.llvmPackages_23.mlir.dev}/include";
+            buildPhase = ''
+              set -e
+              c++ $src/dialect/tblgen-rocq/TimbdaRocqGen.cpp -std=c++17 \
+                -I $LLVM_INC -I $MLIR_INC \
+                -L${pkgs.llvmPackages_23.llvm.lib}/lib \
+                -lLLVMTableGen -lLLVMSupport -lLLVMDemangle -lz -lpthread -ldl \
+                -o tblgen-rocq-bin
+              chmod +w tblgen-rocq-bin
+            '';
+            installPhase = ''
+              mkdir -p $out/bin $out/libexec
+              cp tblgen-rocq-bin $out/libexec/
+              # plain sed (substituteAll's arg conventions tripped us: options
+              # after the positionals get parsed as input files - measured).
+              sed -e "s|@MLIR_INC@|$MLIR_INC|g" -e "s|@LLVM_INC@|$LLVM_INC|g" \
+                $src/dialect/tblgen-rocq/tblgen-rocq.sh > $out/bin/tblgen-rocq
+              chmod +x $out/bin/tblgen-rocq
             '';
           };
 
@@ -508,8 +550,12 @@
             shellHook = coqShellHook;
           };
 
-          # Compiler side (Bazel / hermetic-llvm leg arrives at M-2, PLAN sec. 6.2).
-          cpp = pkgs.mkShell { packages = [ pkgs.bazelisk pkgs.git pkgs.python3 ]; };
+          # Compiler side (Bazel / hermetic-llvm leg arrives at M-2, PLAN sec. 6.2);
+          # tblgen-rocq rides along: the nix-side generator of PLAN sec. 6.
+          cpp = pkgs.mkShell {
+            packages = [ pkgs.bazelisk pkgs.git pkgs.python3
+              self.packages.${system}.timbda-tblgen-rocq ];
+          };
 
           # Reference semantics / differential harness side (M-0 tail).
           hs = pkgs.mkShell {
@@ -520,6 +566,7 @@
           all = pkgs.mkShell {
             packages = with pkgs; [ bazelisk git python3 haskell.compiler.ghc912 cabal-install
               rocqPackages.vsrocq-language-server ]
+              ++ [ self.packages.${system}.timbda-tblgen-rocq ]
               ++ coqShellTools ++ stack.rocqDeps;
             shellHook = coqShellHook;
           };
@@ -746,6 +793,42 @@
               mkdir -p $out
               cp $NIX_BUILD_TOP/rules-audit.log $out/
               grep '^RESULT: PASS' $NIX_BUILD_TOP/rules-audit.log > $out/status.txt
+            '';
+          };
+
+          # tblgen-rocq golden (docs/PLAN.md § 5.0 item 1): regenerate
+          # coq/RewRules.v from the committed records and byte-diff it against
+          # the committed artifact - "generated, not hand-glued" as gate
+          # evidence.  A second regeneration must be byte-identical to the
+          # first (the generator is deterministic), the ctor count must be the
+          # audit's 35, and the unimplemented modes must refuse (rc=2) rather
+          # than emit skeletons.
+          tblgen-rocq-golden = pkgs.stdenv.mkDerivation {
+            pname = "timbda-tblgen-rocq-golden";
+            version = "0.1.0";
+            src = ./.;
+            nativeBuildInputs = [ self.packages.${system}.timbda-tblgen-rocq ];
+            phases = [ "buildPhase" "installPhase" ];
+            buildPhase = ''
+              set -e
+              tblgen-rocq -gen-rocq-rules $src/dialect/Timbda.td -o regen1.v
+              tblgen-rocq -gen-rocq-rules $src/dialect/Timbda.td -o regen2.v
+              cmp regen1.v regen2.v \
+                || { echo "FAIL regeneration is not byte-identical (nondeterministic backend)"; exit 1; }
+              cmp regen1.v $src/coq/RewRules.v \
+                || { echo "FAIL committed coq/RewRules.v differs from regeneration; run: tblgen-rocq -gen-rocq-rules dialect/Timbda.td -o coq/RewRules.v"; exit 1; }
+              n=$(grep -c '^| Rew' regen1.v)
+              test "$n" = 35 || { echo "FAIL generated ctor count $n != 35"; exit 1; }
+              rc=0
+              tblgen-rocq -gen-rocq-ast $src/dialect/Timbda.td -o no1.v || rc=$?
+              test "$rc" = 2 || { echo "FAIL -gen-rocq-ast did not refuse with rc=2"; exit 1; }
+              test ! -e no1.v || { echo "FAIL refusing mode wrote an output"; exit 1; }
+              echo "ok: coq/RewRules.v byte-identical to regeneration ($n ctors); unimplemented mode refused"
+            '';
+            installPhase = ''
+              mkdir -p $out
+              cp regen1.v $out/RewRules.v
+              echo "ok: tblgen-rocq-golden lane green (deterministic regeneration, byte-equal artifact, honest refusals)" > $out/status.txt
             '';
           };
 

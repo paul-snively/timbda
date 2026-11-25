@@ -71,7 +71,7 @@ Import CTreeNotations.
 Import ListNotations.
 Local Open Scope ctree_scope.
 
-Require Import Timbda.Syntax Timbda.Rewriting Timbda.Semantics.
+Require Import Timbda.Syntax Timbda.Rewriting Timbda.RewRules Timbda.Semantics.
 
 (* ---------- shared cbn vocabulary ----------
    `bind` is a cofixpoint (CTree.subst) and does NOT reduce definitionally:

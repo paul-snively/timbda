@@ -280,7 +280,15 @@ attestations):
      `-gen-rocq-checker` generating into `coq/` for the rule-record family; hand-glued `Rew` /
      AST artifacts retire as generated files land. `-gen-rocq-externs` ships with the
      ContextExtern family at M4 (recorded binding). The rules-audit lane extends to assert
-     generated-file provenance once this lands. Toolchain resolved 2026-11-25
+     generated-file provenance once this lands. **Rules half landed 2026-11-25**
+     (DESIGN-NOTES sec. 13.11): `-gen-rocq-rules` emits the generated `Rew` surface -
+     ctor coq* fields + emission groups transcribed into `TimbdaRules.td` by
+     `tools/rules-coqctor.py`, `coq/RewRules.v` regenerated inside the dune unit, the
+     hand-glued ctor block retired from `Rewriting.v`, `checks.tblgen-rocq-golden`
+     byte-diffs regeneration (it also closes item 2's golden half early), and rules-audit
+     sec. 1b asserts record-field provenance (35/35) plus the group partition. Remaining:
+     `-gen-rocq-ast` (registered, refuses today) and the AST artifact it generates.
+     Toolchain resolved 2026-11-25
      (DESIGN-NOTES sec. 13.10, probes p512/p513): the generator is the Nix-side half of sec. 6,
      built against the new `[formal.mlir_gen]` pin (nixpkgs llvmPackages_23 = 23.1.0, classic
      llvm TableGen API - parsed the real Timbda.td, 72 defs / 26 selected); binary prebuilts are
@@ -288,6 +296,8 @@ attestations):
      generated files enter `coq/` outside the dune unit until their proofs make them
      kernel-compatible.
   2. pdll lit-test skeletons + flake checks `dialect-lit-tests` and `tblgen-rocq-golden`.
+     (`tblgen-rocq-golden` landed early with item 1's rules half, 2026-11-25; the lit half
+     remains.)
   Recorded deviation: T4 (2026-11-23), T5 (2026-11-24), the CompCert toolchain (2026-11-25) and
   T7 (2026-11-25) all landed while M1 stayed open - cause: no written DoD beyond M-1's, and
   M2's kernel path has no hard dependency on M1 artifacts. The debt is paid by ordering, not

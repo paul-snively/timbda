@@ -156,7 +156,9 @@ mkdir -p "$(dirname "$LOG")" || fail "cannot create the log directory for $LOG"
 # M2 addition (2026-11-23): Checks is the T4 checker theory, ChecksEval its eval-side leg and
 # tests/ChecksTest the corpus-mirror file (tests/corpus/m2-det.texpr's 29 verdicts), so a build
 # that skipped any of them is vacuous in exactly the sense the corpus corners guard against.
-EXPECTED_VO=(Syntax Rewriting Semantics Denotation Eval Checks ChecksEval KernelStub Probe Lower tests/KernelTest tests/ChecksTest tests/LowerTest)
+# M1 (2026-11-25): RewRules is the GENERATED rule surface (coq/RewRules.v,
+# dialect/tblgen-rocq); its .vo is as mandatory as any hand-written theory.
+EXPECTED_VO=(Syntax Rewriting RewRules Semantics Denotation Eval Checks ChecksEval KernelStub Probe Lower tests/KernelTest tests/ChecksTest tests/LowerTest)
 missing_vos() {
   local out=() t
   for t in "${EXPECTED_VO[@]}"; do
