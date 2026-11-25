@@ -149,7 +149,11 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
    the other legal shape — structurally recursive, fuel-free — and the two shapes meet on the
    straight-line fragment `app_node_ok` pins.  For checked terms the emitted fuel guard is provably never-false
    (`T4_sem` runs at every `e_fuel e + k`), so the while loop is the unbounded idealization
-   over precisely the accepted fragment.
+   over precisely the accepted fragment.  *Formulation settled 2026-11-25 (decision 10, probes
+   p519):* T6 is the statement-level realization - `Clight1.exec_stmt` derivability of
+   `clight_of (lower e)` from the empty context, observed at tempvar `lower_res` and composed
+   with `T4_sem`'s value witness, under a computable `range_ok` 64-bit guard; the whole-program
+   reading defers to the golden-test design (docs/DESIGN-NOTES.md § 13.14).
 7. T7 No-context-call theorem: det_check e = true -> no_switch (lower e) — structural induction
    on the Gallina lowering function. The anti-naivety guarantee verbatim.
    Landed 2026-11-25 (docs/DESIGN-NOTES.md § 13.8): `no_switch` is `no_switch_l` over
@@ -345,8 +349,9 @@ attestations):
 - **M2 - OPEN; M1-closure pause LIFTED 2026-11-25** (M1 declared closed above;
   decision 9's ordering obligation is met). Landed: T4 both legs +
   `T4_value_unique`, T5 for the accepted fragment, T7, the m2-det gate corpus (29/7), CompCert
-  toolchain. Outstanding, in forced order: T6 (with its pre-pinned design
-  obligations), then CertiRocq->C wiring (`Compile.v`), then the real golden test.
+  toolchain. Outstanding, in forced order: T6 (design obligations settled 2026-11-25 by probes
+  p519 - decision 10, docs/DESIGN-NOTES.md § 13.14), then CertiRocq->C wiring (`Compile.v`),
+  then the real golden test.
 
 - **M3 / M4 / M5 - NOT STARTED.** Per decision 9 each gets its DoD written into this section
   before its first commit lands. Inherited bindings: M3 carries the augustss third corner
@@ -698,6 +703,34 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
    bazel attestation lane) precedes T6, the CertiRocq leg, and the real golden test.  Decision 9
    reorders what remains; it does not re-litigate what landed - the M0/M2 status entries above
    stand.  M3/M4/M5 must have their DoDs written in § 5.0 before their first commit lands.
+10. (2026-11-25) **T6's pre-pinned design obligations settled, by measurement (probes p519,
+    docs/DESIGN-NOTES.md § 13.14, sources at docs/probes/p519/).**  (a) **Audit scope**: a
+    statement-level `exec_stmt` derivation for even `add[2,3]` - built from CompCert's own
+    constructor rules - already prints six axioms (Flocq's `sig_not_dec`/`sig_forall_dec`,
+    `functional_extensionality_dep`, `classic`, `inline_assembly_sem`, `external_functions_sem`),
+    because they sit in the *premise types* of `Clight.eval_expr`/`Values.sem_binary_operation`,
+    not in any proof shortcut; no formulation inside CompCert's rules keeps T6 in the kernel's
+    `eq_rect_eq`-only lane.  Ruling: a second, separately-pinned audit scope - the kernel lane's
+    allow-list stays `eq_rect_eq` only for kernel-owned theorems; the CompCert-facing cone
+    (T6, then the CertiRocq/golden-test theorems) is audited against the pinned six-axiom list
+    as its own block; anything outside `eq_rect_eq` (kernel) plus the six (cone) reds the gate.
+    (b) **Formulation**: T6 is the statement-level realization - `Clight1.exec_stmt`
+    derivability of `clight_of (lower e)` from the empty context (`ge0`, `Clight.empty_env`,
+    `PTree.empty val`, `Mem.empty`), observed at tempvar `lower_res`, composing with
+    `T4_sem`'s value witness; the whole-program reading (int32-pinned
+    `bigstep_program_terminates`) defers to the golden-test design.  (c) **Range hypothesis**:
+    a computable `range_ok e` guard (every `VInt` constant and every admitted prim
+    application's kernel result inside the signed 64-bit window) is a T6 hypothesis;
+    `det_check` is not touched - changing the accepted fragment is not licensed by decision 8.
+    (d) **Placeholder arms**: the kernel's relational primops return their first argument on
+    guard success (`prim_total`, Syntax.v l.344-357), so value claims split three ways: the
+    arithmetic map {add,sub,mul,div,neg} - final `lower_res = Vlong (Int64.repr z)` for the
+    kernel result; the guard map {gt,lt,geq,leq,neq} - final `lower_res = Vint 1` exactly when
+    the kernel guard succeeds on the same in-range literals; everything else admitted
+    (identity prims hitting the `Econst 0` placeholder, table prims with var operands, TupE,
+    `None`/`VVar` slots, `Unify`) gets exec-existence only; a lowered TupE claims "last ret
+    wins" in the final temp env.  These rulings bind T6's first proof line; changing any of
+    them requires amending this decision.
 
 ## 9. Known reference anchors
 

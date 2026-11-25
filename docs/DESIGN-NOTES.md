@@ -1943,3 +1943,97 @@ Closing item 2 forced two contract decisions, both measurements first:
   record->Coq->MLIR->test circle the audit was built to attest.  M1 is
   declared closed in docs/PLAN.md sec. 5.0 with this increment; M2's forced
   order (T6 first) resumes.
+
+### 13.14 T6's design obligations settled by probes p519: the statement-level `exec_stmt` realization, the `range_ok` guard, and the six-axiom cone allow-list (measured 2026-11-25)
+
+`coq/Lower.v`'s header pins three design obligations that must be settled
+*before* T6's first proof line (the Flocq audit-lane question, the 64-bit
+range story, the placeholder-arm story).  Probes p519a/p519b/p519i/p519l
+(sources + reproduction now committed at docs/probes/p519/) measured all
+three against the installed CompCert 3.17 and the gate-built kernel `.vo`
+tree; the settled rulings are decision 10 in docs/PLAN.md.
+
+- **The realization is real at statement level.**  The kernel corner
+  `add[2,3]` (an `App (Ret (VPrim PAdd))` over a `TupE` of `Ret (VInt _)`
+  - exactly the shape `app_node_ok` pins) checks (`det_check = true`) and
+  lowers to `Lclight (Sset lower_res (Ebinop Oadd (Econst_long 2) (Econst_long 3)
+  tint64))`.  One `ClightBigstep.exec_Sset` (3.17 made it a one-premise rule:
+  only `eval_expr`) over `eapply Clight.eval_Ebinop` plus two
+  `eval_Econst_long` plus a `vm_compute` closed equality for
+  `sem_binary_operation ge0 Oadd (Vlong (repr 2)) tint64 (Vlong (repr 3))
+  tint64 Mem.empty = Some (Vlong (repr 5))` derives
+  `Clight1.exec_stmt` from `ge0` (empty genv: `Genv.empty_genv Clight.fundef
+  Ctypes.type nil` + `PTree.empty composite`), `Clight.empty_env`,
+  `PTree.empty val`, `Mem.empty`, to the final temp env holding
+  `Vlong (Int64.repr 5)` at `lower_res`.  Sequences will use `exec_Sseq_1`/
+  `exec_Sseq_2` (3.17's split - `exec_Sseq` does not exist).  The whole-program
+  reading stays deferred: `bigstep_program_terminates` pins main to
+  `Tfunction nil type_int32s cc_default` returning a `Vint`, so the 64-bit
+  result is observed at the temp-env level (`lower_res = xH = #1`), and the
+  main-wrapper story belongs to the golden-test design, not to T6.
+- **The axiom package is unavoidable in any CompCert-rules T6, so the audit
+  gets a second, separately-pinned scope.**  `Print Assumptions` on the
+  concrete derivation prints six axioms: Flocq's `ClassicalDedekindReals.sig_not_dec`
+  and `sig_forall_dec`, `FunctionalExtensionality.functional_extensionality_dep`,
+  `Classical_Prop.classic`, and CompCert's two external-call parameters
+  `inline_assembly_sem` and `external_functions_sem`.  Localization (p519l): they
+  are not proof shortcuts - they sit in the *premise types* of the rules
+  themselves.  `Values.sem_binary_operation` as a whole `Fixpoint` (its float
+  arms call Flocq's classically-rounded IEEE operations) carries the four
+  logical axioms; `eval_Ebinop`/`exec_Sset` add the two event-semantics
+  parameters; `Mem.loadv` also carries the four (its `val`-construction chain
+  reaches Flocq rounding), while `Mem.empty`/`Mem.storev`, the `Genv` pieces,
+  `PTree.get/set`, `Values.sem_cast`, `Clight.function_entry1`, `ge0` and the
+  flattening `clight_of` print `Closed under the global context`.  Ruling
+  (decision 10): the kernel lane keeps its strict `eq_rect_eq`-only allow-list
+  for kernel-owned theorems (T7 etc. stay there); theorems in the
+  CompCert-facing cone (T6 now, the CertiRocq/golden-test theorems later) are
+  audited in a second scope against the pinned six-axiom list, reported as its
+  own block; anything outside `eq_rect_eq` (kernel) plus the six (cone) reds
+  the gate.  This replaces the § 13.7 guess that a T6 statement "would
+  legitimately break" the kernel lane and might be dodged by formulation - it
+  cannot, and pretending otherwise would put the allow-list in the proof
+  instead of in the open.
+- **The 64-bit range story becomes a computable guard, not a redefinition of
+  the fragment.**  Kernel `VInt` is Stdlib `Z` (Syntax.v) and `vconst` wraps
+  via `Int64.repr`, which is modular; preservation fails exactly when an
+  evaluated value leaves the signed 64-bit window.  Because `det_check` pins
+  every admitted `App` node to literal operands, every intermediate value of a
+  checked term is inspectable *syntactically*: the T6 increment adds a
+  computable `range_ok e` (every `VInt` constant of e, and every admitted
+  prim application's kernel result, inside [-2^63, 2^63)) and T6 carries
+  `range_ok e = true` as a hypothesis.  `det_check` itself does not change -
+  its behaviour is pinned by the corpus and lit artifacts, and moving range
+  into it would be a fragment change that decision 8's rulings do not license.
+- **Placeholder arms get an explicit correspondence scope.**  The kernel's
+  prim reading is the paper's: relational primops *return their first
+  argument* when the guard succeeds (`Syntax.v prim_total`: `PGt [a;b] =>
+  PRes (VInt a)` under `b < a`, lines 344-357), and `prim_total_res` is
+  "answers `PRes`".  So T6's value claims split three ways: (1) the arithmetic
+  map {add, sub, mul, div, neg} - final `lower_res = Vlong (Int64.repr z)` for
+  the kernel result z (and `Z.div` truncates like CompCert's int64 division,
+  decision 8b's `divZ` note); (2) the guard map {gt, lt, geq, leq, neq} -
+  prim `prim_total_res`-success is exactly CompCert's order test on the same
+  in-range literals, claimed as "final `lower_res = Vint 1`"; (3) everything
+  else admitted (`all_int` identity prims PPls/PIsInt reaching the `Econst 0`
+  placeholder, table prims with var operands, TupE, `None`/`VVar` slots, the
+  `Unify` arm) gets exec-existence only - the vacuous arms stay documented,
+  not asserted.  TupE additionally has a sharp observation: its lowering is a
+  sequence of `Sset lower_res` writes, so the claim is "the final temp env
+  holds the *last* ret's encoding" - no tuple-value claim, the kernel's tuple
+  denotation stays out of the cone.  Lambda/delay values never reach the cone:
+  `app_node_ok_shape` pins heads to `Ret (VPrim p)`.
+- **Spelling ledger (each cost a probe run).**  Rocq 9.1: `rocq c`, not
+  `rocq v`.  `rocq c` searches `.vos` first, so `-Q` against the kernel store
+  tree failed while `ROCQPATH` (the devShell still exports the deprecated
+  `COQPATH` - forward it) finds the package's `.vo` set.  Bare numerals inside
+  CompCert-imported scopes stay broken (§ 13.8) - the probes spell literals as
+  `Zpos (xI (xO xH))`.  `apply Clight.eval_Ebinop` errors "unable to find an
+  instance for v1, v2" (those occur only in premises); `eapply` fixes it.
+  `Search` with multi-term patterns died with unrelated type errors on lines
+  that compiled fine elsewhere - `About`/`Check` are the reliable spellers.
+  `Clight1.exec_stmt` is a transparent `Definition` (`exec_stmt
+  function_entry1`), so generic constructor `apply` works after one `cbn`.
+  Operational note: scratch under `/tmp/opencode` proved volatile across
+  sessions - which is why this probe set is committed under docs/probes/p519/
+  instead of living only in the probe dir.

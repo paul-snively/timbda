@@ -22,23 +22,34 @@
    - Value encoding hazard (docs/DESIGN-NOTES.md § 13.7 ledger): Timbda VInt is an
      unbounded Z (Syntax.v) while Clight integer arithmetic is 64-bit (Tlong Signed
      noattr, Vlong, Econst_long on Int64; Econst_int is the 32-bit C int literal).
-     `vconst` below wraps via Int64.repr.  T6 must
-     carry an explicit 64-bit-range hypothesis on every intermediate value of the
-     evaluated fragment — or scope the fragment to corpus-verified terms.  T7 is
-     insensitive to this: it never inspects emitted statements.
-   - Placeholder arms, flagged: prims outside the int-arithmetic/relational map
-     (PIsInt/PIsBool/PIsUnit/PCons/PCons2/PDotDot/PArrLen/PPls), tuple layout
-     (TupE of Ret), `Some (VVar _)` Block slots, and lambda/delay VALUES reaching
+     `vconst` below wraps via Int64.repr.  SETTLED 2026-11-25 (decision 10c, probes
+     p519): the T6 increment adds a computable `range_ok e` guard - every VInt
+     constant of e and every admitted prim application's kernel result inside the
+     signed 64-bit window (all inspectable syntactically because `app_node_ok` pins
+     literal operands) - carried as a T6 hypothesis.  `det_check` is NOT touched.
+     T7 is insensitive to this: it never inspects emitted statements.
+   - Placeholder arms, SETTLED 2026-11-25 (decision 10d, probes p519): prims outside the
+     int-arithmetic/relational map (PIsInt/PIsBool/PIsUnit/PCons/PCons2/PDotDot/PArrLen/PPls),
+     tuple layout (TupE of Ret), `Some (VVar _)` Block slots, and lambda/delay VALUES reaching
      `vconst` carry structurally-present but semantically vacuous statements
-     (Sskip / constant 0) until T6 settles the value encoding.  They never affect
-     `no_switch`: admitted nodes EMIT (which is all T7 needs), and T6 must either
-     extend these maps or restrict the emitted fragment.
-   - Audit lane (docs/DESIGN-NOTES.md § 13.7, measured 2026-11-25): the Clight
-     SYNTAX cone (statement/expr types, constructors) prints `Closed under the
-     global context`; only the Clight SEMANTICS cone (Clight.step & co.) carries
-     Flocq's two ClassicalDedekindReals axioms.  T7 lives in the kernel's strict
-     eq_rect_eq-only Print-Assumptions gate unchanged; a Print Assumptions on the
-     T6 statement would legitimately break it and needs its own lane.
+     (Sskip / constant 0).  They never affect `no_switch`: admitted nodes EMIT (which is all
+     T7 needs).  T6's correspondence scope (kernel relational prims RETURN their first
+     argument on guard success - prim_total, Syntax.v l.344-357): arithmetic map
+     {add,sub,mul,div,neg} claims final lower_res = Vlong (Int64.repr of the kernel result);
+     guard map {gt,lt,geq,leq,neq} claims final lower_res = Vint 1 exactly on kernel guard
+     success; everything else admitted (identity prims hitting the Econst 0 placeholder, table
+     prims with var operands, TupE, VVar/None slots, Unify) gets exec-existence only; a lowered
+     TupE claims "last ret wins" in the final temp env; lambda/delay VALUES cannot occur
+     (app_node_ok pins `Ret (VPrim p)` heads).
+   - Audit lane, SETTLED 2026-11-25 (decision 10a, probes p519/p519l, docs/DESIGN-NOTES.md
+     § 13.14): the measured truth is sharper than the § 13.7 guess - even a statement-level
+     `exec_stmt` derivation built from CompCert's own rules carries six axioms
+     (Flocq's ClassicalDedekindReals pair, functional_extensionality_dep, classic,
+     inline_assembly_sem, external_functions_sem), because they live in the PREMISE TYPES
+     of eval_expr/sem_binary_operation.  Ruling: the kernel gate keeps its strict
+     eq_rect_eq-only allow-list for kernel-owned theorems (T7 stays there, untouched);
+     the CompCert-facing cone (T6 onward) is audited as a separate scope against the
+     pinned six-axiom list - the allow-list lives in the open, not smuggled into a proof.
 *)
 
 From Stdlib Require Import ZArith List.
