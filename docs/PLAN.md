@@ -280,7 +280,13 @@ attestations):
      `-gen-rocq-checker` generating into `coq/` for the rule-record family; hand-glued `Rew` /
      AST artifacts retire as generated files land. `-gen-rocq-externs` ships with the
      ContextExtern family at M4 (recorded binding). The rules-audit lane extends to assert
-     generated-file provenance once this lands.
+     generated-file provenance once this lands. Toolchain resolved 2026-11-25
+     (DESIGN-NOTES sec. 13.10, probes p512/p513): the generator is the Nix-side half of sec. 6,
+     built against the new `[formal.mlir_gen]` pin (nixpkgs llvmPackages_23 = 23.1.0, classic
+     llvm TableGen API - parsed the real Timbda.td, 72 defs / 26 selected); binary prebuilts are
+     not consumable by sandboxed checks, so generated *text* is the only cross-graph interface;
+     generated files enter `coq/` outside the dune unit until their proofs make them
+     kernel-compatible.
   2. pdll lit-test skeletons + flake checks `dialect-lit-tests` and `tblgen-rocq-golden`.
   Recorded deviation: T4 (2026-11-23), T5 (2026-11-24), the CompCert toolchain (2026-11-25) and
   T7 (2026-11-25) all landed while M1 stayed open - cause: no written DoD beyond M-1's, and

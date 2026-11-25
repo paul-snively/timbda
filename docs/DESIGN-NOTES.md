@@ -1697,3 +1697,51 @@ lanes).  What was measured:
   longer exists in nix 2.35; diagnose store-visible content with
   `nix eval --impure --raw --expr '(builtins.getFlake ".").outPath'` plus `ls`, or
   `nix show-derivation`'s `env.srcs`.
+
+### 13.10 The tblgen-rocq toolchain resolution: the Nix side builds the generator (probes p512/p513, measured 2026-11-25)
+
+M1 item 1's load-bearing question was *where the tblgen-rocq binary comes from*.  PLAN sec. 6
+answers the split - "-gen-rocq output on the Nix side ... do not make one graph build the other's
+artifacts" - but the question was whether nixpkgs can actually build a TableGen backend at the
+pinned vintage.  It can, and the shape of the job is now measured:
+
+- **nixpkgs llvmPackages_23 = 23.1.0** (vs the hermetic-llvm/bazel pin 23.1.2: same 23.1 series;
+  the pair is now pinned as `[formal.mlir_gen]` and asserted by the version-consistency lane).
+  It substitutes from cache in seconds - no MLIR-from-source build needed on the Nix side.
+- **What nixpkgs ships**: `llvmPackages_23.llvm.lib` = `libLLVMTableGen.a`, `libLLVMSupport.a`,
+  `libLLVMDemangle.a` (plus the rest); `llvm.dev` carries the full classic TableGen C++ API
+  (`llvm/TableGen/Record.h` with `RecordKeeper::getDefs`, `Record::getValueAsString/Int/ListInit`,
+  `isSubClassOf`; `llvm/TableGen/Parser.h` = `TableGenParseFile(SourceMgr&, RecordKeeper&)`);
+  `mlir` main output carries `libMLIRTableGen.a`/`libMLIRTblgenLib.a`/PDLL libs.  **What it does
+  not ship**: the `mlir/TableGen/Record.h`+`RecordKeeper.h` wrappers (nixpkgs' header install set
+  omits exactly those - the other 23 `mlir/TableGen/*.h` are present and internally reference the
+  missing one), nor the `mlir-tblgen`/`mlir-pdll` *binaries* (`FileCheck` and `llvm-tblgen` are in
+  llvm's bin).  On the bazel side, `@llvm-project//llvm:FileCheck` exists but there is no `lit`
+  target - lit comes from nixpkgs (`lit` 18.1.8).
+- **Probe p513 (the decision-maker)**: a C++17 main against `llvmPackages_23` compiled, linked
+  (`-lLLVMTableGen -lLLVMSupport -lLLVMDemangle -lz -lpthread -ldl`) and ran *inside a nix
+  derivation*, parsed the real `dialect/Timbda.td` - full ODS + dialect + the 72 rule records -
+  via `TableGenParseFile`, and walked `isSubClassOf("TimbdaRuleRecord")`: **72 defs, 26
+  selected**, field reads (`ctor`, `status`, `ops`, `selected`) all resolving - the audit's own
+  counts, from an independent code path.  So the Nix-side backend needs no MLIR wrapper headers
+  at all: the classic llvm::RecordKeeper surface is sufficient (the mlir wrappers are convenience
+  over the same parser).
+- **Two API gotchas measured, worth encoding in the backend**: (a) llvm-TABLEGen resolves
+  `include "X"` against CWD + explicit paths, *not* the includer's directory - that resolution is
+  an MLIR wrapper feature - so the generator job must arrange the search tree (probe: run from
+  the dialect dir with symlinks `mlir -> $(mlir.dev)/include/mlir`, `llvm -> $(llvm.dev)/include/llvm`,
+  `dialect -> .`); (b) `.td` `int` fields are IntInit - `Record::getValueAsBit` *fataled* on
+  `selected` (LLVM 23 also spells it `isSubClassOf`, not `isSubclassOf`).
+- **Binary prebuilt consumption is rejected for this stack** (probe, same day): a bazel-built
+  binary imported via `nix store add-file` registers in the store but the daemon silently drops
+  it from a drv's `inputSrcs` (CA-imported paths are not referenceable as derivation inputs under
+  this nix config) - a sandboxed check cannot consume bazel binaries.  This hardens sec. 6's
+  "they meet only at generated artifacts" from a design preference into an enforced fact for the
+  rule-record family: *text* is the interface, not executables.
+- **Consequence for generated-file placement**: the kernel lane compiles the whole `coq/` dune
+  unit and its gate scans the build log for `Admitted`, so a generated *soundness-skeleton* file
+  cannot join that unit until its proofs exist (M2).  Generation lands in a `coq/` subtree outside
+  the dune unit first; the hand-glued `Rew`/AST retire only when the generated definitions are
+  proof-compatible.  Reproducing the hand-glued ctor signatures byte-exactly needs the record
+  schema to carry the Coq-side fields (binders/hyps/lhs/rhs per ctor are currently bespoke in
+  `coq/Rewriting.v`, prose-only in the `.td`) - the schema step precedes the emitter step.
