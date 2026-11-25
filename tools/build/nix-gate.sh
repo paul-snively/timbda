@@ -159,12 +159,14 @@ if [ "$#" -eq 0 ]; then
   if [ "${#TARGETS[@]}" -eq 0 ]; then
     # cheapest-first, Coq-side targets last: on a headroom-poor host the expensive failure should be
     # the one that costs the least already-spent work.  M1 lanes (decision 9 § 5.0) ride
-    # the chain too: rules-audit, tblgen-rocq-golden and bazel-native-tests are seconds each.
+    # the chain too: rules-audit, tblgen-rocq-golden, dialect-lit-tests and bazel-native-tests
+    # are seconds each.
     TARGETS=(
       .#checks.x86_64-linux.version-consistency
       .#checks.x86_64-linux.rules-audit
       .#checks.x86_64-linux.bazel-native-tests
       .#checks.x86_64-linux.tblgen-rocq-golden
+      .#checks.x86_64-linux.dialect-lit-tests
       .#checks.x86_64-linux.corpus-differential
       .#packages.x86_64-linux.timbda-kernel
       .#checks.x86_64-linux.golden-test

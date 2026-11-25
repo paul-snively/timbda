@@ -261,9 +261,12 @@ attestations):
   not residue). Standing witnesses: `checks.corpus-differential` (64 cases / 7 candidate bags)
   and the kernel audit (zero `Admitted`, sole axiom `eq_rect_eq`).
 
-- **M1 - OPEN as of 2026-11-25.** Landed: `Timbda.td` ODS + 72 `TimbdaRuleRecord` rows; DRR
-  rewriters (`TimbdaPatterns.td` -> tblgen `.inc` -> `populateWithGenerated`); and the two
-  attestation lanes of decision 9 (both green 2026-11-25, now in the gate chain's default set):
+- **M1 - CLOSED 2026-11-25.**  Closure condition (decision 9): every written DoD
+  item of this block is DONE-DONE gate-attested on `main`; at closure the default
+  eight-lane chain ran fully green with zero watchdog kills.  Landed: `Timbda.td`
+  ODS + 72 `TimbdaRuleRecord` rows; DRR
+  rewriters (`TimbdaPatterns.td` -> tblgen `.inc` -> `populateWithGenerated`); and the three
+  verification lanes of decision 9 (all green 2026-11-25, now in the gate chain's default set):
   - *rules-audit lane*: `checks.rules-audit` runs `tools/rules-audit.py` in the gate - the
     coverage audit (35 ctor rows: coq ctor = audit tag = record = DRR pattern; 72/35/37/3 row
     arithmetic; 23-pattern DRR bijection; zero `Admitted`) is gate evidence, not a local ritual.
@@ -275,6 +278,17 @@ attestations):
     rc=0, a PASSED dialect-test summary, the pinned bazel version, and a `sha256sum -c`-verified
     source-hash block matching the exact dialect/pin inputs nix evaluates. Stale prebuilt
     evidence fails the gate; the negative path was exercised before the first green run.
+    Since 2026-11-25 the lane's bazel run also materializes the generated
+    `TimbdaCanonicalization.cpp.inc` into `tools/build/bazel-evidence/`,
+    sha256-bound by the same block - bazel-out symlinks do not survive the nix
+    tree copy (measured), and that committed text is what `checks.rules-audit`
+    and `checks.dialect-lit-tests` consume as the dialect-side evidence.
+  - *lit lane*: `checks.dialect-lit-tests` (item 2's landing, DESIGN-NOTES sec.
+    13.13) runs lit 18.1.8 + FileCheck over `tests/lit` against that evidence:
+    23 generated pdll skeletons + the populate-shape test = 24 passes, the
+    canonicalize skeleton registered UNSUPPORTED until a timbda-aware opt
+    binary exists (M2), and the skeletons themselves byte-diffed against
+    regeneration.
   Remaining, per decision 9's rulings:
   1. `dialect/tblgen-rocq/` backend per sec. 2 - `-gen-rocq-ast`, `-gen-rocq-rules`,
      `-gen-rocq-checker` generating into `coq/` for the rule-record family; hand-glued `Rew` /
@@ -307,20 +321,31 @@ attestations):
      generated files enter `coq/` outside the dune unit until their proofs make them
      kernel-compatible.
   2. pdll lit-test skeletons + flake checks `dialect-lit-tests` and `tblgen-rocq-golden`.
-     (`tblgen-rocq-golden` landed early with item 1's rules half, 2026-11-25; the lit half
-     remains.)
+     **Landed 2026-11-25** (DESIGN-NOTES sec. 13.13): `-gen-pdll-tests` emits one
+     FileCheck skeleton per DRR ctor row into `tests/lit/pdll/` (asserting exactly
+     what the record derives of the rewriter text: struct name, root op
+     `"timbda."+ops[0]`, populate entry - measured before choosing: the
+     `100 - rank` benefit invariant holds 21/23, so benefit is not asserted);
+     `checks.dialect-lit-tests` regenerates them twice, byte-diffs against the
+     committed files, and runs lit 18.1.8 + FileCheck (the `[formal.mlir_gen]`
+     pin) over `tests/lit` - 24 passes, 1 registered-UNSUPPORTED canonicalize
+     skeleton (M2-bound, honest skip). The bazel lane now materializes
+     `tools/build/bazel-evidence/TimbdaCanonicalization.cpp.inc` as sha256-bound
+     committed text - bazel-out symlinks are invisible to nix-side checks, which
+     had been silently SKIPping the audit's populate check in every gate run.
   Recorded deviation: T4 (2026-11-23), T5 (2026-11-24), the CompCert toolchain (2026-11-25) and
   T7 (2026-11-25) all landed while M1 stayed open - cause: no written DoD beyond M-1's, and
-  M2's kernel path has no hard dependency on M1 artifacts. The debt is paid by ordering, not
-  argument: T6, the CertiRocq wiring, and the real golden test do not start until M1 items 1-2
-  land and M1 is declared closed here.
+  M2's kernel path has no hard dependency on M1 artifacts. The debt was paid by ordering, not
+  argument: T6, the CertiRocq wiring, and the real golden test start only after M1 items 1-2
+  landed and M1 was declared closed here.
   Bound elsewhere (recorded so nothing floats): ContextExtern dual-side declarations +
   annotation chain (sec. 2 artifact 5) -> M4; vendored DCont fork subtree (sec. 6) -> M4/M5
   when the conversion passes start.
 
-- **M2 - OPEN; further work PAUSED behind M1 by decision 9.** Landed: T4 both legs +
+- **M2 - OPEN; M1-closure pause LIFTED 2026-11-25** (M1 declared closed above;
+  decision 9's ordering obligation is met). Landed: T4 both legs +
   `T4_value_unique`, T5 for the accepted fragment, T7, the m2-det gate corpus (29/7), CompCert
-  toolchain. Outstanding, in forced order: M1 closure, then T6 (with its pre-pinned design
+  toolchain. Outstanding, in forced order: T6 (with its pre-pinned design
   obligations), then CertiRocq->C wiring (`Compile.v`), then the real golden test.
 
 - **M3 / M4 / M5 - NOT STARTED.** Per decision 9 each gets its DoD written into this section

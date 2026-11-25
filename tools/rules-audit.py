@@ -27,7 +27,10 @@ record + an MLIR pattern + a Rocq ctor"; the audit IS the claim):
   4. status column <-> RewSound_* lemma presence in coq/Denotation.v; zero
      Admitted and no Axiom/Hypothesis/Parameter/Conjecture in coq/.
   5. ctor rows with pattern="drr" <-> TimbdaPatterns.td defs <-> the
-     tblgen-generated populateWithGenerated set (23 each); kernel-extension
+     tblgen-generated populateWithGenerated set (23 each), read from the
+     committed bazel evidence (tools/build/bazel-evidence/); the generated pdll
+     lit skeletons (tests/lit/pdll, M1 item 2) equal the record re-derivation:
+     struct name, root op "timbda."+ops[0], populate entry; kernel-extension
      tags; strategy-group vocabulary (docs/VERSE-RULES.md sec. 5).
   6. docs/RULES-AUDIT.md sec. 1 table: 35 rows, tier and IsEss columns.
 
@@ -579,16 +582,46 @@ def main():
           f"rows {len(td_drr)}, defs {len(drr_def_names)}; "
           f"row-only {sorted(set(td_drr) - set(drr_def_names))}, "
           f"def-only {sorted(set(drr_def_names) - set(td_drr))}")
-    inc_path = REPO / "bazel-out/k8-fastbuild/bin/dialect/TimbdaCanonicalization.cpp.inc"
+    inc_path = REPO / "tools/build/bazel-evidence/TimbdaCanonicalization.cpp.inc"
+    if not inc_path.exists():
+        inc_path = REPO / "bazel-out/k8-fastbuild/bin/dialect/TimbdaCanonicalization.cpp.inc"
     if not inc_path.exists():
         print("  SKIP  generated populateWithGenerated check "
-              "(bazel build //dialect:TimbdaCanonicalization first)")
+              "(run: nix develop .#cpp -c tools/build/bazel-lane.sh)")
     else:
-        populated = set(re.findall(r"patterns\.add<(\w+)>",
-                                   inc_path.read_text(encoding="utf-8")))
+        inc_text = inc_path.read_text(encoding="utf-8")
+        populated = set(re.findall(r"patterns\.add<(\w+)>", inc_text))
         check(sorted(populated) == sorted(td_drr),
               "generated populateWithGenerated == drr ctor rows",
               f"generated {len(populated)} vs td {len(td_drr)}")
+        # pdll lit skeletons (M1 item 2, PLAN sec. 2 artifact 3): one generated
+        # FileCheck file per drr ctor row, asserting exactly what the record
+        # derives of the rewriter text: struct name, root op "timbda."+ops[0],
+        # and the populate entry.  The record re-derivation here is the
+        # provenance claim; checks.dialect-lit-tests byte-diffs against it.
+        skel_dir = REPO / "tests/lit/pdll"
+        skels = sorted(p.name for p in skel_dir.glob("*.check")) if skel_dir.is_dir() else []
+        check(skels == sorted(f"{c}.check" for c in td_drr),
+              "tests/lit/pdll carries exactly one skeleton per drr ctor row",
+              f"{len(skels)} files vs {len(td_drr)} drr rows")
+        skel_bad = []
+        for ctor in sorted(td_drr):
+            p = skel_dir / f"{ctor}.check"
+            if not p.exists():
+                continue
+            text = p.read_text(encoding="utf-8")
+            ops = (rec_by_ctor.get(ctor) or {}).get("ops") or []
+            root = f"timbda.{ops[0]}" if ops else "<no ops>"
+            for line in (f"; CHECK-LABEL: struct {ctor} : public ::mlir::RewritePattern {{",
+                         f'; CHECK: ::mlir::RewritePattern("{root}",',
+                         f"; CHECK: patterns.add<{ctor}>(patterns.getContext());"):
+                if line not in text:
+                    skel_bad.append(f"{ctor}: skeleton lacks {line!r}")
+            if f"struct {ctor} : public ::mlir::RewritePattern {{" not in inc_text:
+                skel_bad.append(f"{ctor}: generated inc has no struct for this ctor")
+        check(not skel_bad, "each skeleton == record-derived assertions, and the "
+                            "generated inc carries the asserted text",
+              "; ".join(skel_bad))
 
     ext_rows = [r for r in kernel_recs
                 if any(str(t).startswith("kernel-extension")

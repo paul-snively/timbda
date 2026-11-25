@@ -852,6 +852,62 @@
             '';
           };
 
+          # ---- dialect-lit tests (docs/PLAN.md § 5.0 item 2) ------------------
+          # lit (nixpkgs) + FileCheck (the [formal.mlir_gen] pin) run tests/lit:
+          # the 23 generated pdll skeletons (one per DRR ctor row, -gen-pdll-tests),
+          # the handwritten populate-shape test, and the canonicalize skeleton that
+          # reports UNSUPPORTED until a timbda-aware opt binary exists (M2) - an
+          # honest skip, not a fake pass.  The lane also regenerates the skeletons
+          # twice, byte-diffs them against the committed files (the same
+          # "generated, not hand-glued" claim as tblgen-rocq-golden), and refuses
+          # without the sha256-attested bazel evidence as test input.
+          dialect-lit-tests = pkgs.stdenv.mkDerivation {
+            pname = "timbda-dialect-lit-tests";
+            version = "0.1.0";
+            src = ./.;
+            nativeBuildInputs = [ self.packages.${system}.timbda-tblgen-rocq
+              pkgs.lit pkgs.llvmPackages_23.llvm ];
+            phases = [ "buildPhase" "installPhase" ];
+            buildPhase = ''
+              set -e
+              INC=$src/tools/build/bazel-evidence/TimbdaCanonicalization.cpp.inc
+              test -f "$INC" \
+                || { echo "FAIL no committed bazel evidence; run: nix develop .#cpp -c tools/build/bazel-lane.sh"; exit 1; }
+              rm -rf regen1 regen2
+              tblgen-rocq -gen-pdll-tests $src/dialect/Timbda.td -o regen1
+              tblgen-rocq -gen-pdll-tests $src/dialect/Timbda.td -o regen2
+              diff -r regen1 regen2 \
+                || { echo "FAIL -gen-pdll-tests regeneration is not byte-identical"; exit 1; }
+              m=$(ls regen1/*.check | wc -l)
+              test "$m" = 23 || { echo "FAIL regenerated pdll skeletons $m != 23"; exit 1; }
+              n=$(ls $src/tests/lit/pdll/*.check | wc -l)
+              test "$n" = 23 || { echo "FAIL committed pdll skeletons $n != 23"; exit 1; }
+              for f in $src/tests/lit/pdll/*.check; do
+                cmp "$f" "regen1/$(basename "$f")" \
+                  || { echo "FAIL committed $(basename "$f") differs from regeneration; run: tblgen-rocq -gen-pdll-tests dialect/Timbda.td -o tests/lit/pdll"; exit 1; }
+              done
+              export TIMBDA_DRR_INC=$INC
+              rc=0
+              lit $src/tests/lit -a > lit.log 2>&1 || rc=$?
+              test "$rc" = 0 || { echo "FAIL lit exited $rc"; cat lit.log; exit 1; }
+              grep -E "Passed|Failed|Unsupported|Unresolved" lit.log || true
+              grep -qE "Passed +: 24" lit.log \
+                || { echo "FAIL lit passed-count != 24 (23 pdll skeletons + populate shape test)"; cat lit.log; exit 1; }
+              grep -qE "Unsupported: +1" lit.log \
+                || { echo "FAIL lit unsupported-count != 1 (canonicalize/prim-fold skeleton, M2-bound)"; cat lit.log; exit 1; }
+              if grep -qiE "failed|unresolved" lit.log; then
+                echo "FAIL lit reported failures/unresolved tests"; cat lit.log; exit 1
+              fi
+              echo "ok: dialect-lit-tests green ($m generated skeletons byte-equal to committed; lit 24 passed / 1 honest unsupported)"
+            '';
+            installPhase = ''
+              mkdir -p $out
+              cp lit.log $out/
+              cp -r regen1 $out/regen-skeletons
+              echo "ok: dialect-lit-tests lane green (deterministic pdll skeletons, 24 lit passes, 1 registered unsupported)" > $out/status.txt
+            '';
+          };
+
           # bazel attestation, per § 6's "bazel builds, nix checks consume as
           # prebuilt": tools/build/bazel-lane.sh (bazelisk + hermetic-llvm from
           # MODULE.bazel) records the dialect build/test result in

@@ -5,7 +5,7 @@ bazel_version=bazel 9.3.2
 bazelversion_file=9.3.2
 llvm_bazel_dep=bazel_dep(name = "llvm", version = "0.8.27")
 build_targets=//dialect:timbda_dialect_test //dialect:TimbdaCanonicalization //dialect:TimbdaCanonicalizationIncGen //dialect:TimbdaDialect
-build_completed=INFO: Build completed successfully, 12 total actions
+build_completed=INFO: Build completed successfully, 1 total action
 test_summary=//dialect:timbda_dialect_test                                   (cached) PASSED in 0.1s
 bazel_rc=0
 === source hashes ===
@@ -23,3 +23,4 @@ b281ba6cac61ce2488aeb2609dcfa0396e5da4aabae32b0e32bb18ec370f1969  MODULE.bazel
 f1b5bdd8c938027ad043347c0f50f1dab549568ce49a4252ae47358376591f3c  MODULE.bazel.lock
 4d9dfd02f463b487bd0bff68cf9292b3626b31c81febb54e8911e493f64793d0  .bazelversion
 28f535f769ff36cca0ec01062209e10d0d52b45cd9a7a310f1fe02fa987e480e  tools/pins/pins.toml
+92bb320e85efdbb9b6d667f979a7be18842b9ecf6735792273e9eea09eb43e5d  tools/build/bazel-evidence/TimbdaCanonicalization.cpp.inc

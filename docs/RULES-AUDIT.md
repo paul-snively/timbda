@@ -248,8 +248,8 @@ lists the two there as kernel-side facts rather than as dialect rewrites.
 
 ## 7. M1 reconciliation checklist (`tools/rules-audit.py`)
 
-The checklist is a script now: `python3 tools/rules-audit.py` runs 46 checks and exits
-non-zero on any failure.  At the M1 build all 46 are green, and that run is the M1
+The checklist is a script now: `python3 tools/rules-audit.py` runs 48 checks and exits
+non-zero on any failure.  At the M1 build all 48 are green, and that run is the M1
 coverage claim (docs/PLAN.md § 5: every paper rule ⇒ a record + an MLIR pattern + a Rocq
 ctor).  Beyond the five items below it also checks: the 72-row arithmetic and the 3
 `TimbdaExtern` records; the audit-row categories 18 matching / 4 essential / 10
@@ -259,6 +259,11 @@ tblgen-rocq artifacts (sec. 1b/1c: every generated ctor == its record's coq* fie
 re-rendered, the AstGroup defs == the generated `RuleID` block, RuleIDs == distinct
 kernelTags, `selected_rows` == the records' `rank` order, manifest == record
 `soundLemmas` == the kernel `RewSound_*` inventory with status-consistent counts); the
+generated pdll lit skeletons (sec. 5: one FileCheck file per DRR ctor row in
+`tests/lit/pdll/`, each == the record re-derivation — struct name, root op
+`"timbda."+ops[0]`, populate entry — asserted against the *committed* bazel evidence
+`tools/build/bazel-evidence/TimbdaCanonicalization.cpp.inc`, which
+`checks.bazel-native-tests` sha256-binds to the attested bazel run); the
 status column as *evidence* rather than assertion — `discharged` ⇔ a `RewSound_<rule>`
 lemma in `coq/Denotation.v` (the 2 SCHEMA rows at their 1-ary and 2-ary arities),
 `partial` ⇔ those lemma pairs, `deferred` ⇔ no lemma, no orphan lemma — plus zero
@@ -270,9 +275,11 @@ and the generated `populateWithGenerated`, 23 each with identical names.
 value the tool cannot derive that way is `paperNamedCtors = 26`: it counts the papers' rule
 names (docs/VERSE-RULES.md § 7), not rows, and the tool prints it as "not row-derivable"
 instead of pretending to verify it.  `Print Assumptions` (§ 6) stays a build-time gate in
-the Nix/coq corner, not part of this script; the generated-populate check reads
-`bazel-out/k8-fastbuild/bin/dialect/TimbdaCanonicalization.cpp.inc` and skips with a note
-if `bazel build //dialect:TimbdaCanonicalization` has not been run.
+the Nix/coq corner, not part of this script; the generated-populate check reads the
+*committed* evidence `tools/build/bazel-evidence/TimbdaCanonicalization.cpp.inc`
+(materialized by `tools/build/bazel-lane.sh`, sha256-bound by
+`checks.bazel-native-tests`; falls back to `bazel-out/…` only for ad-hoc local runs)
+and skips with a note if neither exists.
 
 1. `audit:` tag ↔ ctor ↔ § 1 row: 35/35 match, tier equal.
 2. § 2 records ↔ `TimbdaRule`/`TimbdaExtern` records in `dialect/Timbda.td` (72-row

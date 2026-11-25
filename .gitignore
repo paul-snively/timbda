@@ -31,3 +31,7 @@ docs/_private/
 _sweeps/
 *.err
 __pycache__/
+
+# lit scratch, should the exec root ever point back into the tree
+tests/lit/**/Output/
+tests/lit/.lit_test_times.txt

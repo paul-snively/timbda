@@ -1,0 +1,13 @@
+; GENERATED FILE (M1 item 2, docs/PLAN.md sec. 5.0): the pdll
+; lit-test skeleton for ctor row RewDotDot (audit tag DotDot, fig 10) in dialect/TimbdaRules.td.  %timbda_drr_inc is the
+; bazel mlir-tblgen -gen-rewriters output over TimbdaPatterns.td,
+; sha256-attested by checks.bazel-native-tests.  Regenerate all
+; skeletons:
+;     tblgen-rocq -gen-pdll-tests dialect/Timbda.td -o tests/lit/pdll
+; checks.dialect-lit-tests byte-diffs this file against regeneration
+; and tools/rules-audit.py section 5 asserts the record provenance.
+
+; RUN: FileCheck --input-file=%timbda_drr_inc %s
+; CHECK-LABEL: struct RewDotDot : public ::mlir::RewritePattern {
+; CHECK: ::mlir::RewritePattern("timbda.prim",
+; CHECK: patterns.add<RewDotDot>(patterns.getContext());

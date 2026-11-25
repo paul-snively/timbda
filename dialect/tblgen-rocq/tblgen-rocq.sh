@@ -11,7 +11,7 @@ set -e
 
 mode="${1:-}"; tdfile="${2:-}"
 if [ -z "$mode" ] || [ -z "$tdfile" ]; then
-  echo "usage: tblgen-rocq <-gen-rocq-rules|-gen-rocq-ast|-gen-rocq-checker|-gen-rocq-externs> <input.td> [-o <output>]" >&2
+  echo "usage: tblgen-rocq <-gen-rocq-rules|-gen-rocq-ast|-gen-rocq-checker|-gen-pdll-tests|-gen-rocq-externs> <input.td> [-o <output>]" >&2
   exit 1
 fi
 shift 2

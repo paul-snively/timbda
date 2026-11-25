@@ -25,6 +25,11 @@
 //                      hypotheses, added side conditions), and a deferred row
 //                      carries no statement by kernel policy
 //                      (docs/RULES-AUDIT.md sec. 4; docs/DESIGN-NOTES.md 13.12).
+//   -gen-pdll-tests    tests/lit/pdll/<ctor>.check: one FileCheck skeleton per
+//                      DRR ctor row (PLAN sec. 2 artifact 3), asserting exactly
+//                      what the record derives of the mlir-tblgen rewriter
+//                      output: struct name, root op "timbda."+ops[0], and the
+//                      populateWithGenerated entry.
 // A mode that is not implemented must refuse, never emit a skeleton - an
 // honest refusal keeps the golden lane's "byte-identical regeneration" claim
 // meaningful for what it does cover.
@@ -63,7 +68,8 @@ static StringRef ProgramName = "tblgen-rocq";
 
 static void usage() {
   errs() << "usage: " << ProgramName
-         << " -gen-rocq-rules|-gen-rocq-ast|-gen-rocq-checker|-gen-rocq-externs"
+         << " -gen-rocq-rules|-gen-rocq-ast|-gen-rocq-checker|-gen-pdll-tests"
+            "|-gen-rocq-externs"
             " <input.td> [-o <output>]\n";
 }
 
@@ -89,6 +95,8 @@ struct RocqCtor {
   int Selected = 0;       // the `selected` flag
   int Rank = 0;           // selected_rows order; 0 = not selected
   std::vector<std::string> SoundLemmas;  // RewSound_* names this row's evidence
+  std::string Pattern;    // "drr" <=> this row has a stock DRR rewriter
+  std::vector<std::string> Ops;  // verse ops; ops[0] names the DRR root op
 };
 
 // Collapse whitespace runs.  tools/rules-coqctor.py stores the fields
@@ -141,8 +149,11 @@ static bool collectCtors(const RecordKeeper &Records,
     C.Status = collapseWS(R->getValueAsString("status"));
     C.Selected = (int)R->getValueAsInt("selected");
     C.Rank = (int)R->getValueAsInt("rank");
+    C.Pattern = collapseWS(R->getValueAsString("pattern"));
     for (StringRef L : R->getValueAsListOfStrings("soundLemmas"))
       C.SoundLemmas.push_back(collapseWS(L));
+    for (StringRef O : R->getValueAsListOfStrings("ops"))
+      C.Ops.push_back(collapseWS(O));
     if (C.Tag.empty() || C.Lhs.empty() || C.Rhs.empty() || C.Fig.empty() ||
         C.PapForm.empty()) {
       errs() << ProgramName << ": record " << R->getName() << " carries ctor "
@@ -618,6 +629,81 @@ static int genChecker(StringRef TDFile, StringRef OutFile) {
   return 0;
 }
 
+//===----------------------------------------------------------------------===//
+// -gen-pdll-tests: tests/lit/pdll/<ctor>.check - the pdll lit-test skeletons
+//===----------------------------------------------------------------------===//
+
+// One FileCheck skeleton per DRR ctor row (docs/PLAN.md sec. 2 artifact 3).
+// The assertions are exactly what the rule record can honestly predict of
+// the mlir-tblgen -gen-rewriters output: the struct named after the ctor,
+// the root-op string "timbda." + ops[0], and the populateWithGenerated
+// entry.  The matcher internals (benefit deltas, attr constraints) are the
+// pattern file's business (dialect/TimbdaPatterns.td) and get asserted only
+// where the record genuinely derives them - see docs/DESIGN-NOTES.md 13.13.
+static int genPdll(StringRef TDFile, StringRef OutDir) {
+  RecordKeeper Records;
+  if (parseTD(TDFile, Records))
+    return 1;
+  std::unordered_map<std::string, RocqCtor> Ctors;
+  if (collectCtors(Records, Ctors))
+    return 1;
+  SmallVector<const Record *, 8> Groups;
+  if (collectOrder(Records, Ctors, Groups))
+    return 1;
+  if (OutDir.empty()) {
+    errs() << ProgramName << ": -gen-pdll-tests needs -o <output-dir>\n";
+    return 1;
+  }
+  if (sys::fs::create_directories(OutDir)) {
+    errs() << ProgramName << ": cannot create output dir " << OutDir << "\n";
+    return 1;
+  }
+
+  unsigned Emitted = 0;
+  for (const Record *G : Groups) {
+    for (StringRef Name : G->getValueAsListOfStrings("ctors")) {
+      const RocqCtor &C = Ctors.find(Name.str())->second;
+      if (C.Pattern != "drr")
+        continue;
+      if (C.Ops.empty()) {
+        errs() << ProgramName << ": drr ctor " << C.Name
+               << " has no ops[0] to name the root op\n";
+        return 1;
+      }
+      std::string Root = "timbda." + C.Ops[0];
+      std::string Path = (OutDir + "/" + C.Name + ".check").str();
+      std::error_code EC;
+      raw_fd_ostream Out(Path, EC, sys::fs::OF_None);
+      if (EC) {
+        errs() << ProgramName << ": cannot open " << Path << ": "
+               << EC.message() << "\n";
+        return 1;
+      }
+      Out << "; GENERATED FILE (M1 item 2, docs/PLAN.md sec. 5.0): the pdll\n"
+             "; lit-test skeleton for ctor row "
+          << C.Name << " (audit tag " << C.Tag << ", fig " << C.Fig
+          << ") in dialect/TimbdaRules.td.  %timbda_drr_inc is the\n"
+             "; bazel mlir-tblgen -gen-rewriters output over TimbdaPatterns.td,\n"
+             "; sha256-attested by checks.bazel-native-tests.  Regenerate all\n"
+             "; skeletons:\n"
+             ";     tblgen-rocq -gen-pdll-tests dialect/Timbda.td -o tests/lit/pdll\n"
+             "; checks.dialect-lit-tests byte-diffs this file against regeneration\n"
+             "; and tools/rules-audit.py section 5 asserts the record provenance.\n"
+             "\n"
+             "; RUN: FileCheck --input-file=%timbda_drr_inc %s\n"
+             "; CHECK-LABEL: struct "
+          << C.Name << " : public ::mlir::RewritePattern {\n"
+          << "; CHECK: ::mlir::RewritePattern(\"" << Root << "\",\n"
+          << "; CHECK: patterns.add<" << C.Name << ">(patterns.getContext());\n";
+      ++Emitted;
+    }
+  }
+
+  errs() << ProgramName << ": -gen-pdll-tests emitted " << Emitted
+         << " lit skeletons to " << OutDir << "\n";
+  return 0;
+}
+
 } // end anonymous namespace
 
 int main(int argc, char **argv) {
@@ -629,7 +715,8 @@ int main(int argc, char **argv) {
   for (int I = 1; I < argc; ++I) {
     StringRef A = argv[I];
     if (A == "-gen-rocq-rules" || A == "-gen-rocq-ast" ||
-        A == "-gen-rocq-checker" || A == "-gen-rocq-externs") {
+        A == "-gen-rocq-checker" || A == "-gen-pdll-tests" ||
+        A == "-gen-rocq-externs") {
       if (!Mode.empty()) {
         errs() << ProgramName << ": multiple modes given\n";
         return 1;
@@ -659,6 +746,8 @@ int main(int argc, char **argv) {
     return genAst(TDFile, OutFile);
   if (Mode == "-gen-rocq-checker")
     return genChecker(TDFile, OutFile);
+  if (Mode == "-gen-pdll-tests")
+    return genPdll(TDFile, OutFile);
 
   // -gen-rocq-externs is the ContextExtern family: registered, lands at M4
   // (docs/PLAN.md sec. 5.0 binding), refuses until then.

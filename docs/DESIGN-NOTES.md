@@ -1883,3 +1883,63 @@ rule artifact retired:
   Import Timbda.RuleAst` explicitly - the same discipline increment A applied
   to `Timbda.RewRules`, and `tools/extract/extract.v`'s qualified names moved
   to `Timbda.RuleAst.selected_rows` for the same reason.
+
+### 13.13 M1 item 2: pdll lit skeletons become a generated artifact, and the bazel evidence moves into the tree (landed 2026-11-25, probe p518)
+
+Closing item 2 forced two contract decisions, both measurements first:
+
+- **What a pdll lit skeleton may assert, measured before writing the
+  generator.** PLAN sec. 2 artifact 3 says each record generates a lit-test
+  skeleton; the honest reading is *what the rule record can derive of the
+  `mlir-tblgen -gen-rewriters` output*.  Measured against the generated
+  `TimbdaCanonicalization.cpp.inc`: the root-op invariant
+  `::mlir::RewritePattern("timbda." + ops[0]` holds **23/23**; the
+  `benefit = 100 - rank` invariant holds **21/23** - `RewGt1` and `RewIsInt1`
+  emit 84 where their rank says 85, a `Pattern<>` vs `Pat<>` delta-tuning
+  detail owned by `dialect/TimbdaPatterns.td` (its header ties the Prim-schema
+  benefits to the `prim_total` catchall guard, not to the rank column).  So
+  `-gen-pdll-tests` emits per DRR ctor row exactly the three record-derived
+  assertions - `struct <ctor> : public ::mlir::RewritePattern {`, the root-op
+  ctor line, and `patterns.add<<ctor>>(patterns.getContext());` - into
+  `tests/lit/pdll/<ctor>.check`.  Benefit is *not* asserted; that would be a
+  record-side fiction of the same species 13.12 refused for lemma statements.
+- **bazel-out is invisible to nix-side checks - and a gate hole it had been
+  leaving.** The audit's `populateWithGenerated` check reads the bazel-built
+  `.inc`; `bazel-out/` is a symlink farm that does not survive the nix tree
+  copy, so in every gate run so far that check hit its SKIP branch (confirmed
+  in the gate's rules-audit log) - it had only ever run locally.  Fix: on every
+  green run `tools/build/bazel-lane.sh` copies the generated `.inc` into
+  `tools/build/bazel-evidence/TimbdaCanonicalization.cpp.inc` and adds its
+  sha256 to
+  the status source-hash block, so `checks.bazel-native-tests`' `sha256sum -c`
+  binds the committed text to the attested bazel run (a stale pattern edit
+  reds the attestation, an evidence edit reds the hash).  The audit and the
+  lit lane both read the committed evidence; the populate check now genuinely
+  runs in the gate.  Generated text as the only cross-graph interface (sec.
+  13.10) applied one notch further.
+- **`checks.dialect-lit-tests` joins the gate chain (now eight default
+  lanes)**: regenerate the skeletons twice (byte-identical), byte-diff against
+  the committed 23, then run lit 18.1.8 (nixpkgs) + FileCheck
+  (`[formal.mlir_gen]` pin, llvm 23.1.0 bin) over `tests/lit` with
+  `%timbda_drr_inc` bound to the committed evidence - asserting `Passed: 24`
+  (23 pdll + the handwritten `dialect/populate.check` shape test: 23 structs,
+  23 populate wires) and exactly `Unsupported: 1`: `canonicalize/prim-fold.mlir`
+  carries `REQUIRES: timbda-opt`, which lit reports UNSUPPORTED until the M2
+  opt tool exists - an honest skip, not a fake pass.  Two lit gotchas fell
+  out, both measured: the token `REQUIRES:` inside prose is parsed as a
+  directive, so skeleton comments must not spell it (FileCheck's
+  word-boundary rule for `CHECK` inside `FileCheck` is the analogous guard);
+  and lit 18 ShTest writes its script + `Output/` scratch next to
+  `test.getExecPath()`, which defaults to the source tree - in the gate that
+  tree is the read-only nix store, and every `.check` surfaced as UNRESOLVED
+  with a `PermissionError` on `…/tests/lit/pdll/Output` (invisible in a local
+  run, where the tree is writable - the local tell was stray `Output/` dirs
+  littering the tree).  The cfg fixes it explicitly with
+  `config.test_exec_root = tempfile.mkdtemp(...)`, redirecting all scratch
+  out of the source tree.
+- **Audit sec. 5 extended (48 checks)**: skeleton files partition the 23 drr
+  ctor rows, each skeleton equals its record re-derivation, and the committed
+  evidence carries the asserted text - the pdll artifact now closes the same
+  record->Coq->MLIR->test circle the audit was built to attest.  M1 is
+  declared closed in docs/PLAN.md sec. 5.0 with this increment; M2's forced
+  order (T6 first) resumes.

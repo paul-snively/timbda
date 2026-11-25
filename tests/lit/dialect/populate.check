@@ -1,0 +1,12 @@
+; tests/lit/dialect/populate.check - the handwritten dialect-level shape test
+; (the per-record skeletons in pdll/ are generated; this one is the audit of
+; the emission's shape itself): the stock mlir-tblgen -gen-rewriters output
+; carries exactly 23 pattern structs and wires exactly 23 of them into
+; populateWithGenerated.  The per-name bijection ctor <-> pattern <-> populate
+; is asserted record-by-record by checks.rules-audit sec. 5; this file guards
+; the count and the wiring against a silently empty or padded generation.
+; RUN: FileCheck --input-file=%timbda_drr_inc %s
+; CHECK-COUNT-23: struct {{Rew[A-Za-z0-9_]+}} : public ::mlir::RewritePattern {
+; CHECK: void populateWithGenerated(::mlir::RewritePatternSet &patterns) {
+; CHECK-COUNT-23: patterns.add<{{Rew[A-Za-z0-9_]+}}>(patterns.getContext());
+; CHECK: }
