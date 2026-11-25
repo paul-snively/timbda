@@ -439,6 +439,45 @@
               test "$axioms" = "Eqdep.Eq_rect_eq.eq_rect_eq :" \
                 || { echo "FAIL unexpected axiom set"; exit 1; }
               echo "OK kernel builds, single axiom eq_rect_eq"
+              # T6 cone audit (2026-11-25, docs/PLAN.md decision 10a, docs/DESIGN-NOTES.md
+              # sec. 13.14): the CompCert-facing cone (coq/Realize.v onward) is audited in
+              # its own scope, not smuggled into the kernel sweep above (Realize.v carries
+              # no Print Assumptions line - its header forbids it).  rocqchk re-checks
+              # Timbda.Realize and its whole transitive cone; the CONTEXT SUMMARY's axiom
+              # block must match the pinned list verbatim, and the type-in-type /
+              # unsafe-(co)fixpoint / assumed-positivity sections must all stay <none>.
+              test -f _build/default/Realize.vo \
+                || { echo "FAIL the T6 realization theory (Realize.v) did not compile"; exit 1; }
+              rocq check -silent -o -Q _build/default Timbda Timbda.Realize > cone.log 2>&1
+              test "$?" = 0 || { echo "FAIL rocq check on Timbda.Realize"; tail -40 cone.log; exit 1; }
+              if grep -n "Admitted" cone.log; then
+                echo "FAIL Admitted appeared in the cone check"; exit 1
+              fi
+              for marker in \
+                "type-in-type: <none>" \
+                "unsafe (co)fixpoints: <none>" \
+                "positivity is assumed: <none>"; do
+                grep -qF "$marker" cone.log \
+                  || { echo "FAIL cone summary lacks the empty '$marker' section"; exit 1; }
+              done
+              cone_axioms=$(awk '/^\* Axioms:/{f=1;next} /^\*/{f=0} f && NF {print $1}' cone.log | sort -u)
+              expected_cone=$(printf '%s\n' \
+                Stdlib.Reals.ClassicalDedekindReals.sig_not_dec \
+                Stdlib.Reals.ClassicalDedekindReals.sig_forall_dec \
+                Stdlib.Logic.FunctionalExtensionality.functional_extensionality_dep \
+                Stdlib.Logic.Classical_Prop.classic \
+                Stdlib.Logic.ProofIrrelevance.proof_irrelevance \
+                Stdlib.Logic.Eqdep.Eq_rect_eq.eq_rect_eq \
+                Stdlib.Sets.Ensembles.Extensionality_Ensembles \
+                compcert.common.Events.inline_assembly_sem \
+                compcert.common.Events.inline_assembly_properties \
+                compcert.common.Events.external_functions_sem \
+                compcert.common.Events.external_functions_properties \
+                compcert.lib.Axioms.proof_irr \
+                compcert.x86_64.Archi.win64 | sort -u)
+              test "$cone_axioms" = "$expected_cone" \
+                || { echo "FAIL unexpected cone axiom set"; echo "got:"; echo "$cone_axioms"; exit 1; }
+              echo "OK cone audited, $(printf '%s\n' "$expected_cone" | grep -c .) pinned axioms"
             '';
             installPhase = ''
               mkdir -p $out/${stack.userContrib}/Timbda $out/${stack.userContrib}/TimbdaTests

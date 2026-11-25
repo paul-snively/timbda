@@ -451,7 +451,12 @@ attestations):
   to `eq_rect_eq` alone) survived the increment untouched; T6's statement will meet the
   semantics cone and must decide those two axioms explicitly - allowlist, separate audit
   scope, or a float-avoiding formulation for int-only fragments - BEFORE the first proof
-  line, not discovered mid-proof.
+  line, not discovered mid-proof.  *Resolved 2026-11-25 (decision 10, probes p519): separate
+  audit scope, pinned - see decision 10a and docs/DESIGN-NOTES.md § 13.14.  T6 increment A
+  landed the same day: `coq/Realize.v` (ge0/le0, clight_of, the `range_ok` guard, per-node
+  realization lemmas, the add[2,3] / gt[3,2] / Ret corners) with the cone sweep wired into the
+  `timbda-kernel` buildPhase (`rocq check -silent -o Timbda.Realize`, thirteen-axiom context
+  pinned verbatim); T6's full induction and the T4_sem composition remain owed.*
   *Ordering 2026-11-25 (decision 9): what remains of M2 and the order it must land in are
   pinned at § 5.0 - M1 closure first.*
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
@@ -714,6 +719,14 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
     allow-list stays `eq_rect_eq` only for kernel-owned theorems; the CompCert-facing cone
     (T6, then the CertiRocq/golden-test theorems) is audited against the pinned six-axiom list
     as its own block; anything outside `eq_rect_eq` (kernel) plus the six (cone) reds the gate.
+    Implementation (increment A, same day): the cone scope runs `rocq check -silent -o Timbda.Realize`
+    - rocqchk re-checks the module and its whole transitive cone, and what is pinned verbatim is
+    that CONTEXT SUMMARY: thirteen fully-qualified axioms, i.e. the six above plus the transitive
+    CompCert surface (`Events.inline_assembly_properties`, `Events.external_functions_properties`,
+    `ProofIrrelevance.proof_irrelevance`, `compcert.lib.Axioms.proof_irr`,
+    `Ensembles.Extensionality_Ensembles`, `x86_64.Archi.win64`), with the type-in-type /
+    unsafe-(co)fixpoint / positivity sections required to stay `<none>`.  A new axiom anywhere
+    in the cone reds the gate and must be adjudicated here before landing.
     (b) **Formulation**: T6 is the statement-level realization - `Clight1.exec_stmt`
     derivability of `clight_of (lower e)` from the empty context (`ge0`, `Clight.empty_env`,
     `PTree.empty val`, `Mem.empty`), observed at tempvar `lower_res`, composing with

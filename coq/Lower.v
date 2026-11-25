@@ -48,8 +48,11 @@
      inline_assembly_sem, external_functions_sem), because they live in the PREMISE TYPES
      of eval_expr/sem_binary_operation.  Ruling: the kernel gate keeps its strict
      eq_rect_eq-only allow-list for kernel-owned theorems (T7 stays there, untouched);
-     the CompCert-facing cone (T6 onward) is audited as a separate scope against the
-     pinned six-axiom list - the allow-list lives in the open, not smuggled into a proof.
+     the CompCert-facing cone (T6 onward - Realize.v) is audited as a separate scope by the
+     flake's rocqchk sweep (`rocq check -silent -o Timbda.Realize`), its thirteen-axiom
+     CONTEXT SUMMARY pinned verbatim - the allow-list lives in the open, not smuggled
+     into a proof.  No `Print Assumptions` line may appear in the cone files: their output
+     would land in build.log and break the kernel sweep.
 *)
 
 From Stdlib Require Import ZArith List.

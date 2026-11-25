@@ -2037,3 +2037,23 @@ tree; the settled rulings are decision 10 in docs/PLAN.md.
   Operational note: scratch under `/tmp/opencode` proved volatile across
   sessions - which is why this probe set is committed under docs/probes/p519/
   instead of living only in the probe dir.
+
+**Cone audit implementation (T6 increment A, landed with `coq/Realize.v`).**
+The second scope from decision 10a runs inside the `timbda-kernel`
+buildPhase: `rocq check -silent -o -Q _build/default Timbda Timbda.Realize`
+- rocqchk re-checks the module and its entire transitive cone and prints
+only the CONTEXT SUMMARY.  What gets pinned is that summary's axiom block:
+**thirteen** fully-qualified names - the six derivation-level axioms above
+plus the cone's transitive CompCert surface (`Events.inline_assembly_properties`,
+`Events.external_functions_properties`, `ProofIrrelevance.proof_irrelevance`,
+`compcert.lib.Axioms.proof_irr`, `Ensembles.Extensionality_Ensembles`,
+`x86_64.Archi.win64`) - and the sweep additionally requires the
+type-in-type / unsafe-(co)fixpoint / positivity sections to read `<none>`
+and greps `Admitted` out of the cone log.  The kernel sweep above it is
+untouched (n = 1, `eq_rect_eq`), which holds because `Realize.v` prints no
+`Print Assumptions` of its own - forbidden in its header, since its output
+would land in `build.log` and break the kernel audit.  rocqchk spellings
+that cost a measurement each: pass the library name, not the `.vo` path
+("contains library Timbda.Realize and not library Realize"); `-o` is the
+assumption dump; `-norec` is a trap here - it re-exports Stdlib internals
+as "axioms" instead of summarizing what is used.
