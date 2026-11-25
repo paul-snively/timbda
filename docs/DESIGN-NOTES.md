@@ -1665,3 +1665,35 @@ measured:
 Ledger: coinduction ledger (§ 13.3) untouched (Lower.v adds no cofix or ctrees machinery);
 kernel axiom set unchanged (`eq_rect_eq` sole, T7's own cone prints *closed*); M2 debt now
 T6 + golden test.
+
+### 13.9 The M1 attestation lanes: bazel evidence that is content-bound, and the flake visibility rule (measured 2026-11-25)
+
+Decision 9's two cheap M1 lanes landed as flake checks (`checks.rules-audit`,
+`checks.bazel-native-tests`), both in `tools/build/nix-gate.sh`'s default chain (now six
+lanes).  What was measured:
+
+- **The bazel graph is buildable on this host today**: `bazel --batch test //dialect:...`
+  completed with 2141 action-cache hits, dialect test PASSED in 7.6 s — the hermetic-llvm
+  0.8.27 / LLVM-MLIR 23.1.2 closure is fully cached (~7.6 GiB `~/.cache/bazel`).  So the
+  "bazel builds, nix checks consume as prebuilt" contract (§ 6) needs no new infra: it just
+  had to be *attested*.
+- **Evidence shape.**  `tools/build/bazel-lane.sh` (bazel side, run via `nix develop .#cpp`)
+  writes `tools/build/bazel-lane-status.txt`: the target set, the `Build completed` line, the
+  per-test PASSED summary, the recorded `bazel --version`, and a `sha256sum` block over every
+  bazel-graph input (`dialect/*` + `MODULE.bazel` + `MODULE.bazel.lock` + `.bazelversion` +
+  `pins.toml`).  The nix check refuses the status unless it records rc=0 + PASSED + the pinned
+  bazel version, and re-runs `sha256sum -c` against *its own* copy of the tree.  No timestamp:
+  the content hashes are the freshness signal, so a status can only ever vouch for the exact
+  dialect/pin content it was generated from — a changed dialect silently unbinds the evidence
+  and the gate goes red.  (First run of the check *was* the negative-path test: it correctly
+  refused before the status file existed.)
+- **The flake visibility rule — an operational trap worth remembering.**  A path literal
+  `./.` inside `flake.nix` copies only git-**tracked** content (HEAD tree plus dirty changes to
+  tracked files); brand-new untracked files are invisible to derivations — even though
+  `getFlake(...).outPath` (the flake's `self`) shows them.  A new lane's artifact
+  (`bazel-lane-status.txt`) therefore stays invisible until it is committed; the correct order
+  for anything introducing new files is: jj commit → gate bill (attests the committed tree,
+  which is what the lanes can see) → move `main` → push.  `nix flake archive-tarball` no
+  longer exists in nix 2.35; diagnose store-visible content with
+  `nix eval --impure --raw --expr '(builtins.getFlake ".").outPath'` plus `ls`, or
+  `nix show-derivation`'s `env.srcs`.

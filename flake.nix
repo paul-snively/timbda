@@ -719,6 +719,79 @@
               cp golden.expected $out/
             '';
           };
+
+          # --- M1 lanes (decision 9 § 5.0 items 3-4, landed 2026-11-25) -----
+          # The coverage audit as a gate lane: tools/rules-audit.py diffs the
+          # TimbdaRule records <-> coq/Rewriting.v ctors + Eval.v selected_rows
+          # <-> RewSound_* presence in Denotation.v <-> TimbdaPatterns.td DRR
+          # defs <-> docs/RULES-AUDIT.md, plus the row/status/category
+          # arithmetic.  Its "exit 0 = all green" is now gate evidence, not a
+          # local ritual (docs/PLAN.md § 5 M1 item 3).
+          rules-audit = pkgs.stdenv.mkDerivation {
+            pname = "timbda-rules-audit";
+            version = "0.1.0";
+            src = ./.;
+            nativeBuildInputs = [ pkgs.python3 ];
+            phases = [ "buildPhase" "installPhase" ];
+            buildPhase = ''
+              set -e
+              rc=0
+              cd $src
+              python3 tools/rules-audit.py > $NIX_BUILD_TOP/rules-audit.log 2>&1 || rc=$?
+              test "$rc" = 0 || { echo "FAIL rules-audit rc=$rc"; cat $NIX_BUILD_TOP/rules-audit.log; exit 1; }
+              grep -q '^RESULT: PASS' $NIX_BUILD_TOP/rules-audit.log \
+                || { echo "FAIL audit printed no PASS marker"; cat $NIX_BUILD_TOP/rules-audit.log; exit 1; }
+            '';
+            installPhase = ''
+              mkdir -p $out
+              cp $NIX_BUILD_TOP/rules-audit.log $out/
+              grep '^RESULT: PASS' $NIX_BUILD_TOP/rules-audit.log > $out/status.txt
+            '';
+          };
+
+          # bazel attestation, per § 6's "bazel builds, nix checks consume as
+          # prebuilt": tools/build/bazel-lane.sh (bazelisk + hermetic-llvm from
+          # MODULE.bazel) records the dialect build/test result in
+          # tools/build/bazel-lane-status.txt; this check refuses the evidence
+          # unless (a) it reports rc=0 with a PASSED dialect-test summary, (b)
+          # its recorded bazel version equals the pinned .bazelversion, and (c)
+          # `sha256sum -c` over its source-hash block matches THIS tree's
+          # dialect/pin inputs - a stale status against a changed dialect is a
+          # red gate, never a pass (docs/PLAN.md § 5 M1 item 4).
+          bazel-native-tests = pkgs.stdenv.mkDerivation {
+            pname = "timbda-bazel-native-tests";
+            version = "0.1.0";
+            src = ./.;
+            phases = [ "buildPhase" "installPhase" ];
+            buildPhase = ''
+              set -e
+              ST=$src/tools/build/bazel-lane-status.txt
+              test -f "$ST" \
+                || { echo "FAIL no bazel-lane status; run: nix develop .#cpp -c tools/build/bazel-lane.sh"; exit 1; }
+              grep -q '^bazel_rc=0$' "$ST" || { echo "FAIL status does not record rc=0"; exit 1; }
+              grep '^test_summary=' "$ST" | grep -q 'PASSED' \
+                || { echo "FAIL status carries no PASSED dialect-test summary"; exit 1; }
+              if grep '^test_summary=' "$ST" | grep -qE 'FAILED|TIMEOUT'; then
+                echo "FAIL dialect test summary records a failure"; exit 1
+              fi
+              grep -q '^build_targets=.*timbda_dialect_test' "$ST" \
+                || { echo "FAIL lane target set incomplete"; exit 1; }
+              BV=$(grep -m1 '^bazel_version=' "$ST" | cut -d= -f2-)
+              test "$BV" = "bazel $(cat $src/.bazelversion)" \
+                || { echo "FAIL recorded bazel_version='$BV' != .bazelversion"; exit 1; }
+              awk '/^=== source hashes ===$/{f=1;next} f' "$ST" > $NIX_BUILD_TOP/hashes.txt
+              test -s $NIX_BUILD_TOP/hashes.txt || { echo "FAIL status carries no source-hash block"; exit 1; }
+              cd $src
+              sha256sum -c $NIX_BUILD_TOP/hashes.txt
+              echo "ok: bazel evidence bound to this exact tree ($(wc -l < $NIX_BUILD_TOP/hashes.txt) hashed inputs)"
+            '';
+            installPhase = ''
+              mkdir -p $out
+              cp $src/tools/build/bazel-lane-status.txt $out/
+              cp $NIX_BUILD_TOP/hashes.txt $out/
+              echo "ok: bazel-native-tests lane green ($(grep -m1 '^bazel_version=' $src/tools/build/bazel-lane-status.txt | cut -d= -f2-), dialect test PASSED, evidence sha256-bound)" > $out/status.txt
+            '';
+          };
         });
     };
 }

@@ -262,23 +262,30 @@ attestations):
   and the kernel audit (zero `Admitted`, sole axiom `eq_rect_eq`).
 
 - **M1 - OPEN as of 2026-11-25.** Landed: `Timbda.td` ODS + 72 `TimbdaRuleRecord` rows; DRR
-  rewriters (`TimbdaPatterns.td` -> tblgen `.inc` -> `populateWithGenerated`). Remaining, per
-  decision 9's rulings:
+  rewriters (`TimbdaPatterns.td` -> tblgen `.inc` -> `populateWithGenerated`); and the two
+  attestation lanes of decision 9 (both green 2026-11-25, now in the gate chain's default set):
+  - *rules-audit lane*: `checks.rules-audit` runs `tools/rules-audit.py` in the gate - the
+    coverage audit (35 ctor rows: coq ctor = audit tag = record = DRR pattern; 72/35/37/3 row
+    arithmetic; 23-pattern DRR bijection; zero `Admitted`) is gate evidence, not a local ritual.
+  - *bazel attestation lane*: `tools/build/bazel-lane.sh` runs the dialect graph
+    (tblgen gen + canonicalization TU + dialect ops lib + `timbda_dialect_test`) under
+    bazelisk + the MODULE.bazel-pinned hermetic-llvm (measured: the LLVM/MLIR 23.1.2 closure is
+    fully cached on this host - dialect test PASSED with 2141 action-cache hits), and
+    `checks.bazel-native-tests` consumes only the recorded status - refusing unless it carries
+    rc=0, a PASSED dialect-test summary, the pinned bazel version, and a `sha256sum -c`-verified
+    source-hash block matching the exact dialect/pin inputs nix evaluates. Stale prebuilt
+    evidence fails the gate; the negative path was exercised before the first green run.
+  Remaining, per decision 9's rulings:
   1. `dialect/tblgen-rocq/` backend per sec. 2 - `-gen-rocq-ast`, `-gen-rocq-rules`,
      `-gen-rocq-checker` generating into `coq/` for the rule-record family; hand-glued `Rew` /
      AST artifacts retire as generated files land. `-gen-rocq-externs` ships with the
-     ContextExtern family at M4 (recorded binding).
+     ContextExtern family at M4 (recorded binding). The rules-audit lane extends to assert
+     generated-file provenance once this lands.
   2. pdll lit-test skeletons + flake checks `dialect-lit-tests` and `tblgen-rocq-golden`.
-  3. `tools/rules-audit.py` promoted from local ritual to a gate lane (`checks.rules-audit`);
-     once item 1 lands it also asserts generated-file provenance (generated artifacts marked,
-     no hand-written stand-ins behind them).
-  4. Bazel-side attestation: `bazel-native-tests` (dialect build + dialect test) wired per
-     sec. 6's "bazel builds, nix checks consume as prebuilt" contract. Today the bazel side has
-     no attested lane at all.
   Recorded deviation: T4 (2026-11-23), T5 (2026-11-24), the CompCert toolchain (2026-11-25) and
   T7 (2026-11-25) all landed while M1 stayed open - cause: no written DoD beyond M-1's, and
   M2's kernel path has no hard dependency on M1 artifacts. The debt is paid by ordering, not
-  argument: T6, the CertiRocq wiring, and the real golden test do not start until M1 items 1-4
+  argument: T6, the CertiRocq wiring, and the real golden test do not start until M1 items 1-2
   land and M1 is declared closed here.
   Bound elsewhere (recorded so nothing floats): ContextExtern dual-side declarations +
   annotation chain (sec. 2 artifact 5) -> M4; vendored DCont fork subtree (sec. 6) -> M4/M5

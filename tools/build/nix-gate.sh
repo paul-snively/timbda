@@ -65,8 +65,9 @@
 #                                            disables it, which is the way to make this script worse.
 #   TIMBDA_NIX_GATE_JOBS      default 1      passed as `nix build --max-jobs`.
 #   TIMBDA_NIX_GATE_ALLOW     default no     `yes` runs past a failed preflight, at your own risk.
-#   TIMBDA_NIX_GATE_TARGETS   default: the four documented targets, cheapest-first; a
-#                                            space-separated override.
+#   TIMBDA_NIX_GATE_TARGETS   default: the six documented targets (the four M2-era
+#                                            lanes + the two M1 lanes of decision 9 § 5.0),
+#                                            cheapest-first; a space-separated override.
 #
 # Exit codes: 0 all targets green; 1 a target failed in nix/Coq; 2 preflight refused; 124 the
 # host watchdog killed a target's build (measured floors crossed while it ran).
@@ -157,9 +158,12 @@ if [ "$#" -eq 0 ]; then
   fi
   if [ "${#TARGETS[@]}" -eq 0 ]; then
     # cheapest-first, Coq-side targets last: on a headroom-poor host the expensive failure should be
-    # the one that costs the least already-spent work.
+    # the one that costs the least already-spent work.  M1 lanes (decision 9 § 5.0) ride
+    # the chain too: rules-audit and bazel-native-tests are seconds each.
     TARGETS=(
       .#checks.x86_64-linux.version-consistency
+      .#checks.x86_64-linux.rules-audit
+      .#checks.x86_64-linux.bazel-native-tests
       .#checks.x86_64-linux.corpus-differential
       .#packages.x86_64-linux.timbda-kernel
       .#checks.x86_64-linux.golden-test
