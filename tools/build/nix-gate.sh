@@ -15,7 +15,7 @@
 #     `memory.max = max`.
 #   * `nix show-config` on this box: `max-jobs = 20`, `cores = 0`, `sandbox = true`.  So
 #     `nix build a b c d e` may run up to 20 derivations concurrently, each with its own
-#     dune/Rocq compile.  `coq/dune-workspace`'s `(jobs 2)` limits dune *inside one* derivation and
+#     dune/Rocq compile.  `coq/dune-workspace`'s `(jobs 1)` limits dune *inside one* derivation and
 #     says nothing about how many derivations nix builds at once.
 #   * The uncontrolled version of that is what this box died of.  `journalctl -u earlyoom -b -1`
 #     for 08:24:41-08:33:56 (previous boot): 30 SIGTERM decisions, 28 of them the model server

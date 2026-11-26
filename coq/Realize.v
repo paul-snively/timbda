@@ -15,7 +15,11 @@
    over Seq/Block/TupE/Block sequencing is INCREMENT B below (the T6_exec_ws
    theorem); the composition with T4_sem's value witness is increment C.  The
    end-to-end corners here (add[2,3], gt[3,2], Ret 2) fix the shapes that
-   increment B generalizes.
+   increment B generalizes.  Since the increment-C split (2026-11-26) the
+   realization side is a fan-in - RealizeBridges, RealizeDiv, RealizeCorners
+   composing in RealizeCompose - and this file is the CompCert-side hub they
+   read; increment D (CertiRocq->C) lands in its own leaf, never by
+   inflating this one.
 
    AUDIT.  This file is part of the CompCert-facing cone (decision 10a): its
    axioms - six for any derivation's Print Assumptions (the Flocq pair,
@@ -35,6 +39,13 @@ Require Import compcert.lib.Coqlib compcert.lib.Integers compcert.lib.Maps
   compcert.cfrontend.ClightBigstep.
 Require Import Timbda.Syntax Timbda.Rewriting Timbda.Semantics Timbda.Eval
   Timbda.Checks Timbda.Lower.
+(* The Int64<->Z bridge layer, the signed window (int64_range /
+   int64_range_signed / signed_repr_min) and the increment-C div/bridge
+   measurements live in the leaf modules since the 2026-11-26 split - see
+   RealizeBridges.v's header.  The range GUARD machinery
+   (val_int64_ok / prim_node_range_ok / range_ok) stays here: it is T6's
+   hypothesis, not a bridge. *)
+Require Import Timbda.RealizeBridges.
 
 (* ---------- the empty Clight context of the realization (p519 spelling) ---------- *)
 
@@ -56,11 +67,6 @@ Fixpoint clight_of (l : Lower.lstmt) : Clight.statement :=
   end.
 
 (* ---------- the 64-bit range guard (decision 10c) ---------- *)
-
-(* The signed window [Int64.min_signed, Int64.max_signed] - the exact interval
-   on which Int64.repr is value-preserving (signed_repr_eq, Integers.v). *)
-Definition int64_range (z : Z) : bool :=
-  Z.leb Int64.min_signed z && Z.leb z Int64.max_signed.
 
 Definition val_int64_ok (v : Val) : bool :=
   match v with VInt z => int64_range z | _ => true end.
@@ -200,16 +206,9 @@ Compute range_ok e_gt32.          (* true *)
    ============================================================================ *)
 
 
-(* z64 is the syntactic mirror of Lower.v's vconst: every Val shape maps to the
-   Int64 constant that vconst actually emits (the placeholder arm included). *)
-Definition z64 (v : Val) : Int64.int :=
-  match v with
-  | VInt z => Int64.repr z
-  | VTrue  => Int64.repr 1
-  | VFalse => Int64.repr 0
-  | VUnit  => Int64.repr 0
-  | _      => Int64.repr 0
-  end.
+(* z64 lives in Lower.v since increment C (the PDiv floor fold needs it at the
+   prim_expr arm); its definition is unchanged - the syntactic mirror of
+   Lower.v's vconst, every Val shape to the Int64 constant vconst emits. *)
 
 Definition clight_of_val (v : Val) : val := Vlong (z64 v).
 
@@ -218,7 +217,10 @@ Definition prim_clight (p : Prim) (vs : list Val) : val :=
   | PAdd, a :: b :: nil => Vlong (Int64.add (z64 a) (z64 b))
   | PSub, a :: b :: nil => Vlong (Int64.sub (z64 a) (z64 b))
   | PMul, a :: b :: nil => Vlong (Int64.mul (z64 a) (z64 b))
-  | PDiv, a :: b :: nil => Vlong (Int64.divs (z64 a) (z64 b))
+  (* PDiv: floor fold, decision 12 - matches the folded Lower.prim_expr constant
+     and the kernel prim_total Z.div; the truncating Int64.divs is NOT used
+     (the measured gap lives in the increment C section below). *)
+  | PDiv, a :: b :: nil => Vlong (Int64.repr (Z.div (vint_z a) (vint_z b)))
   | PNeg, a :: nil      => Vlong (Int64.neg (z64 a))
   | PLt,  a :: b :: nil => Val.of_bool (Int64.cmp Clt (z64 a) (z64 b))
   | PGt,  a :: b :: nil => Val.of_bool (Int64.cmp Cgt (z64 a) (z64 b))
@@ -336,23 +338,6 @@ Proof.
   intros. cbv [sem_unary_operation sem_neg classify_neg Lower.tint64]. reflexivity.
 Qed.
 (* ---------- the div guards, derived from the checked fragment ---------- *)
-
-(* int64_range is exactly the interval on which Int64.repr preserves the value
-   (Int64.signed_repr, Integers.v). *)
-Lemma int64_range_signed : forall z : Z,
-  int64_range z = true -> Int64.signed (Int64.repr z) = z.
-Proof.
-  intros z Hz.
-  unfold int64_range in Hz. apply andb_and in Hz.
-  destruct Hz as [H1 H2]. apply Z.leb_le in H1. apply Z.leb_le in H2.
-  apply Int64.signed_repr. lia.
-Qed.
-
-Lemma signed_repr_min : Int64.signed (Int64.repr Int64.min_signed) = Int64.min_signed.
-Proof.
-  apply Int64.signed_repr. unfold Int64.min_signed, Int64.max_signed.
-  generalize Int64.half_modulus_pos. lia.
-Qed.
 
 (* a nonzero in-range divisor survives Int64.eq against zero *)
 Lemma int64_eq_zero_ne : forall z : Z,
@@ -736,8 +721,10 @@ Proof.
     cbv [prim_bare_ok] in Hbare'. discriminate.
 Qed.
 
-(* The PDiv eval guards, packaged from prim_guard_ok so the per-arm dispatch in
-   prim_expr_eval never nests brackets. *)
+(* The PDiv eval guards, packaged from prim_guard_ok.  Since increment C the
+   prim_expr_eval dispatch never uses them (the PDiv arm is a folded constant,
+   decision 12); they stay as the measured bridges pinning CompCert's runtime
+   Odiv behavior - the semantics the fold deliberately does NOT import. *)
 Lemma odiv_ready : forall (a b : Val) (le : Clight.temp_env),
   prim_guard_ok PDiv (a :: b :: nil) = true ->
   Clight.eval_expr ge0 Clight.empty_env le Mem.empty
@@ -787,11 +774,12 @@ Proof.
     [ apply eval_const64 | apply eval_const64
     | rewrite !vconst_z64; apply eval_bin64_Omul
     | apply eval_const64 ].
-  - (* PDiv *)
+  - (* PDiv: increment C floor fold - the emitted node is a folded Econst_long
+       constant (decision 12), so all four arms close via eval_const64; no Odiv
+       runtime dispatch remains. *)
     destruct vs as [ | a [ | b [ | c rest ] ] ]; cbn [Lower.prim_expr prim_clight];
     [ apply eval_const64 | apply eval_const64
-    | rewrite !vconst_z64; apply (odiv_ready a b le Hg)
-    | apply eval_const64 ].
+    | apply eval_const64 | apply eval_const64 ].
   - (* PNeg *)
     destruct vs as [ | a [ | b [ | c rest ] ] ]; cbn [Lower.prim_expr prim_clight];
     [ apply eval_const64

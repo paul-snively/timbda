@@ -71,7 +71,8 @@ Calibration, all measured on this machine:
   3 s, exit 124, named verdict line naming the floor and the measured value, and no orphaned
   `dune`/`rocqworker` afterwards.
 
-Concurrency comes from `coq/dune-workspace` (`(jobs 2)`), not from dune's auto-detection (which picked
+Concurrency comes from `coq/dune-workspace` (`(jobs 1)` since 2026-11-26; `(jobs 2)` before that -
+the measured rationale for the drop is in docs/DESIGN-NOTES.md § 4.2), not from dune's auto-detection (which picked
 20 on this box, i.e. 20 concurrent `rocqworker`s - a self-inflicted OOM).  Knobs are env vars, listed
 in the script header; `TIMBDA_COQ_ALLOW_UNSIZED=yes` skips containment when the point of the run *is* to
 measure the uncapped peak.
@@ -108,7 +109,7 @@ Why it is not just `coq-build.sh` with `nix build` inside it - measured on this 
   worker that runs `coqc` is in the daemon's cgroup tree, where `memory.max = max`.  Wrapping a nix
   build in the envelope that contains `dune build` would be a placebo - worse than no cap, because it
   *looks* contained;
-- `nix show-config`: `max-jobs = 20`, `sandbox = true`.  `(jobs 2)` in `coq/dune-workspace` limits dune
+- `nix show-config`: `max-jobs = 20`, `sandbox = true`.  `(jobs 1)` in `coq/dune-workspace` limits dune
   inside **one** derivation; it says nothing about how many *derivations* nix compiles at once, and
   `nix build` with several targets on a 20-core box uses 20;
 - what that costs here, from `journalctl -u earlyoom -b -1` (during a `nix build` gate chain that

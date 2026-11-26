@@ -11,8 +11,15 @@
 ; docs/DESIGN-NOTES.md sec. 4.2).  20 concurrent workers turn that kind of
 ; unit into a machine-wide OOM: `coq/_build/log` ends `[got signal TERM]`,
 ; dune exits 1 with no Coq error at all, and the .vo set is simply incomplete
-; (docs/DESIGN-NOTES.md sec. 4.1 and sec. 4.2).  2 is what a machine that also
-; hosts a model server can afford.
+; (docs/DESIGN-NOTES.md sec. 4.1 and sec. 4.2).  2 was what a machine that also
+; hosts a model server could afford; as of 2026-11-26 it is not enough: the
+; model server (strata-host) was measured at ~41-50 GiB resident, a single
+; Realize-class coqc unit (T6_exec_ws) at ~15 GiB, and two concurrent such
+; units - what (jobs 2) allows exactly - died silently twice (RC=1/RC=143, no
+; Coq error).  Serial is the policy: the realization side is additionally
+; split fan-in (RealizeBridges/Div/Corners/Compose leaves under the Realize
+; hub, docs/PLAN.md decision 12) so no single unit re-checks the whole
+; accumulated history.
 ;
-; Override on a quiet machine: `dune build -j 8`; go lower with -j 1.
-(jobs 2)
+; Override on a quiet machine: `dune build -j 8`.
+(jobs 1)

@@ -160,6 +160,17 @@ mkdir -p "$(dirname "$LOG")" || fail "cannot create the log directory for $LOG"
 # dialect/tblgen-rocq); its .vo is as mandatory as any hand-written theory.
 # M1 item 1 completion: RuleAst (generated RuleID/selected_rows, the eval-side
 # AST) and CheckerManifest (generated soundness registry) ride the same rule.
+# Not listed, deliberately: the T6 Realize family (Realize + the
+# RealizeBridges/RealizeDiv/RealizeCorners/RealizeCompose fan-in).  This
+# wrapper's default envelope (3G) predates the family; the family's peak was
+# once measured at ~15 GiB (the pre-split WIP grinding Leibniz-`=` corner
+# goals) and re-measured 2026-11-26 at 499 MiB for Realize.v / 655 MiB for the
+# whole lane after the `≅` restatement (DESIGN-NOTES sec. 4.2, 13.16) - the
+# 3G envelope still sits under the lane's clean-build working set, so the
+# family is gated where the memory is
+# actually uncontained - the flake timbda-kernel buildPhase (artifact checks +
+# the rocq check cone audit on the Realize/RealizeCompose roots).  Running
+# this wrapper on the current tree needs TIMBDA_COQ_MEMORY_MAX raised.
 EXPECTED_VO=(Syntax Rewriting RewRules RuleAst CheckerManifest Semantics Denotation Eval Checks ChecksEval KernelStub Probe Lower tests/KernelTest tests/ChecksTest tests/LowerTest)
 missing_vos() {
   local out=() t
@@ -220,7 +231,7 @@ AVAIL_MIN_KIB=$(awk '/^MemAvailable/{print $2}' /proc/meminfo)
 SWAPFREE_MIN_KIB=$(awk '/^SwapFree/{print $2}' /proc/meminfo)
 SWAP_TOTAL_KIB=$(awk '/^SwapTotal/{print $2}' /proc/meminfo)
 
-echo "build: dune build ${*:-} (default concurrency is coq/dune-workspace: jobs 2)"
+echo "build: dune build ${*:-} (default concurrency is coq/dune-workspace: jobs 1)"
 echo "watchdog floors: host MemAvailable >= $((MIN_AVAIL_KIB/1024)) MiB, swap headroom >= $((MIN_SWAPFREE_KIB/1024)) MiB (swap total $((SWAP_TOTAL_KIB/1024)) MiB)"
 set -m   # job control: the build gets its own process group, so the watchdog can stop the subtree
 /usr/bin/time -v dune build "$@" > "$LOG" 2>&1 &

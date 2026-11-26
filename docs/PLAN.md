@@ -157,9 +157,13 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
    *Increment B landed 2026-11-25 (probe p524):* `Realize.v`'s `T6_exec_ws`/`T6_exec` prove the
    statement-level part outright - every tree with `ws_expr d e = det_struct e = range_ok e = true`
    executes from `ge0`/`Clight.empty_env`/`Mem.empty`, and the final `lower_res` pin is
-   characterized by the monadic fold `lower_final` (decision 11).  What remains owed is the
-   composition with `T4_sem`'s value witness (increment C) and the Int64-to-kernel-Z bridges
-   for the corpus wiring.
+   characterized by the monadic fold `lower_final` (decision 11).  *Increment C landed
+   2026-11-26 (probe p528, decision 12):* the Int64-to-kernel-Z bridges (repr-level arith,
+   signed-level cmp, the `int64_eq_signed` route) and the three-way correspondence composition
+   (`T6_T4_match_add` / `T6_T4_match_PGt` / `T6_T4_match_PDiv`: the exact corner denotation at
+   fuel 6 glued to `T6_exec_ws`'s exec-and-pin witness), with the div semantics fork closed by a
+   floor constant fold in `Lower.prim_expr`'s PDiv arm - the kernel floors, CompCert truncates,
+   and the fold makes the lowering emit the floor (docs/DESIGN-NOTES.md § 13.15).
 7. T7 No-context-call theorem: det_check e = true -> no_switch (lower e) — structural induction
    on the Gallina lowering function. The anti-naivety guarantee verbatim.
    Landed 2026-11-25 (docs/DESIGN-NOTES.md § 13.8): `no_switch` is `no_switch_l` over
@@ -397,7 +401,8 @@ attestations):
   decision-3 divergence reachable instead of latent (docs/RULES-AUDIT.md § 3 C1, docs/DESIGN-NOTES.md
   § 9).  All harness scaffolding stays in `tools/` + `tests/`, so the kernel gate (zero `Admitted`,
   exactly one axiom) is untouched by it.  Details: tools/corpus/README.md, docs/DESIGN-NOTES.md § 8.
-  Build memory is a build-infrastructure fact, not an aside: `coq/dune-workspace` pins `(jobs 2)` and
+  Build memory is a build-infrastructure fact, not an aside: `coq/dune-workspace` pins `(jobs 1)`
+  (measured rationale, 2026-11-26: docs/DESIGN-NOTES.md § 4.2) and
   `tools/build/coq-build.sh` runs the build inside a verified cgroup envelope with an artifact check
   (docs/DESIGN-NOTES.md § 4.2).
 - M1: dialect + generator. Timbda.td, DRR rewriters, tblgen-rocq backend, pdll tests, paper-rule
@@ -465,8 +470,14 @@ attestations):
   pinned verbatim).  *Increment B landed the same day (probe p524):* `T6_exec_ws` - the full
   statement-level induction over the checked fragment, with the monadic `lower_final`
   value-characterization and the `prim_guard_ok`/`prim_guard_ok_canon` transfer of the kernel's
-  div guards to CompCert's (decision 11) - plus `T6_exec` at `le0`; the T4_sem composition
-  remains owed (increment C).*
+  div guards to CompCert's (decision 11) - plus `T6_exec` at `le0`.  *Increment C landed
+  2026-11-26 (probe p528, decision 12):* the div semantics fork measured and closed at
+  lowering time (kernel `Z.div` floors, CompCert `Int64.divs` truncates, the dialect `divZ`
+  ladder mirrored and pinned to the floor), the Int64-to-kernel-Z bridges, and the
+  `T4_sem`-side composition (`T6_T4_match_add`/`T6_T4_match_PGt`/`T6_T4_match_PDiv`), whose
+  corner-denotation half first landed mis-stated as Leibniz equalities and is re-pinned at ctrees'
+  structural equality `≅` (decision 12f, DESIGN-NOTES § 13.16);
+  what remains of M2 is the CertiRocq->C wiring and the golden test.*
   *Ordering 2026-11-25 (decision 9): what remains of M2 and the order it must land in are
   pinned at § 5.0 - M1 closure first.*
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
@@ -781,6 +792,66 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
      `length sl + d`, `%nat`-pinned; Seq threads `le` through `exec_seq_close`); `T6_exec`
      is the `d = 0`, `le = le0` corollary.  Increment C - the Int64-to-kernel-Z bridges and
      the `T4_sem` composition - stays owed per decision 10b; these rulings bind it.
+ 12. (2026-11-26) **T6 increment C: the div semantics fork measured and closed by a floor
+     fold at lowering (`coq/Lower.v` and the realization fan-in - the `Realize` hub plus
+     `RealizeBridges` / `RealizeDiv` / `RealizeCorners` / `RealizeCompose`).**  Probe p528 (sources at
+     docs/probes/p528/), proven against the installed store tree before the `coq/` edits.
+     (a) **The fork**: the kernel's `Z.div` is a true FLOOR (`Z.div 7 (-2) = -4`);
+     CompCert's `Int64.divs = Int64.repr (Z.quot (signed .) (signed .))` TRUNCATES
+     (`7 divs (-2) = -3`; `Int64.mods = Z.rem`, dividend-signed); the dialect's `divZ`
+     (`TimbdaCanonicalization.cpp` 176-183) is truncation plus a ladder correction.  The Coq
+     mirror `divZ_ladder` with `divZ_ladder_div` (five quadrant rungs) pins the ladder to
+     `Z.div` exactly.  The earlier DESIGN-NOTES § 13.14 claim "`Z.div` truncates like
+     CompCert's int64 division" is retracted as measured false.  (b) **The closure**:
+     `Lower.prim_expr`'s PDiv arm constant-folds
+     `Econst_long (Int64.repr (Z.div (vint_z a) (vint_z b))) tint64` and `prim_clight`
+     mirrors it - no `Cop.Odiv` node is ever emitted, so CompCert's truncating runtime
+     division and its guard ladder play no part in T6; `odiv_ready`/`sem_Odiv_long`/
+     `eval_bin64_Odiv` stay as measured bridges the dispatch never reaches.  Soundness:
+     `app_node_ok` pins operands literal, `vint_z_VInt` says the signed reading recovers the
+     kernel Z for `int64_range` operands, and an out-of-range div result fails
+     `prim_node_range_ok` and is outside T6's claim (`z64` + `vint_z` therefore move to
+     `Lower.v`, the only direction the imports allow).  (c) **The composition**: the exact
+     corner denotation (`denote (prim_corner p [..]) 6%nat = sret (SOk ..)` - `e_fuel` of a
+     two-operand corner is 6) glued to `T6_exec_ws`'s exec-and-pin witness by
+     `T6_T4_match_add` / `T6_T4_match_PGt` / `T6_T4_match_PDiv`, discharging decision 10d's
+     three-way correspondence on the prim corners: arith results as
+     `Vlong (Int64.repr of the kernel result)`, guard success as `Vint (Int.repr 1)`.
+     (d) **Toolchain rulings measured**: `cbn` (even bare, even delta-listed) refuses to
+     unfold an applied constant like `vint_z` under `Z.div` - `unfold` fires; an
+     `Int64.repr`-based value claim without `int64_range` hypotheses is false, not merely
+     unprovable; `Z_lt_dec` is a 3-way sumbool in 9.1 (`Z_lt_ge_dec` for binary splits);
+     `rewrite` with a hypothesis-bearing lemma puts the main goal FIRST in the bullet
+     sequence (`apply` last); `lia` refuses div/quot identities head-on - route through
+     `Z.div_unique` with `Z.quot`/`Z.rem` shielded by `set ... in *`.  (e) **Build-unit policy
+     (the fan-in split, same day)**: landed as one ~750-line `Realize.v` section the increment
+     killed the box twice silently - `strata-host` measured 41.5-50 GiB RSS, the hub coqc unit
+     ~15 GiB, `(jobs 2)` allowing exactly two such peaks - dune RC=1 then coqc RC=143, each with
+     no Coq error and no `Realize.vo` (the sec. 4.1 kill signature).  The increment-C text moved
+     *verbatim* into leaves - `RealizeBridges.v`, `RealizeDiv.v`, `RealizeCorners.v`,
+     `RealizeCompose.v` - with `Realize.v` staying the CompCert-side hub they read;
+     `coq/dune-workspace` went to `(jobs 1)`; the flake cone sweep checks the roots
+     `Timbda.Realize` + `Timbda.RealizeCompose` (Compose pulls every leaf transitively), the
+     thirteen-axiom pin re-attesting against both at the landing gate.  Every future increment -
+     D (CertiRocq->C) next - lands in its own leaf, never by inflating the hub.  (f) **Corner
+     denotations restated at ctrees' structural equality `≅` (the increment-C second half, same
+     day)**: the fuel-6 corner goals spelled as Leibniz equalities are FALSE statements, not hard
+     ones - `>>=` is ctrees' CoFixpoint `subst`, unstuck only under `observe`, so no delta list
+     fires a bind chain and any strict normalization re-materializes the cofix tower per fuel
+     layer (measured: `kernel_cbn` 1 s at fuel 4, 18 s at fuel 5, stall at fuel 6; the uncapped
+     61 GiB `rocqworker` earlyoom shot was this shape).  The landed spelling is
+     `denote corner 6%nat ≅ sret (SOk v)` proved by the arm-equation machine - one
+     `reflexivity`-level `denE`/`denE_tup`/`apply_c` arm equation per rewrite, binds fired by
+     `bind_sret_l`, closure by a negative-delta `cbn -[...]` pass that blocks every fixpoint
+     (DESIGN-NOTES § 13.16).  `cbn`'s refusal-to-unfold-then-revert semantics (a delta-listed
+     unfold whose subtree is stuck reverts the whole cascade) routes guard-bearing structure claims
+     through one-line `prim_total_res_*_true` equations; `prim_args_ok` is the structural-prim
+     arity check, so `det_struct` of a failed-guard corner is genuinely false.  The same probes
+     re-measured the build-unit memory policy: a clean full-lane `dune build` peaks at 655 MiB
+     (`Realize.v` 499 MiB, `KernelTest.v` 655 MiB) and the cone sweep at 515 MiB - decision 12e's
+     ~15 GiB hub-unit figure belonged to the grinding Leibniz-`=` WIP, so `(jobs 1)` stays as
+     concurrency policy and not as a per-unit budget (DESIGN-NOTES sec. 4.2, 13.16).  With this,
+     M2's remaining items are the CertiRocq->C wiring and the golden test.
 
 ## 9. Known reference anchors
 

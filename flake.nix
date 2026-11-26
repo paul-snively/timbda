@@ -441,15 +441,21 @@
               echo "OK kernel builds, single axiom eq_rect_eq"
               # T6 cone audit (2026-11-25, docs/PLAN.md decision 10a, docs/DESIGN-NOTES.md
               # sec. 13.14): the CompCert-facing cone (coq/Realize.v onward) is audited in
-              # its own scope, not smuggled into the kernel sweep above (Realize.v carries
-              # no Print Assumptions line - its header forbids it).  rocqchk re-checks
-              # Timbda.Realize and its whole transitive cone; the CONTEXT SUMMARY's axiom
-              # block must match the pinned list verbatim, and the type-in-type /
-              # unsafe-(co)fixpoint / assumed-positivity sections must all stay <none>.
+              # its own scope, not smuggled into the kernel sweep above (no file of the
+              # Realize family carries a Print Assumptions line - the headers forbid it).
+              # Since the increment-C fan-in split (2026-11-26, decision 12) the family is
+              # the Realize hub plus the leaves RealizeBridges/RealizeDiv/RealizeCorners
+              # composing in RealizeCompose; checking the two roots covers all of them
+              # transitively.  rocqchk re-checks the whole transitive cone; the CONTEXT
+              # SUMMARY's axiom block must match the pinned list verbatim, and the
+              # type-in-type / unsafe-(co)fixpoint / assumed-positivity sections must all
+              # stay <none>.
               test -f _build/default/Realize.vo \
                 || { echo "FAIL the T6 realization theory (Realize.v) did not compile"; exit 1; }
-              rocq check -silent -o -Q _build/default Timbda Timbda.Realize > cone.log 2>&1
-              test "$?" = 0 || { echo "FAIL rocq check on Timbda.Realize"; tail -40 cone.log; exit 1; }
+              test -f _build/default/RealizeCompose.vo \
+                || { echo "FAIL the T6 composition leaf (RealizeCompose.v) did not compile"; exit 1; }
+              rocq check -silent -o -Q _build/default Timbda Timbda.Realize Timbda.RealizeCompose > cone.log 2>&1
+              test "$?" = 0 || { echo "FAIL rocq check on Timbda.Realize/Timbda.RealizeCompose"; tail -40 cone.log; exit 1; }
               if grep -n "Admitted" cone.log; then
                 echo "FAIL Admitted appeared in the cone check"; exit 1
               fi

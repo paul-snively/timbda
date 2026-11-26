@@ -275,11 +275,22 @@ reports `axioms referenced (1): Eqdep.Eq_rect_eq.eq_rect_eq`.
    `memory.high` counts in the hundred-thousands = throttled to a stall, which looks the same in
    dune's output).
 
-**Concurrency is baked into the project**, not auto-detected: `coq/dune-workspace` sets `(jobs 2)`.
-(dune requires `(lang dune 3.21)` as the first line of that file, and `(jobs 2)` is a top-level
-field - writing `(dune (jobs 2))` gives `Invalid first line` / `Unknown field "dune"`.)  dune's
+**Concurrency is baked into the project**, not auto-detected: `coq/dune-workspace` sets `(jobs 1)`
+as of 2026-11-26 (it read `(jobs 2)` until then).
+(dune requires `(lang dune 3.21)` as the first line of that file, and `(jobs 1)` is a top-level
+field - writing `(dune (jobs 1))` gives `Invalid first line` / `Unknown field "dune"`.)  dune's
 auto-detection picked 20-way concurrency on this 20-core box, which is a self-inflicted OOM before
-Strata is even considered.  Override on a quiet machine with `dune build -j 8`, go lower with `-j 1`.
+Strata is even considered.  The 2026-11-26 drop to serial is measured, not cautious: at the time the T6 hub
+unit appeared to cost a ~15 GiB coqc (`strata-host` measured 41.5-50 GiB resident the same evening,
+`(jobs 2)` producing two silent deaths - dune RC=1 / coqc RC=143, no Coq error line, no `.vo`, the
+exact failure signature sec. 4.1 warns about).  Re-measured the same day AFTER the `≅` restatement
+(sec. 13.16): a clean full-lane `dune build` sampled at 0.3 s peaks at 655 MiB overall (`Realize.v`
+499 MiB, `tests/KernelTest.v` 655 MiB, `Lower.v` 422 MiB) and the flake's `rocq check` cone sweep at
+515 MiB - the 15 GiB peak was the grinding Leibniz-`=` corner WIP, not the hub's cost.  Serial stays
+the ruling: the two silent deaths were concurrency-driven, and the lane still must not run twice at
+once next to a ~54 GiB model server.  The realization side was split fan-in the same day
+(sec. 13.15) so no unit re-checks the accumulated history.  Override on a quiet machine with
+`dune build -j 8`.
 
 **Deliberately not done:** taking headroom from Strata.  Its engine *is* this session's model host,
 and a `MemoryHigh` far below its 43.4 GiB of dirty anon would OOM-kill it rather than throttle it.  The
@@ -2011,8 +2022,11 @@ tree; the settled rulings are decision 10 in docs/PLAN.md.
   PRes (VInt a)` under `b < a`, lines 344-357), and `prim_total_res` is
   "answers `PRes`".  So T6's value claims split three ways: (1) the arithmetic
   map {add, sub, mul, div, neg} - final `lower_res = Vlong (Int64.repr z)` for
-  the kernel result z (and `Z.div` truncates like CompCert's int64 division,
-  decision 8b's `divZ` note); (2) the guard map {gt, lt, geq, leq, neq} -
+  the kernel result z.  (The parenthetical written here - "`Z.div` truncates
+  like CompCert's int64 division, decision 8b's `divZ` note" - was FALSE and
+  was retracted on 2026-11-26: `Z.div` is a true FLOOR and CompCert's
+  `Int64.divs` truncates; the fork and its closure are decision 12, § 13.15.);
+  (2) the guard map {gt, lt, geq, leq, neq} -
   prim `prim_total_res`-success is exactly CompCert's order test on the same
   in-range literals, claimed as "final `lower_res = Vint 1`"; (3) everything
   else admitted (`all_int` identity prims PPls/PIsInt reaching the `Econst 0`
@@ -2081,3 +2095,146 @@ implicit args don't discriminate, rewrite one into the other first; `apply` full
 applied (`apply (lemma a b le H)`) is the safe bracket-free form when premises are
 already hypotheses.  The cone sweep saw the increment unchanged: same thirteen
 pinned axioms, all `<none>` sections intact.
+
+### 13.15 T6 increment C: the div semantics fork measured, closed by a floor fold at lowering (landed 2026-11-26, probe p528; PLAN decision 12)
+
+**The fork (measured, not assumed).**  The kernel's `Z.div` (`Syntax.v
+prim_total`'s PDiv arm) is a true FLOOR: `Z.div 7 (-2) = -4`, `Z.div (-7) 2 =
+-4` (`floor_literal_neg/pos`).  CompCert's `Int64.divs` is
+`Int64.repr (Z.quot (signed .) (signed .))` (`Integers.v` 193): TRUNCATION on
+the signed views - `Int64.signed (Int64.divs (repr 7) (repr (-2))) = -3`
+(`divs_floor_gap_neg/pos`); `Int64.mods = repr (Z.rem .)`, dividend-signed.
+The dialect's `divZ` (`TimbdaCanonicalization.cpp` 176-183, fold site :359) is
+truncation plus the C99-style ladder correction (`q -= 1` iff `r <> 0` and
+`sign r <> sign y`); the Coq mirror `divZ_ladder` and `divZ_ladder_div` pin it
+to `Z.div` exactly - five rungs (`divZ_exact`, `divZ_same_pos`,
+`divZ_same_neg`, `divZ_mixed_pos_neg`, `divZ_mixed_neg_pos`: the mixed-sign
+inexact quadrants overshoot by exactly 1) plus a four-quadrant case split
+through `Z_lt_ge_dec`.  Proof routing that actually works here: `lia` refuses
+div/quot identities head-on against symbolic operands ("Cannot find witness");
+route through `Z.div_unique` (its side condition is the disjunction
+`0 <= r < b \\/ b < r <= 0`) and shield `Z.quot`/`Z.rem` atoms with
+`set (q := Z.quot x y) in *.` because the div/rem rewrite pattern derails
+`ring` ("not a valid ring equation").
+
+**The ruling (decision 12).**  The fork is closed at LOWERING time.
+`Lower.prim_expr`'s PDiv arm constant-folds
+`Clight.Econst_long (Int64.repr (Z.div (vint_z a) (vint_z b))) tint64` - the
+dialect fold's Coq counterpart - and `Realize.v`'s `prim_clight` mirrors it
+arm for arm; `z64` moved from `Realize.v` to `Lower.v` because the fold needs
+it at the `prim_expr` arm and the import arrow only points `Realize -> Lower`.
+No `Cop.Odiv` node is ever emitted, so CompCert's truncating runtime division
+and its guard ladder play no part in T6: `odiv_ready` stays in the file as a
+measured bridge, permanently unreferenced by the eval dispatch.  Soundness
+inside the checked domain: operands are pinned literal by `app_node_ok`, the
+fold reads them through `vint_z = Int64.signed . z64` (and `vint_z_VInt` says
+that is exactly the kernel Z for `int64_range` operands), an out-of-range div
+result fails `prim_node_range_ok` and is excluded from T6's claim, and
+`prim_total`'s `Z.eqb b 0 = false` PStuck guard keeps the kernel-side meaning
+of a zero divisor (`Z.div` itself is total, 0 at 0, so the Coq side has no
+partiality to smuggle in).  The fold's literal check:
+`Lower.prim_expr PDiv [VInt 7; VInt (-2)] = Econst_long (Int64.repr (-4))` -
+guard-free, while the old arm would have evaluated to -3.
+
+**Correspondence lemmas (increment C; landed inside `Realize.v`, now in the fan-in leaves
+described below).**  Repr-level
+arith bridges (`bridge_add/sub/mul/neg`: `Int64.eqm_samerepr` fed by
+`eqm_unsigned_repr`, unconditional at the repr level) give the arith map
+`prim_match_add/sub/mul/neg`: `prim_clight p [...] = clight_of_val` of the
+kernel result.  Signed-level cmp bridges (`bridge_cmp_Cgt/Clt/Cge/Cle/Cne`,
+`zlt` destructed and the `Z.ltb` side pinned through `Z.ltb_lt/Z.ltb_ge`) give
+the guard map as the two-way `prim_guard_match_P*` pairs: kernel guard success
+`<->` observed `Vint (Int.repr 1)`, with `leb_as_or_lt_eq`/`leb_as_neg_lt`
+translating `prim_total`'s `leb`-spelled guards into the `ltb || eqb` spelling
+the CompCert side produces.  `int64_eq_signed` (Int64.eq compares UNSIGNED
+views) runs through `signed_eq_of_eqm` and `signed_eq_of_mod_eq`.  The corner
+denotation is exact: `denote (prim_corner p [VInt x; VInt y]) 6%nat` (the fuel
+is 6 - `Checks.v`'s `e_fuel` TupE arm is `S (S (sumE ..))`, not the 5 the
+earlier notes assumed), normalized by a `cbv` pass over the evaluator
+constants because Rocq 9.1's `cbn` is by-name and leaves the monadic
+beta-redexes.  The composition theorems (`T6_T4_match_add`, `T6_T4_match_PGt`,
+`T6_T4_match_PDiv`) then glue the T4-side witness (the denotation equals
+`sret (SOk ...)`) with the T6-side witness from `T6_exec_ws` (execution to
+`Out_normal` with the `lower_res` pin), the pin rewritten through
+`lower_final`'s App arm into `prim_match_*`.
+
+**Spellings that cost a measurement each.**  `cbn [vint_z z64]` unfolds `z64`
+but silently refuses `vint_z` (an applied constant sitting under `Z.div`),
+even bare `cbn` and with `vint_z` in the delta list - `unfold vint_z` does
+fire.  An `Int64.repr`-based value claim without range hypotheses is FALSE
+outright (`Int64.signed (Int64.repr z) = z` only inside the signed window), so
+`prim_clight_floor_div` carries `int64_range` hypotheses as substance, not
+decoration.  `lia` cannot prove `S (1 + S (S (1 + (1 + 0)))) = 5%nat`
+("Cannot find witness"); a full `cbn` after the delta-listed one closes it.
+Fuel literals are `nat` - a `Z`-scope `5` is a type error, so `6%nat`.
+`Z_lt_dec` in 9.1 is a 3-way sumbool; use `Z_lt_ge_dec` for a binary split
+(destructing a `Z` directly gives 3 constructors).  `rewrite` with a
+hypothesis-bearing lemma puts the MAIN goal first in the bullet sequence
+(`apply` puts it last) - dispatch accordingly or closers leak.  `Realize.v`
+imports no `ListNotations` and does not see bare `eqmod` (it is `Zbits`'s):
+the increment-C section opens both locally.
+
+**Build-unit split (same day, measured under failure).**  With increment C landed as one ~750-line
+section in `Realize.v`, the box died twice silently - dune RC=1 with no Coq error line and no
+`Realize.vo`, then a direct `coqc` RC=143 - while `strata-host` measured 41.5 then 50 GiB RSS
+against 64 GiB of RAM (sec. 4.1's kill signature, exactly).  The realization side was restructured
+fan-in the same evening: the increment-C text moved *verbatim* into four leaves -
+`RealizeBridges.v` (the Int64<->Z bridges plus the signed-window facts), `RealizeDiv.v` (the div
+fork measurements: rungs, ladder, gap literals, `bridge_divs_quot`), `RealizeCorners.v`
+(`prim_corner`, the arm-equation corner machine, exact corner denotations at `≅` - sec. 13.16) and `RealizeCompose.v` (the maps, the fold
+read back through them, the `T6_T4_match_*` compositions) - while `Realize.v` stays the
+CompCert-side hub the leaves read (guards, `lower_final`, the eval bridges, `T6_exec_ws`).  Each
+future increment lands in its own leaf - increment D (CertiRocq->C) never by inflating the hub -
+so a single coqc unit is bounded by the hardest *one* theorem, not by accumulated history.  With
+it, `coq/dune-workspace` dropped `(jobs 2)` to `(jobs 1)` (sec. 4.2): a 15 GiB-class unit survives
+alongside the model server, two concurrent ones do not.  The flake cone sweep now checks the two
+roots `Timbda.Realize` and `Timbda.RealizeCompose` (the Compose root pulls every leaf in
+transitively); the thirteen-axiom pin must re-attest against the new roots at the landing gate.
+
+### 13.16 T6 increment C, part 2: the corner denotations restated at ctrees' structural equality (landed 2026-11-26, probe p528 continuation; decision 12f)
+
+**The memory blowup was a misstated goal, not a missing trick.**  The first fan-in draft spelled
+the corner denotations as Leibniz equalities (`denote corner 6%nat = sret (SOk v)`) and tried to
+normalize them with a full `cbv` (`denorm`).  Measured 2026-11-26: on the add corner the
+`kernel_cbn` ladder takes 1 s at fuel 4, 18 s at fuel 5 and stalls beyond 90 s at fuel 6;
+`cbn [denE]` on the TupE arm alone expands ~200k lines; `vm_compute`/`native_compute` stall on the
+same terms; every fuel-2 variant normalizes instantly.  The uncapped 61 GiB `rocqworker` that
+earlyoom shot was exactly this shape.  Root cause: `>>=` desugars to ctrees' `CTree.bind u k :=
+subst k u`, and `subst` is a **CoFixpoint that only unstucks under `observe`** - no delta list can
+fire it, and strict evaluation re-materializes the stuck cofix tower once per fuel layer.  A bind
+chain is therefore *never* Leibniz equal to a `sret`: the statement itself was wrong, and no
+reduction strategy can fix a false goal.  ctrees' own monad laws exist only at `equ`/`wbisim` -
+the library's own admission (pinned commit `cabcf9bf`, Core/CTreeDefinitions.v).
+
+**The ruling (decision 12f).**  Corner denotations are pinned at `≅` (`equ eq x y`, via
+`Import EquNotations`) - the same equality Denotation.v and Checks.v already use for every monadic
+fact - and proved by the **arm-equation machine**: every `denE`/`denE_tup`/`apply_c`/`iter` arm is
+transcribed as a `reflexivity`-level unfolding equation (`denE_App_S`, `denE_tup_cons_S`,
+`apply_c_VPrim_S`, ...), rewritten at the head one arm per step; binds fire through
+Denotation.v's `bind_sret_l`; closure is a negative-delta pass (`cbn -[denE denE_tup apply_c ...
+Z.eqb Z.ltb orb]`) that delta-BLOCKS every fixpoint, so re-opening the fuel tower is impossible
+*by construction*.  Linear by design (one arm per rewrite), the whole `RealizeCorners.v` leaf
+compiles in ~2 s.  The three `T6_T4_match_*` conjuncts carry the `≅` side verbatim into
+`RealizeCompose.v`, where the CompCert pinning side is unchanged.
+
+**cbn's revert semantics (measured).**  `cbn` with a delta list refuses to δ-unfold a constant when
+the unfolded subtree is stuck, and the refusal propagates: `cbn [det_struct bans_okE ...
+app_node_ok ...]` on the PGt corner returns the goal UNCHANGED.  Guard-bearing structure claims
+therefore route through one-line equations (`prim_total_res_PGt_true`, `prim_total_res_PDiv_true`)
+rewritten after an explicit `unfold` prologue (`hds_corner_prologue`), with cbn finishing only the
+mutual guards it can reduce.  Related substance: `prim_args_ok` is the *structural*-prim arity
+check (false for PGt/PDiv), so `det_struct` of a failed-guard corner is genuinely false - T6's
+hypotheses are load-bearing, and the guard map `prim_guard_success_PGt` reads the iff forward
+through the guard hypothesis.
+
+**Toolchain traps from the same landing** (each cost one compile round; full list in
+docs/probes/p528/README.md): `cbn []` and `cbn [a, b]` are syntax errors in 9.1 (delta lists are
+space-separated; the all-blocked spelling is `cbn -[a b]`); `unfold a b` likewise needs a comma;
+cbn does not unfold `denote`/`prim_corner` sitting in `equ` argument positions - enter goals with
+`unfold`; `Z.eqb`/`Z.ltb`/`orb` must stay delta-blocked or the guard hypotheses lose their match;
+`Stdlib.Bool` stays un-imported (the `&&&` ruling) so PGEq's guard is spelled `orb (..) (..)`;
+`WBisimNotations` re-registers `&&&` at level 59 and clashes with compcert Coqlib's level-40 one -
+the CompCert-facing leaf imports `EquNotations` only; the conjunction notation `/\'` rejects binder
+terms on either side (use `/\` with parentheses); and `Local Open Scope Z_scope` retypes bare
+numerals, so fuel arguments need `0%nat`/`6%nat`.  The gate's cone sweep re-attests the same
+thirteen pinned axioms over `Timbda.Realize` + `Timbda.RealizeCompose`.

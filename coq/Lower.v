@@ -41,6 +41,21 @@
      prims with var operands, TupE, VVar/None slots, Unify) gets exec-existence only; a lowered
      TupE claims "last ret wins" in the final temp env; lambda/delay VALUES cannot occur
      (app_node_ok pins `Ret (VPrim p)` heads).
+   - PDiv fold, SETTLED 2026-11-25 (decision 12, probe p528): the div semantics fork
+     was measured - the kernel's Z.div (Syntax.v prim_total PDiv) is true FLOOR
+     (Z.div 7 (-2) = -4), while CompCert's Odiv on Int64 TRUNCATES (Int64.divs =
+     Int64.repr (Z.quot .. ..), Int64.mods = Z.rem dividend-signed; Integers.v 193).
+     The PDiv arm of `prim_expr` therefore does NOT emit Odiv: it constant-folds the
+     floor, `Econst_long (Int64.repr (Z.div (vint_z a) (vint_z b))) tint64`, mirroring
+     the dialect's divZ ladder (dialect/TimbdaCanonicalization.cpp 176-183, fold site
+     :359; the Coq mirror divZ_ladder and its equality proof live in Realize.v).
+     Soundness within the checked domain: operands are pinned literal by app_node_ok,
+     Z.div is total (0 at a zero divisor - no Coq-side partiality either), and an
+     out-of-range div result fails range_ok, so it is excluded from T6's claim.  No
+     runtime Odiv node is ever emitted; CompCert's Odiv behavior stays pinned as the
+     measured bridges in Realize.v (sem_Odiv_long / eval_bin64_Odiv / odiv_ready),
+     unused by the fold.  The Int64-side gap is measured in Realize.v: 7 divs (-2)
+     truncates to -3 where the floor is -4.
    - Audit lane, SETTLED 2026-11-25 (decision 10a, probes p519/p519l, docs/DESIGN-NOTES.md
      § 13.14): the measured truth is sharper than the § 13.7 guess - even a statement-level
      `exec_stmt` derivation built from CompCert's own rules carries six axioms
@@ -69,6 +84,24 @@ Definition tint32 : Ctypes.type := Tint I32 Signed noattr.
 (* The lowered tree writes each expression's value into this tempvar. *)
 Definition lower_res : AST.ident := xH.
 
+(* z64 is the syntactic mirror of vconst below: every Val shape maps to the
+   Int64 constant that vconst actually emits (the placeholder arm included).
+   MOVED here from Realize.v in increment C because the PDiv fold needs it at
+   the prim_expr arm (Realize.v imports Lower, never the reverse). *)
+Definition z64 (v : Val) : Int64.int :=
+  match v with
+  | VInt z => Int64.repr z
+  | VTrue  => Int64.repr 1
+  | VFalse => Int64.repr 0
+  | VUnit  => Int64.repr 0
+  | _      => Int64.repr 0
+  end.
+
+(* vint_z reads a Val the way the emitted Int64 constant holds it: signed . z64.
+   For in-range VInt operands this is exactly the kernel Z value (vint_z_VInt,
+   Realize.v - int64_range lives over there). *)
+Definition vint_z (v : Val) : Z := Int64.signed (z64 v).
+
 (* Econst_long is the 64-bit constant ctor (Econst_int is 32-bit `int`);
    Vlong/Econst_long/Tlong is the one value-width story T6 will carry. *)
 Definition vconst (v : Val) : Clight.expr :=
@@ -86,7 +119,10 @@ Definition prim_expr (p : Prim) (vs : list Val) : Clight.expr :=
   | PAdd, a :: b :: nil => Clight.Ebinop Cop.Oadd (vconst a) (vconst b) tint64
   | PSub, a :: b :: nil => Clight.Ebinop Cop.Osub (vconst a) (vconst b) tint64
   | PMul, a :: b :: nil => Clight.Ebinop Cop.Omul (vconst a) (vconst b) tint64
-  | PDiv, a :: b :: nil => Clight.Ebinop Cop.Odiv (vconst a) (vconst b) tint64
+  (* PDiv: floor constant fold, decision 12 - kernel Z.div semantics, not the
+     truncating Odiv (header note above; divZ_ladder proof in Realize.v). *)
+  | PDiv, a :: b :: nil =>
+      Clight.Econst_long (Int64.repr (Z.div (vint_z a) (vint_z b))) tint64
   | PLt,  a :: b :: nil => Clight.Ebinop Cop.Olt  (vconst a) (vconst b) tint32
   | PGt,  a :: b :: nil => Clight.Ebinop Cop.Ogt  (vconst a) (vconst b) tint32
   | PLEq, a :: b :: nil => Clight.Ebinop Cop.Ole  (vconst a) (vconst b) tint32
