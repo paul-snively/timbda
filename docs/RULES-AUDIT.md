@@ -196,6 +196,13 @@ lists the two there as kernel-side facts rather than as dialect rewrites.
   work, as a decision-log entry:** ordered candidate carrier (re-opens the discharged br2
   algebra) vs. commutativity/idempotence restricted to contexts where no `all`/`for`/`if`/`one`
   observes the choice — the route VC itself walks in print (ordered choice, `one` leftmost).
+  **RULED 2026-11-26 (docs/PLAN.md decision 15): the restricted reading, materialized.**  Fig. 13's
+  candidate-splitting `IterChoice` (§ 3.4) is this route's compile-side shape — choice lowers to a
+  nested observable node, never a collapse; the `one`/`if` leftmost/first-candidate readings are
+  policy of the runtime layer (WAMI/DCont M5, boost.context M4); ordered collapse *at compile
+  time* is refused at indeterminate sites because T8's candidate-set adequacy would collapse a
+  program's candidate set to a single run.  `Br2_Commut_W`/`Br2_Idem_W` stay denotation-level
+  (wbisim) facts, never code-level rewrites.
   Evidence: issue #1 and its linked openverse-wiki comparison.
 
 ## 5. Statement conventions (discharged rows)

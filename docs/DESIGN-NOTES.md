@@ -2384,3 +2384,46 @@ the inline state is where the resumption policy lives.  The toolchain traps meas
 (pattern-level `@` for parameterized inductives, explicit binders for class fields, `MonadIter`'s
 `{R I}` order, term-position empty matches needing `return ... with`, `Import ListNotations`'s
 module-path rule) are archived in the probe README, where their re-measurement recipes are.
+
+### 13.18 The carrier question ruled by material compatibility: scoped commutativity, materialized observation nodes (ruled 2026-11-26; decision 15; closes RULES-AUDIT issue #1)
+
+**Why it had been kept as a question.**  Decision 14 flagged the carrier open because a ruling is
+only worth recording if the excluded readings fail on *named lines*, and the named-line audit had
+not been run: reading (A), ordered collapse at compile time, initially looks compatible - "ordered
+choice, `one` leftmost" is verbatim the route VC walks in print (issue #1).  The ruling is the
+audit, and it turns (A) and (B) into material incompatibilities rather than matters of taste.
+
+**The five anchors and what each decides.**  (1) **Fig. 13 splits; it never collapses.**
+VERSE-RULES § 3.4's `IterChoice` row is the paper's *candidate-splitting* rule:
+`iter(ic){B[C[b1 b2]]}{e} ⟶ iter(ic){B[C[block{b1}]]}{iter(ic){B[C[block{b2}]]}{e}}` - choice
+compiles into nested observable structure.  A compiler that resolves an indeterminate `br2` into
+one priority path is doing something the paper's own rule does not do.  (2) **The combs ARE the
+scopes.**  `IterComb : IAll | IIf | IFor` (Syntax.v:48): the paper distinguishes observation modes
+*in the syntax*, and `iter(if)` carries a first-candidate reading (issue #1) - priority exists in
+print exactly where an observer exists, and nowhere else.  (3) **The candidate set is the meaning.**
+T2 says the algebra "mirrors the paper's candidate-set claims"; T8 pins
+`candidate_set (eval_run e) = candidate_set (sem e)`.  Collapsing a genuine multi-candidate program
+to a single run at compile time contradicts T8; collapsing where determinacy *already makes the set
+a singleton* is exactly the fusion side of the ruling - which is why decision 14's determinate-site
+probes (`b_choice`: the bool forced by which arm has a candidate) survive unchanged.  (4) **(B)
+contradicts the transcription it was meant to save**, (`iter(all){1|2}{⟨⟩}` rewrites to the distinct
+ordered values `⟨1,2⟩` and `⟨2,1⟩`) and needs permutation-invariance of compiled output, which
+`FoldCTree.v`'s counterexample says no branch-resolving fold can supply in general.  (5) **The
+runtime layers are the nodes' landing sites.**  boost.context is carried in the plan as
+setjmp/longjmp-like re-enterable control, and the WAMI/DCont leg as WebAssembly stack switching;
+under this ruling they stop being an optimization annex and become where indeterminate programs'
+semantics is decided - decision 2's sentence ("which steps fuse into straight-line C and which
+materialize a stack switch") becomes a stated fusion lemma about the algebra map `g`, and T12/M4/M5
+inherit a reason to exist.
+
+**What changed in the tree, and what did not.**  Changed: PLAN § 3's T2 sentence (scoped in
+place); issue #1's owed ruling (closed as "restricted reading, materialized"); decision 14(d)'s
+`g` (fully specified: forced bool at determinate sites, choice-node emission plus the `inl`
+residual at indeterminate sites - probe p529 part A's `i_loop`/`MLoopR` is the mechanism, the
+future `i_choice` its generalization); the golden test's expected fragments for the corpus's 7
+candidate-bag cases (they will contain choice nodes); M3's owed iter ruling (pre-decided:
+`RewSound_IterChoice` and `RewSound_IterAll` both pursued under the scoped law).  Unchanged: the
+discharged lemma stack (`Br2_Commut_W`/`Br2_Idem_W` remain true as wbisim facts - the reading
+restriction is about what may be used as a *code-level rewrite*, not about their truth), the corpus
+lane (cand_bag's list is a collection order; its bag claims stay valid under the scoped law), and
+every `≈`/`≅` denotation-level proof landed so far.

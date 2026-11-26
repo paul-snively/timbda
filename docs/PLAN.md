@@ -117,7 +117,8 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
 
 1. T1 Rule soundness (generated, one per TimbdaRule): Rew_r e e' -> Wbisim (sem e) (sem e')
    in the ctrees model. Licenses every DRR rewrite in MLIR.
-2. T2 M-algebra: or commutative/idempotent/associative, fail as zero, monad laws
+2. T2 M-algebra: or commutative/idempotent/associative - scoped by decision 15 to contexts
+   where no `all`/`for`/`if`/`one` observes the choice - fail as zero, monad laws
    (CTrees equational theory), mirroring the paper's candidate-set claims.
 3. T3 delta-primop agreement: for each primop, Gallina primop_eval agrees with int63/Clight
    evaluation of the constant the delta-rule produces. The hinge of "straight C code" fidelity.
@@ -362,8 +363,8 @@ attestations):
   toolchain. Outstanding, in forced order: T6 (design obligations settled 2026-11-25 by probes
   p519 - decision 10, docs/DESIGN-NOTES.md § 13.14; the proof landed 2026-11-26, decisions 12
   and 13), then CertiRocq->C wiring (`Compile.v` - shape ruled by decision 14: a fold-specialized
-  hylomorphism, probe docs/probes/p529/, with the ordered-vs-bag carrier ruling due before the
-  leaf is written), then the real golden test.
+  hylomorphism, probe docs/probes/p529/; carrier ruled by decision 15: scoped commutativity,
+  materialized choice nodes), then the real golden test.
 
 - **M3 / M4 / M5 - NOT STARTED.** Per decision 9 each gets its DoD written into this section
   before its first commit lands. Inherited bindings: M3 carries the augustss third corner
@@ -922,6 +923,43 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
     not grow it (the gate's cone sweep re-attests).  Ruled a distraction: `CTree/Interp/FoldStateT.v`
     (`fold_state := fold h g` over ExtLib `stateT`, `Typeclasses Opaque`, `iter` inherited from an
     inner monad); the inline state is where the resumption policy lives.
+15. (2026-11-26) **The candidate-carrier question (RULES-AUDIT issue #1) is ruled by material
+    compatibility: commutativity scoped, observation materialized.**  Decision 14(d) left three
+    readings live - (A) ordered collapse at compile time (priority `g`), (B) bag algebra in the
+    target (unrestricted T2, fusion modulo permutation), (C) split by determinacy: determinate
+    `br2` sites fuse under a forced bool, indeterminate sites lower to explicit choice nodes whose
+    arbitration lives in the runtime layer (DCont/WAMI M5, boost.context M4).  Ruled (C), because
+    it is the only reading compatible with the materials' own text; the other two fail on named
+    lines: (i) Fig. 13's `IterChoice` (docs/VERSE-RULES.md § 3.4) is the paper's
+    **candidate-splitting** rule - `iter(ic){B[C[b1 b2]]}{e} ⟶
+    iter(ic){B[C[block{b1}]]}{iter(ic){B[C[block{b2}]]}{e}}` - choice compiles into nested
+    observable structure, the paper never collapses it: (A)'s collapse-at-indeterminate-sites is
+    ruled out.  (ii) The paper's own iteration combs (`IAll | IIf | IFor`, Syntax.v:48) ARE scoped
+    observation modes, and `iter(if)`'s first-candidate reading (issue #1) is priority defined
+    only where an observer exists - VC walks the ordered route in print (`one` leftmost).
+    (iii) The candidate set IS the program's meaning (T2 "mirroring the paper's candidate-set
+    claims"; T8 `candidate_set (eval_run e) = candidate_set (sem e)`): a compile that resolves a
+    genuine multi-candidate program to one priority run contradicts T8 - this kills (A) outright
+    at indeterminate sites, and licenses collapse only where determinacy makes the set a
+    singleton, which is exactly (C)'s fusion side.  (iv) (B) contradicts the ordered Fig. 13
+    transcription that produced the conflict (`iter(all){1|2}{⟨⟩}` → `⟨1,2⟩` vs `⟨2,1⟩`) and needs
+    permutation-invariance of the compiled output that `FoldCTree.v`'s counterexample says is not
+    provable in general.  (v) The plan's runtime layers exist for the materialized nodes:
+    re-enterable control (boost.context as the setjmp/longjmp-like marker, PLAN sec. 1; WAMI/DCont
+    stack switching, M5) is where a choice node's arbitration lands - the layers graduate from
+    optimization to semantic obligation.  Consequences: PLAN § 3's T2 sentence narrowed in place;
+    the discharged `Br2_Commut_W`/`Br2_Idem_W` rows read as denotation-level (wbisim) facts only,
+    never code-level rewrites; decision 14(d)'s `g` is fully specified - determinacy-forced bool
+    at determinate sites (probe p529 `b_choice`), choice-node emission plus the fold's `inl`
+    residual (probe A's `i_loop`/`MLoopR` mechanism) at indeterminate sites; decision 2's
+    boost.context sentence ("which steps fuse into straight-line C and which materialize")
+    becomes the stated fusion lemma about `g`, and T12/M4-M5 inherit it as their reason to exist;
+    M3's owed iter ruling is pre-decided consistently - `RewSound_IterChoice` and `RewSound_IterAll`
+    both pursued under the scoped law with the ordered transcription kept; the golden test pins
+    fragments containing choice nodes for the corpus's 7 candidate-bag cases; `cand_bag` stays a
+    collection order (Eval.v:330) whose bag claims remain true under the scoped law, corpus
+    unchanged.  Audit trail: docs/DESIGN-NOTES.md sec. 13.18; probe-side mechanism:
+    docs/probes/p529/.
 
 ## 9. Known reference anchors
 
