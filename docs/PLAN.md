@@ -881,8 +881,10 @@ Discovered prior art (cite and differentiate; verify marked items during the M0 
 - github.com/rudi-cilibrasi/openverse (created 2026-11-04, active): unofficial Verse runtime;
   Verse semantics defined and proved in Lean 4; C runtime checked against it (integer arithmetic,
   program loading, rollback proved via QuickProof [VST + CompCert]; object store/value heap by
-  differential testing + fuzzing). Repo also lists Rocq sources — watch what they mechanize in
-  Rocq. "First verified Verse implementation/runtime" is NOT ours.
+  differential testing + fuzzing). Rocq-side scope measured 2026-11-25 (issue #1 comparison):
+  openverse mechanizes no Verse semantics in Rocq — its Rocq sources are the QuickProof laws about
+  the C runtime (`proofs/quickproof/`); the Lean 4 semantics is the main proof body. "First
+  verified Verse implementation/runtime" is NOT ours.
 - CompCertFX (Bayazit, Ebresafe, Xie — U Toronto; preprint 2025/26): first VERIFIED COMPILER for
   effect handlers — CompCert extended with one-shot handlers, proved in Rocq down to stack
   switching in AArch64 assembly; new IRs MachSwitched1/2; repaired CompCert invariants (stack

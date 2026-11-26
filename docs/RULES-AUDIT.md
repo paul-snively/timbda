@@ -183,6 +183,20 @@ lists the two there as kernel-side facts rather than as dialect rewrites.
   the up-to-bind machinery (`bind_chain_gen`, WBisim.v:574) but *no* bind/br2
   distributivity lemma (grep over `theories/` is empty).  The up-to-bind coinduction is
   the known route; the corner is tracked, not believed impossible.
+* **Conflict recorded (2026-11-25, issue #1).**  The corner above has a stated form, and it
+  conflicts with T2 as PLAN § 3 words it.  With `Br2_Commut_W`/`Br2_Idem_W` discharged and
+  unrestricted (§ 4 above) and the ordered Fig. 13 transcription of VERSE-RULES § 3.4,
+  `RewSound_IterChoice` and `RewSound_IterAll` cannot both be proved sound in this model:
+  `≈` is preserved by bind, so `⟦iter(all){1|2}{⟨⟩}⟧ ≈ ⟦iter(all){2|1}{⟨⟩}⟧`, while the
+  ordered rules rewrite the two terms to the distinct values `⟨1,2⟩` and `⟨2,1⟩`; `iter(if)`
+  takes the same horn via its first-candidate reading.  Nothing contradicts *today*: no iter
+  row is proved (C4), and no corpus case makes an ordered-tuple claim across a choice (the
+  bag claims are bags).  But PLAN § 3's T2 sentence ("or commutative/idempotent/associative")
+  and the § 3.4 transcription cannot both stand unrestricted.  **Ruling owed before M3's iter
+  work, as a decision-log entry:** ordered candidate carrier (re-opens the discharged br2
+  algebra) vs. commutativity/idempotence restricted to contexts where no `all`/`for`/`if`/`one`
+  observes the choice — the route VC itself walks in print (ordered choice, `one` leftmost).
+  Evidence: issue #1 and its linked openverse-wiki comparison.
 
 ## 5. Statement conventions (discharged rows)
 

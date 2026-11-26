@@ -188,6 +188,31 @@ and neither is allowed to be written as a fact:
    about an implementation detail.  It is an upstream question, and it should be answered before M2
    lowers arithmetic into C.
 
+**External evidence on half 2 (recorded 2026-11-25, issue #1 comparison).**  The openverse
+comparison (github.com/rudi-cilibrasi/openverse wiki, "Timbda-0 compared with openverse")
+records Epic Verse VM probes (UEFN 43.12, `++Fortnite+Release-43.12-CL-60598086`): surface
+division by zero *fails catchably* — `if (Z := Floor(7 / 0)) then Print("{Z}") else
+Print("fail")` prints `fail`, same for `Quotient[9, 0]` (the `rat-div-zero` and
+`int-quotient-mod-signs` rows of openverse's `docs/COMPATIBILITY.md`).  At the surface level
+this pulls toward *catchable failure*, not stuck.  The caveat is half 1's exact shape and it
+survives the probes: the VM's surface `/` on two ints yields a rational, and nothing maps any
+surface function onto the calculus `div` primitive.  The kernel row (`PStuck`,
+`prim_div_zero_is_stuck`) stays measured as recorded; the ruling is still owed, and still
+owed before M2 lowers arithmetic into C.
+
+**Named divergence row (recorded 2026-11-25, issue #1 comparison): kernel F vs. surface E.**
+In Leijen's taxonomy (*Division and Modulus for Computer Scientists*, 2001 — E Euclidean
+with nonnegative remainder, F floored/Knuth, T truncated; the paper ranks E and F together
+above T), the kernel's `Z.div`/`Z.modulo` pair is **F**: floored quotient, remainder signed
+like the divisor — the paper's F corners `(-1) div (-2) = 0` and `(-8) div (-3) = (+2, -2)`
+match the kernel.  The same comparison measures Epic's VM `Quotient[X, Y]` as **E**:
+`(-7, 2) → -4` agrees with the kernel, but `(7, -2) → -3` (kernel `-4`), `(-7, -2) → 4`
+(kernel `3`), `(-6, -4) → 2` (kernel `1`).  Recorded as a *divergence*, not an edit of a
+measured row: surface `Quotient` ≠ calculus `div` is unproven, and E-versus-F at negative
+divisors stays open.  Decision 8(b)'s obligation is unaffected either way — M2's C side
+carries the `divZ`/DEV-20 correction ladder out of C99's truncated `/` and `%` (the paper
+prints `divE`/`modE` and `divF`/`modF` in C), never pass-through.
+
 ## 3.1. Beta reduction (Fig. 11, lines 468–469)
 
 | Rule | Paper form | Kernel constructor | Tier |
