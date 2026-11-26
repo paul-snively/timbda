@@ -107,7 +107,7 @@ Canonical loop:
 
 ```sh
 python3 tools/pins/pins.py check                          # pins.toml == MODULE.bazel == flake.lock
-tools/build/nix-gate.sh                                   # the four gate builds below, --max-jobs 1, and
+tools/build/nix-gate.sh                                   # the default eight-lane chain, --max-jobs 1, and
                                                         # a refusal to start if the host has no headroom
    # (nix builds cannot be cgroup-capped from here: see sec. 4.3).  Individually they are:
 nix build .#checks.x86_64-linux.version-consistency       # nixpkgs tool versions == pin table
@@ -386,10 +386,14 @@ this machine, not an opinion.**
   caps only the *client* process: the sandboxed `nixbld*` worker that actually runs `coqc` lives in
   the daemon's cgroup tree, where `memory.max = max`.  Wrapping a nix build in the same scope that
   contains `dune build` would be a placebo, and a build that *looks* contained while uncapped is the
-  exact failure mode § 4.2 exists to prevent.
+  exact failure mode § 4.2 exists to prevent.  (2026-11-19 measurement; the two `infinity` values and
+  `memory.max = max` were superseded by the root-side override - re-read 2026-11-26 in § 4.3.1.  The
+  conclusion holds: the cap that exists is root's, not the caller's.)
 - `nix show-config` here: `max-jobs = 20`, `sandbox = true`.  `coq/dune-workspace`'s `(jobs 2)` limits
   dune inside **one** derivation; it says nothing about how many derivations nix builds at once, and
-  `nix build` with several targets on a 20-core box defaults to 20.
+  `nix build` with several targets on a 20-core box defaults to 20.  (Re-read 2026-11-26:
+  `max-jobs = 1`, `cores = 0` - capped on both sides since 2026-11-19, § 4.3.1.  The point stands and is
+  why the gate passes `--max-jobs 1` itself rather than trusting a config file.)
 
 What the uncontrolled version of that looks like on this box, from `journalctl -u earlyoom -b -1`
 for 08:24:41-08:33:56 (previous boot, during a `nix build` gate chain that started at 08:23:24 and
@@ -527,7 +531,9 @@ impossible, and it is now written around the fact that a preflight is not a guar
   things for, which is exactly what happened at 11:46:33.
 - a watchdog during each target (2 s polls) that kills *our own* `nix build` when a floor is crossed,
   reports which floor, and then states plainly whether the root-side build survived our kill
-  (`nix-daemon.service` has `MemoryMax=infinity`, so the honest answer is "it may well have").  Measured
+  (`nix-daemon.service` had `MemoryMax=infinity` when this line was written; re-read 2026-11-26 it is
+  `MemoryHigh=4G MemoryMax=5G MemorySwapMax=infinity`, § 4.3.1 - and the honest answer is still "it may
+  well have", because what stops a daemon worker is root's cgroup, never our `kill`).  Measured
   today: `TIMBDA_NIX_GATE_ALLOW=yes … .#checks.x86_64-linux.corpus-differential` on a host with 6706 MiB
   free and a 8192 MiB floor → the watchdog fired on its first poll, the target got
   `rc=124 … STOPPED … (target not attested)`, and no `nixbld`/`rocq`/`dune` worker was alive 20 s later.
@@ -537,6 +543,83 @@ impossible, and it is now written around the fact that a preflight is not a guar
 - `--max-jobs 1` (nix's default is 20), per-target rc capture, and the earlyoom / kernel-OOM journal
   windows printed after the verdict, so "the gate is green" and "the host was healthy" stay two
   separately reported facts even when both are true.
+
+#### 4.3.1 The cold-lane ordering ruling, and three host facts that had gone stale (re-measured 2026-11-26)
+
+The gate's Coq-side failure mode on a cold store is not a heavy unit; it is an **ordering** artifact.
+`checks.corpus-differential` does not build the kernel *and then* its corners: the two corpus corners
+take `timbda-kernel` in `buildInputs` (`flake.nix`, `mkCorpusCoqCorner`), so the cheap-first chain made
+the corpus target compile the entire Coq kernel inside its own poll window.  Measured on this box (63.9
+GiB RAM, `strata-host`/llama-swap - this agent's own model server - resident at 54.5 GiB RSS): the cold
+corpus target ran 85 s, dipped `MemAvailable` from 6918 MiB to 5021 MiB, crossed the script's own 5120
+MiB floor, and was recorded `rc=124 … STOPPED BY THE HOST WATCHDOG (target not attested)` while its log
+was still in `timbda-kernel>` output.  The identical target, with the kernel derivation already in the
+store, returned `rc=0` and never went below 5799 MiB; and `.#packages.x86_64-linux.timbda-kernel` run on
+its own (270 s wall, `buildPhase` 4 min 30 s) moved `MemAvailable` 7362 → 7393 MiB, i.e. not at all.
+The chain therefore puts the Coq package lane **before** the check lanes that drag it.  With one
+derivation at a time this does not reduce the peak - it decides which target's watchdog window the
+kernel's allocation lands in, so a kill and its evidence belong to the lane that costs the memory.  The
+reordered chain re-attested 8/8 the same day (`nix failures: 0`, `watchdog kills: 0`, 32 s on a warm
+store).
+
+Three facts this section had been asserting from 2026-11-19 that the machine no longer reports:
+
+1. `nix-daemon.service` is **not** `MemoryMax=infinity` any more.  `systemctl show -p MemoryMax -p
+   MemoryHigh -p MemorySwapMax -p Slice nix-daemon.service`: `MemoryHigh=4294967296`,
+   `MemoryMax=5368709120`, `MemorySwapMax=infinity`, `Slice=system.slice`, with
+   `/sys/fs/cgroup/system.slice/nix-daemon.service/memory.max` reading back `5368709120` - the root-side
+   override recorded in `tools/build/README.md` § "Root-side options".  The gate's conclusion survives
+   the correction but its premise changes: the sandboxed workers *are* capped, by a 4 GiB throttle and a
+   5 GiB hard limit that root chose and this caller cannot see, touch, or tighten; `MemorySwapMax`
+   unlimited is why an oversized build spills into swap (the 11:46:33 storm shape) instead of dying in
+   its cgroup.  A user `systemd-run` scope around `nix build` remains a placebo.
+2. `nix show-config` answers `max-jobs = 1` (root-side `/etc/nix/nix.custom.conf` and this account's
+   `~/.config/nix/nix.conf`, both from the 2026-11-19 hygiene pass), `cores = 0`, `sandbox = true`.  The
+   gate still passes `--max-jobs 1` explicitly: a guard that depends on somebody else's config file is
+   not a guard.
+3. earlyoom's thresholds are the program's defaults, and they are 10 %/10 %: `earlyoom -h` on the
+   running v1.7 says `-m` default 10 %, `-s` default 10 %, SIGKILL at half the SIGTERM threshold, and
+   "both memory and swap must be below minimum for earlyoom to act"; the unit runs
+   `/usr/bin/earlyoom -r 3600` with no `-m`/`-s` (`EARLYOOM_ARGS` in `/etc/default/earlyoom`).  That is
+   why the gate's `GUARD=12` default sits above the trigger, and why today's runs - swap 16.5 GiB of 20
+   free - produced earlyoom *reports* (e.g. "mem avail: 6273 of 63916 MiB ( 9.82 %)") with no kill: mem
+   dipped near the trigger while swap was nowhere near it.
+
+And the reason the ordering question is cheap to answer now: the Coq lane's real cost.  A clean
+full-lane `dune build` of `coq/` at `(jobs 1)`, sampled at 0.3 s, peaks at **655 MiB** (`Realize.v` 499
+MiB, `tests/KernelTest.v` 655 MiB, `Lower.v` 422 MiB), and the flake's cone sweep `rocq check -silent -o
+-Q _build/default Timbda Timbda.Realize Timbda.RealizeCompose` peaks at **515 MiB**.  The older records
+- "peaking over 4.4 GiB" here, "~15 GiB coqc" in § 4.2 - describe the pre-`≅` work-in-progress trying to
+normalize false Leibniz-`=` corner goals (§ 13.16), not the kernel's cost.
+
+**The two remaining gate costs were store churn, not proofs, and both are now closed.**
+
+*The collector was eating the Coq lane.*  Determinate Nix auto-GCs after builds, and nothing rooted the
+gate's outputs: the kernel output that this morning's 8/8 chain built (`…-timbda-kernel-0.1.0`) answered
+`error: path … is not valid` when the 15:02 chain wanted it, so the afternoon run paid the full 4 min 30 s
+`buildPhase` again - and rebuilt to the *same* output path, the determinism check these notes keep
+insisting on.  The fix is a GC root, and the measured part is which rooting a non-root user is actually
+allowed to create: `nix build … --profile /nix/var/nix/profiles/…` fails with `creating symlink …:
+Permission denied`, while `nix-store --realise --add-root <link> --indirect <out-path>` works for a
+`trusted-users` account - it writes the symlink somewhere we own (`~/.local/state/timbda-gcroots/`) and
+registers it under `/nix/var/nix/gcroots/auto`.  `nix-gate.sh` now does exactly that for the lanes named
+in `TIMBDA_NIX_GATE_KEEP` (default: the Coq package lane and `corpus-differential`, 3.3 MiB and the two
+corners; deliberately *not* `golden-test`, whose ghc would pin 3.3 GiB for no benefit).  The lane build
+itself also switched to `nix build --no-link`, because a `result` symlink left in the repo is an
+untracked path that a flake `src = ./.` would happily copy.
+
+*Documentation edits were rehashing the Coq corners.*  Both corpus corners had `src = ./.` - the whole
+repository - while what they read is three files and a corpus spec: `tools/corpus/corpus.py`,
+`tools/corpus/driver.ml`, `tools/extract/extract.v`, and `tests/corpus/*.texpr` (the kernel's `.vo` trees
+arrive through `timbda-kernel` in `buildInputs`, not from the source tree).  They now take a narrowed
+`cornerSrc`.  Verified: `.#checks.corpus-differential.outPath` is unchanged by a `docs/` edit, and the
+lane still prints `ok: 64 corpus cases (incl. 7 candidate bags) agree across corners`.  The trap in
+implementing it is worth recording because it looks like it works when read: nix 2.35.3 hands a
+`cleanSourceWith` filter **the store path it is copying** (`/nix/store/<hash>-source/tools/corpus/corpus.py`),
+not a path relative to `src`; a filter written as `path == "tools/corpus/corpus.py"` kept every directory
+and **no file at all**, which surfaced as `cp: cannot stat '…/source/tools/extract/extract.v'` inside the
+corner.  Suffix/infix matching (`hasSuffix "/tools/corpus/corpus.py"`, `hasInfix "/tests/corpus/"`) is the
+spelling that works, with `cleanSourceFilter` applied first for `.git`/`.jj`/`_build`.
 
 
 ## 5. Toolchain probe results (pinned nixpkgs)

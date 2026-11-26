@@ -852,6 +852,40 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
      ~15 GiB hub-unit figure belonged to the grinding Leibniz-`=` WIP, so `(jobs 1)` stays as
      concurrency policy and not as a per-unit budget (DESIGN-NOTES sec. 4.2, 13.16).  With this,
      M2's remaining items are the CertiRocq->C wiring and the golden test.
+13. (2026-11-26) **Gate-chain ordering is memory policy, and a gate script's host facts are re-read,
+    not inherited.**  Two rulings, both from the increment-C gate runs (DESIGN-NOTES sec. 4.3.1).
+    (a) **Dependency-first exception to cheap-first.**  `checks.corpus-differential` drags the whole
+    Coq kernel through the corpus corners' `buildInputs`, so with the kernel lane last the cold store
+    compiled it inside the corpus target's poll window: 85 s, `MemAvailable` 6918 -> 5021 MiB, watchdog
+    floor 5120 MiB crossed, `rc=124 … (target not attested)`.  Same target with the kernel derivation in
+    the store: `rc=0`, never below 5799 MiB.  Kernel lane alone: `rc=0` in 270 s, host unmoved (7362 ->
+    7393 MiB).  `tools/build/nix-gate.sh` now runs `.#packages.x86_64-linux.timbda-kernel` before the
+    check lanes that consume it; with `--max-jobs 1` this does not lower the peak, it makes a kill and
+    its evidence belong to the lane that costs the memory.  Re-attested 8/8, `nix failures: 0`,
+    `watchdog kills: 0`.  (b) **The two remaining gate costs were store churn, and they are closed.**
+    Determinate Nix's collector had eaten the morning's green kernel output (`error: path
+    /nix/store/…-timbda-kernel-0.1.0 is not valid` at 15:02, full 4 min 30 s `buildPhase` paid twice in
+    one day, rebuilt to the identical path), so the gate now registers a GC root for the Coq-side lanes
+    it just attested (`nix-store --realise --add-root … --indirect`, the one rooting form a
+    `trusted-users` account may use - `--profile /nix/var/nix/profiles/…` is `Permission denied`),
+    rooted set = kernel + `corpus-differential`, not `golden-test`'s 3.3 GiB ghc, and lane builds pass
+    `--no-link` so no `result` symlink lands in the repo.  On the flake side the corpus corners stopped
+    taking `src = ./.`: they read `tools/corpus/corpus.py`, `tools/corpus/driver.ml`,
+    `tools/extract/extract.v` and `tests/corpus/*.texpr`, and take a narrowed `cornerSrc` now, so a
+    docs-only commit no longer rehashes a generated corner (`corpus-differential.outPath` measured
+    identical across a `docs/` edit, lane green at 64 cases / 7 candidate bags).  Toolchain fact learned
+    doing it: nix 2.35.3 passes a `cleanSourceWith` filter the **store path being copied**, not a path
+    relative to `src` - a relative-equality filter kept every directory and no file, failing as `cp:
+    cannot stat '…/source/tools/extract/extract.v'`; match suffixes/infixes, `cleanSourceFilter` first.  (c) **Stale host facts are defects.**  The gate's own header asserted
+    `nix-daemon.service MemoryMax=infinity` and `nix show-config max-jobs = 20`; today the machine
+    answers `MemoryHigh=4294967296`, `MemoryMax=5368709120`, `MemorySwapMax=infinity` (cgroup
+    `memory.max = 5368709120`) and `max-jobs = 1` on both sides, while `earlyoom -h` (v1.7, run as
+    `-r 3600` with no `-m`/`-s`) states its defaults as 10 % mem AND 10 % swap with SIGKILL at half.
+    The conclusion the header draws is unchanged - an unprivileged scope around `nix build` is a
+    placebo, the cap is root's and its `MemorySwapMax=infinity` is what turns pressure into swap - but a
+    guard documented on facts that no longer hold is not a guard, so: when `nix-gate.sh` is touched, its
+    host facts get a dated re-read in the same commit.  Consequence for planning: gate headroom is now
+    the ~54.5 GiB model-server residency problem, not the proof units, which cost under 1 GiB.
 
 ## 9. Known reference anchors
 

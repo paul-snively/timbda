@@ -103,15 +103,25 @@ TIMBDA_NIX_GATE_MIN=10G TIMBDA_NIX_GATE_SWAPMIN=1G tools/build/nix-gate.sh …
 
 Why it is not just `coq-build.sh` with `nix build` inside it - measured on this machine:
 
-- nix is daemon-managed: `nix-daemon.service` runs as root (Determinate Nix 3.24.2, nix 2.35.3),
-  `Slice=system.slice`, `MemoryHigh=infinity`, `MemoryMax=infinity`, and `/nix/store` is not writable by
-  the calling user.  So a user scope around `nix build` caps only the *client*: the sandboxed `nixbld*`
-  worker that runs `coqc` is in the daemon's cgroup tree, where `memory.max = max`.  Wrapping a nix
-  build in the envelope that contains `dune build` would be a placebo - worse than no cap, because it
+- nix is daemon-managed: `nix-daemon.service` runs as root (Determinate Nix 3.24.2, nix 2.35.3) in
+  `Slice=system.slice`, and `/nix/store` is not writable by the calling user.  So a user scope around
+  `nix build` caps only the *client*: the sandboxed `nixbld*` worker that runs `coqc` is in the
+  daemon's cgroup tree.  Re-read 2026-11-26 because this bullet had gone stale - it asserted
+  `MemoryHigh=infinity`, `MemoryMax=infinity`, `memory.max = max`, which was true until the root-side
+  override recorded under "Root-side options" below.  Today: `systemctl show -p MemoryMax -p MemoryHigh
+  -p MemorySwapMax -p Slice nix-daemon.service` answers `Slice=system.slice`,
+  `MemoryHigh=4294967296`, `MemoryMax=5368709120`, `MemorySwapMax=infinity`, and
+  `/sys/fs/cgroup/system.slice/nix-daemon.service/memory.max` reads back `5368709120`.  The Coq lane is
+  therefore capped - by a 4 GiB throttle and a 5 GiB hard limit chosen root-side, with swap unlimited,
+  so an oversized build pushes into swap instead of dying cleanly.  The conclusion stands: wrapping
+  `nix build` in the envelope that contains `dune build` is a placebo - worse than no cap, because it
   *looks* contained;
-- `nix show-config`: `max-jobs = 20`, `sandbox = true`.  `(jobs 1)` in `coq/dune-workspace` limits dune
-  inside **one** derivation; it says nothing about how many *derivations* nix compiles at once, and
-  `nix build` with several targets on a 20-core box uses 20;
+- `nix show-config` re-read 2026-11-26: `max-jobs = 1`, `cores = 0`, `sandbox = true`.  `max-jobs = 1`
+  holds on both sides now - root-side `/etc/nix/nix.custom.conf` and, for this account,
+  `~/.config/nix/nix.conf` (both from the 2026-11-19 hygiene pass); the file was written when the
+  answer was 20.  `coq/dune-workspace`'s `(jobs 1)` limits dune inside **one** derivation; it says
+  nothing about how many *derivations* nix compiles at once, which is why the gate passes `--max-jobs
+  1` explicitly instead of trusting either config;
 - what that costs here, from `journalctl -u earlyoom -b -1` (during a `nix build` gate chain that
   started at 08:23:24 and never finished; machine rebooted at 08:34): **30 SIGTERM decisions in 10
   minutes, 28 of them the model server** (`strata`/`strata-host`, VmRSS 41094-47169 MiB), 2 a Brave
@@ -142,14 +152,50 @@ build.  So, with the levers an unprivileged caller actually has:
    reports whether the root-side build outlived that kill - the honest version of "I stopped it", since
    `nix-daemon.service` has `MemoryMax=infinity`.  A target killed this way is recorded as
    `rc=124 … (target not attested)`, never as a pass;
-3. **`--max-jobs 1`** instead of nix's 20, targets ordered cheap-first, so an abort wastes the least
-   already-spent work;
+3. **`--max-jobs 1`** instead of nix's 20, targets ordered cheap-first so an abort wastes the least
+   already-spent work - with one **dependency-first exception**, measured 2026-11-26: the Coq package
+   lane `.#packages.x86_64-linux.timbda-kernel` runs *before* `checks.corpus-differential`, because the
+   two corpus corners take `timbda-kernel` in `buildInputs` and a cold store therefore compiles the
+   whole kernel *inside* the corpus target.  Measured on this box (63.9 GiB RAM, model server resident
+   ~54.5 GiB): corpus-differential cold dipped `MemAvailable` 6918 → 5021 MiB mid-build, crossed the
+   5120 MiB floor and printed `rc=124 … (target not attested)` while its log was still in
+   `timbda-kernel>` output; the same target with the kernel derivation already in the store ran `rc=0`
+   and never went below 5799 MiB, and the kernel lane on its own (270 s wall, `buildPhase` 4 min 30 s)
+   did not dip the host at all (7362 → 7393 MiB).  The exception does not make the Coq work cheaper -
+   `--max-jobs 1` serializes it either way - it decides *which target's poll window* the kernel's
+   allocation lands in, so a kill and its evidence belong to the lane that costs the memory.  Re-attested
+   8/8 on 2026-11-26 with the pinned invocation `TIMBDA_NIX_GATE_MIN=5G TIMBDA_NIX_GATE_GUARD=8
+   NIX_CONFIG="cores = 2" tools/build/nix-gate.sh`: `nix failures: 0`, `watchdog kills: 0`;
 4. **per-target exit codes** recorded by name (`target=… rc=…`), never a filtered pipeline, plus the
    `status.txt` / `*status.txt` files read out of each built output path - a nix build that "succeeded"
    while writing nothing is the same vacuity this repo's corners are built to catch;
 5. the **earlyoom and kernel-OOM journal windows for the run** printed after the verdict, so "the gate
    is green" and "the host was healthy" stay two separately reported facts - and `nix failures: 0` next
-   to `watchdog kills: 1` is not a pass.
+   to `watchdog kills: 1` is not a pass;
+6. **store warming for the Coq lanes** (`TIMBDA_NIX_GATE_KEEP`, `TIMBDA_NIX_GATE_GCROOTS`): a green
+   target in the keep-list gets its output registered as an indirect GC root - `nix-store --realise
+   --add-root ~/.local/state/timbda-gcroots/<lane> --indirect <out>`.  Measured reason: Determinate Nix
+   collected the 11:54 chain's green `timbda-kernel` output, so the 15:02 chain met `error: path
+   /nix/store/…-timbda-kernel-0.1.0 is not valid` and rebuilt it - to the *identical* output path,
+   paying the 4 min 30 s `buildPhase` twice in one day.  Which rooting a non-root caller may create was
+   itself measured: `nix build --profile /nix/var/nix/profiles/…` → `creating symlink …: Permission
+   denied`, while `--add-root … --indirect` succeeds for a `trusted-users` account and writes the symlink
+   somewhere we own.  Rooted: the Coq package lane (3.3 MiB) and `corpus-differential` (the two corners);
+   deliberately *not* `golden-test`, which would pin 3.3 GiB of ghc for no benefit.  Lane builds also
+   pass `--no-link` now: a `result` symlink left in the repo is an untracked path that a flake
+   `src = ./.` would copy.
+
+**The other half of the cost was in the flake, not the script.**  Both corpus corners took `src = ./.` -
+the whole repository - while what they read is `tools/corpus/corpus.py`, `tools/corpus/driver.ml`,
+`tools/extract/extract.v` and `tests/corpus/*.texpr` (the kernel's `.vo` trees come from `timbda-kernel`
+in `buildInputs`).  They now take a narrowed `cornerSrc`, so a documentation commit no longer rehashes a
+generated corner: `.#checks.x86_64-linux.corpus-differential.outPath` measured identical across a `docs/`
+edit, lane still green at `64 corpus cases (incl. 7 candidate bags) agree across corners`.  The trap in
+doing it, recorded because it reads as if it works: nix 2.35.3 hands a `cleanSourceWith` filter **the
+store path it is copying** (`/nix/store/<hash>-source/tools/corpus/corpus.py`), not a path relative to
+`src` - `path == "tools/corpus/corpus.py"` kept every directory and no file at all, and the corner failed
+as `cp: cannot stat '…/source/tools/extract/extract.v'`.  Match suffixes (`hasSuffix
+"/tools/corpus/corpus.py"`, `hasInfix "/tests/corpus/"`) with `cleanSourceFilter` applied first.
 
 Exit codes: 0 green, 1 a nix failure, 2 refused by preflight, 124 stopped by the host watchdog.
 
@@ -163,7 +209,8 @@ Measured today, five ways through it:
 | `TIMBDA_NIX_GATE_MIN=6G TIMBDA_NIX_GATE_GUARD=0 … .#checks.x86_64-linux.corpus-differential`, 12:12:33 | `rc=0` in 0 s: everything this target needs was already realised by the 11:46 chain, so nothing was rebuilt.  It printed `out=/nix/store/xdsy2v844zfnixkqjdw0qz8cdw0bbcwj-timbda-corpus-differential` and re-read that output's `coq-corner-status.txt` (`reader_cases=64`, `corner_lines=421`) and `ocaml-corner-status.txt` (`extracted_lines=1465`, `driver_rc=0`).  Watchdog quiet |
 | `TIMBDA_NIX_GATE_ALLOW=yes … .#checks.x86_64-linux.corpus-differential`, 12:11:36, host at 6706 MiB free against an 8192 MiB floor | the watchdog fired on its first poll: `MemAvailable 6713 MiB crossed the floor 8192 MiB mid-build`, our own client was killed, `target=… rc=124 … (target not attested)`, `no nixbld/rocq/dune worker survived the kill`, exit 124 |
 
-What each of the four default targets currently costs here - measured, so the chain is not run blind:
+What each default target costs here - measured, so the chain is not run blind.  First the 2026-11-19
+four-lane bill:
 
 | target | measured cost, 2026-11-19 |
 |---|---|
@@ -171,6 +218,27 @@ What each of the four default targets currently costs here - measured, so the ch
 | `packages.timbda-kernel` | cold: 12 min 43 s of `dune build` in the daemon's uncapped cgroup, peaking over 4.4 GiB (sec. 4.2).  Today's build: output 1,047,784 B with all eight `.vo` files, `buildPhase` log ending on the single-axiom audit.  Once realised: 0 s |
 | `checks.corpus-differential` | 764 s, because it drags `timbda-kernel` with it through `buildInputs`; its output carries both corners' status files and `report.txt` |
 | `checks.golden-test` | 21 s by substitution: 14 paths fetched, 415.4 MiB down / 3.3 GiB unpacked, `f6c6xf50wg0s32ph74i3xn4c1bdj5k00-ghc-9.12.3` among them.  At 09:37-10:24 the same target looked blocked for hours, because narinfo queries to both substituters timed out at 15 s and that GHC path answered 404 - a cache-reachability state this file mistook for a property of the dependency |
+
+And the 2026-11-26 eight-lane bill, in the chain's current order, from the run that attested `main` at
+`adbd5240` (`TIMBDA_NIX_GATE_MIN=5G TIMBDA_NIX_GATE_GUARD=8 NIX_CONFIG="cores = 2"`, host holding
+~54.5 GiB in the model server, 63916 MiB total):
+
+| target | measured cost, 2026-11-26 |
+|---|---|
+| `checks.version-consistency` | 1 s, `rc=0` |
+| `checks.rules-audit` | 2 s, `rc=0` |
+| `checks.bazel-native-tests` | 1 s, `rc=0` (cached: `//dialect:timbda_dialect_test PASSED in 0.1s`) |
+| `checks.tblgen-rocq-golden` | 14 s, `rc=0` |
+| `checks.dialect-lit-tests` | 1 s, `rc=0` (24 lit passes, 1 registered unsupported) |
+| `packages.timbda-kernel` | 270 s cold for this tree (`buildPhase` 4 min 30 s, log ending `OK kernel builds, single axiom eq_rect_eq` / `OK cone audited, 13 pinned axioms`), and it **did not dip the host at all**: `MemAvailable` 7362 → 7393 MiB.  The same lane run locally with 0.3 s sampling peaks at 655 MiB overall (`Realize.v` 499 MiB, `tests/KernelTest.v` 655 MiB, `Lower.v` 422 MiB); the flake's cone sweep `rocq check` peaks at 515 MiB |
+| `checks.corpus-differential` | 85 s to a watchdog kill (5021 MiB) when the kernel had to compile inside it; **rc=0 with `MemAvailable` never below 5799 MiB once the kernel derivation was in the store**.  Rebuilds `timbda-corpus-coq-corner` and the check drv |
+| `checks.golden-test` | 26 s, `rc=0` |
+
+Warm, the whole eight-lane chain is 32 s of wall (`12:00:44`-`12:01:16`) and ends at `MemAvailable` 6571
+MiB (10.28 %), with `nix failures: 0` and `watchdog kills: 0`.  Cold, the Coq lane is the only lane that
+matters and it costs well under 1 GiB of the host - a fact this file previously recorded as "peaking over
+4.4 GiB", which was the pre-`≅` WIP grinding on false Leibniz-`=` corner goals (docs/DESIGN-NOTES.md
+sec. 4.2, 13.16).
 
 The store paths an earlier version of this file named - `z2bh66b7dl8izxpqlwmssshsvvrm9ry4-timbda-kernel`,
 `783h7rakq85bx8f9ldwx7lf3rzwvcpyq-…` and `zr3lw60ma4jrgjqmikhdb1ik186d31yp-…` (the two corners),

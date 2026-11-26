@@ -257,10 +257,33 @@
           kernelTheoryDir =
             "${self.packages.${system}.timbda-kernel}/${stack.userContrib}";
 
+          # What a corpus corner reads out of this repo, taken from the two buildPhases below and
+          # nothing else: corpus.py, driver.ml, extract.v, and the corpus spec file.  The kernel's .vo
+          # trees arrive through `timbda-kernel` in buildInputs, not from this tree.  Narrowing `src`
+          # to exactly that is what keeps a documentation-only commit from rehashing both corner
+          # derivations and making the gate re-run rocq over a generated ~700-line corner for no proof
+          # change (measured 2026-11-26: a docs-only edit changed the corner drv hashes, and the
+          # differential lane rebuilt with them).  Directories pass the filter so their allowed files
+          # are reachable; cleanSourceFilter first is what drops .git/.jj/_build/result.
+          cornerSrc = pkgs.lib.cleanSourceWith {
+            src = ./.;
+            # nix hands a `filter` the store path it is copying (`/nix/store/<hash>-source/tools/...`),
+            # not a path relative to `src` - measured on this flake with nix 2.35.3, where a relative
+            # pattern matched every directory and no file.  Match on suffixes instead.  cleanSourceFilter
+            # first is what drops .git/.jj/_build/result.
+            filter = path: type: pkgs.lib.cleanSourceFilter path type && (
+              type == "directory"
+              || pkgs.lib.hasSuffix "/tools/corpus/corpus.py" path
+              || pkgs.lib.hasSuffix "/tools/corpus/driver.ml" path
+              || pkgs.lib.hasSuffix "/tools/extract/extract.v" path
+              || pkgs.lib.hasInfix "/tests/corpus/" path
+            );
+          };
+
           mkCorpusCoqCorner = { cornerName, specFile }: pkgs.stdenv.mkDerivation {
             pname = cornerName;
             version = "0.1.0";
-            src = ./.;
+            src = cornerSrc;
             nativeBuildInputs = [ pkgs.python3 ] ++ stack.ocamlForRocq;
             buildInputs = [ self.packages.${system}.timbda-kernel ] ++ stack.rocqDeps;
             phases = [ "buildPhase" "installPhase" ];
@@ -325,7 +348,7 @@
           mkCorpusOcamlCorner = { cornerName, specFile }: pkgs.stdenv.mkDerivation {
             pname = cornerName;
             version = "0.1.0";
-            src = ./.;
+            src = cornerSrc;
             nativeBuildInputs = [ stack.rocq-core ] ++ stack.ocamlForRocq;
             buildInputs = [ self.packages.${system}.timbda-kernel ] ++ stack.rocqDeps;
             phases = [ "buildPhase" "installPhase" ];
