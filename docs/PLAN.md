@@ -364,7 +364,7 @@ attestations):
   p519 - decision 10, docs/DESIGN-NOTES.md § 13.14; the proof landed 2026-11-26, decisions 12
   and 13), then CertiRocq->C wiring (`Compile.v` - shape ruled by decision 14: a fold-specialized
   hylomorphism, probe docs/probes/p529/; carrier ruled by decision 15: scoped commutativity,
-  materialized choice nodes), then the real golden test.
+  materialized choice nodes; full strategy: docs/COMPILE-STRATEGY.md), then the real golden test.
 
 - **M3 / M4 / M5 - NOT STARTED.** Per decision 9 each gets its DoD written into this section
   before its first commit lands. Inherited bindings: M3 carries the augustss third corner
