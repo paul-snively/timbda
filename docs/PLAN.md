@@ -360,8 +360,10 @@ attestations):
   decision 9's ordering obligation is met). Landed: T4 both legs +
   `T4_value_unique`, T5 for the accepted fragment, T7, the m2-det gate corpus (29/7), CompCert
   toolchain. Outstanding, in forced order: T6 (design obligations settled 2026-11-25 by probes
-  p519 - decision 10, docs/DESIGN-NOTES.md § 13.14), then CertiRocq->C wiring (`Compile.v`),
-  then the real golden test.
+  p519 - decision 10, docs/DESIGN-NOTES.md § 13.14; the proof landed 2026-11-26, decisions 12
+  and 13), then CertiRocq->C wiring (`Compile.v` - shape ruled by decision 14: a fold-specialized
+  hylomorphism, probe docs/probes/p529/, with the ordered-vs-bag carrier ruling due before the
+  leaf is written), then the real golden test.
 
 - **M3 / M4 / M5 - NOT STARTED.** Per decision 9 each gets its DoD written into this section
   before its first commit lands. Inherited bindings: M3 carries the augustss third corner
@@ -886,6 +888,40 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
     guard documented on facts that no longer hold is not a guard, so: when `nix-gate.sh` is touched, its
     host facts get a dated re-read in the same commit.  Consequence for planning: gate headroom is now
     the ~54.5 GiB model-server residency problem, not the proof units, which cost under 1 GiB.
+14. (2026-11-26) **M2's compile increment is a fold-specialized hylomorphism; probe p529 measured
+    the shape, the budget law, and an axiom cost of zero.**  Rulings (DESIGN-NOTES sec. 13.17,
+    sources at docs/probes/p529/).  (a) **The shape.**  `coq/Compile.v` (its own leaf, hub
+    untouched) is `compile := fold h g` over ctrees' `Interp.Fold.fold` specialized to an inline
+    accumulator monad `M X := st -> MRes X` (`st := {fuel; ofrag}`,
+    `MRes = MDone frag x | MLoopR frag | MTrap frag`) whose `iter` the *target* supplies as a
+    fuel-decreasing `Fixpoint` with an exhausted case that emits an `i_loop` instruction and
+    returns `MLoopR`: the resumption boundary is data in the emitted fragment, and the carrier is
+    never demanded.  Per-arm fusion lemmas live in the `reflexivity` regime (17 goals across the
+    probe, all `reflexivity`, 0.42 s/file at ~454 MiB); correctness is a `cog`-simulation composed
+    with the existing `T6_T4_match_*` bridges, not an equality of normal forms.  Guard rails that
+    keep the framing load-bearing, not vocabulary: no `bind` on the compile path (it survives only
+    in the `Monad` dictionary), no whole-program normalization in any proof, fusion lemma stated
+    and used.  (b) **The budget law.**  The fold spends one observation per arm, `RetF` included;
+    emitted-fragment length is bounded by fuel by construction - sec. 4.2's "proportional to one
+    instruction, never to one program" promoted from tactic hygiene to a property of the shape.
+    (c) **Two stucks, permanently distinct.**  Kernel fuel exhaustion is a result (`SStuck`,
+    propagating through `>>=`: `Seq (Choice (Ret 1) Fail) (Ret 2)` at kernel fuel 2 compiles to
+    `MDone [i_branch_left] SStuck`, `Compute`-verified); compile fuel exhaustion is an emitted
+    instruction plus `MLoopR`.  Decision 12f's category error stays guarded by keeping both goals
+    adjacent in the leaf.  (d) **The branch algebra is the candidate decision.**
+    `br2 t u = br branch2 (if b then t else u)` with `branch2 : B2 bool`; one `Choice` tree, two
+    schedulers, the compiles differ only in the returned bool, and a polymorphic `g : B2 ~> M` must
+    pattern-match the branch token before any value exists (the match forces `X = bool`).  The
+    determinacy analysis licenses *which* bool; `FoldCTree.v`'s counterexample (branch-resolving
+    folds need not preserve weak bisimilarity) is RULES-AUDIT sec. 4's horn restated.  The
+    ordered-vs-bag carrier question is **open and now operationally sharp** - it is "which bool
+    for which program, and is emitted order insensitive" - and must be ruled when `Compile.v` is
+    written, not smuggled through `br2`.  (e) **Cone unchanged, verified from below.**  `Print
+    Assumptions` on the probe's kernel-arm goals: `Closed under the global context` x4 - the hylo
+    path adds no axioms; the 13-axiom pin stays the bisimilarity side's bill, and `Compile.v` must
+    not grow it (the gate's cone sweep re-attests).  Ruled a distraction: `CTree/Interp/FoldStateT.v`
+    (`fold_state := fold h g` over ExtLib `stateT`, `Typeclasses Opaque`, `iter` inherited from an
+    inner monad); the inline state is where the resumption policy lives.
 
 ## 9. Known reference anchors
 

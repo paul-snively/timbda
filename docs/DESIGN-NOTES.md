@@ -2321,3 +2321,66 @@ the CompCert-facing leaf imports `EquNotations` only; the conjunction notation `
 terms on either side (use `/\` with parentheses); and `Local Open Scope Z_scope` retypes bare
 numerals, so fuel arguments need `0%nat`/`6%nat`.  The gate's cone sweep re-attests the same
 thirteen pinned axioms over `Timbda.Realize` + `Timbda.RealizeCompose`.
+
+### 13.17 M2's compile increment planned as a fold-specialized hylomorphism: probe p529 measures the shape, the budget law, and an axiom cost of zero (measured 2026-11-26; PLAN decision 14)
+
+**The § 13.16 diagnosis, read forward.**  13.16 established that a bind chain is never Leibniz
+equal to a `sret` because `>>=` is ctrees' corecursive `subst`, unstuck only under `observe`.
+The structural reason is that *no fold was chosen*: with the carrier left as `ctree` itself, the
+only available equalities are the library's `≅`-level monad laws.  The pinned library carries the
+alternative all along - `Interp/Fold.v:29-45`, a `fold` into a monad `M` with the loop operator
+supplied *by `M`* - alongside its own warning that generic-`M` results need "heavy
+axiomatization" and it "simply specializes results to specific `M`s" (`FoldCTree.v:25-29`).
+Probe p529 specializes it and measures what that costs.
+
+**What was built and measured** (docs/probes/p529/, two files, 17 goals, every proof
+`reflexivity`, each file 0.42-0.43 s at ~454 MiB peak - the import cost, not the proof cost).
+The target monad is inline state plus a three-conclusion result: `M X := st -> MRes X`,
+`st := {fuel; ofrag : list Instr}`, `MRes = MDone frag x | MLoopR frag | MTrap frag`, and `iter`
+is a fuel-decreasing `Fixpoint` whose exhausted case *emits an `i_loop` instruction and returns
+`MLoopR`* - the resumption boundary is an emitted instruction, and the carrier is never
+demanded.  Part B runs this against the kernel's real signature `ctree void1 B2 SResult` fed by
+`denE` directly, arms `Ret`/`Fail`/kernel-fuel `SStuck`/`Choice`/`Seq`/`Seq∘Choice`, both a
+left-candidate and a right-candidate scheduler.  `Print Assumptions` on four of the goals:
+**`Closed under the global context`** four times - the hylo path adds no axioms, and the 13-axiom
+cone belongs to the bisimilarity/certiRocq side only.
+
+**Three rulings the measurements force** (decision 14).  (1) **The budget law:** the fold spends
+one observation per arm, `RetF` included; fragment length is bounded by fuel by construction.
+This is the § 4.2 memory discipline ("proportional to one instruction, never to one program")
+promoted from tactic hygiene to a property of the compile's shape.  (2) **Two stucks,
+permanently distinct:** kernel fuel exhaustion is a *result* (`SStuck` propagating through `>>=`;
+measured by `Compute`: `Seq (Choice (Ret 1) Fail) (Ret 2)` at kernel fuel 2 compiles to
+`MDone [i_branch_left] SStuck` - a `MDone`, no `i_loop`), compile fuel exhaustion is an *emitted
+instruction* plus `MLoopR`.  13.16's category error stays guarded by keeping both goals adjacent.
+(3) **The branch algebra is the candidate decision:** `br2 t u = br branch2 (if b then t else u)`
+with `branch2 : B2 bool` - the two compiles of one `Choice` tree differ only in the bool the
+algebra returns, and a polymorphic `g : B2 ~> M` must first *pattern-match the branch token* to
+force the payload equation `X = bool`.  The determinacy analysis is precisely the license for
+returning *which* bool, and `FoldCTree.v`'s counterexample (a branch-resolving fold need not
+preserve weak bisimilarity) is RULES-AUDIT sec. 4's horn restated: the emitted C is defined on
+determinate programs - the same hypothesis that makes the coalgebra side a function, i.e. that
+makes the compile a hylomorphism rather than a relation.
+
+**The regime split, stated once.**  `=` reaches the target side because the algebra is chosen and
+the fold is fuel-bounded: even `Seq`'s `>>=` spine compiles arm-by-arm (`subst` under `observe` on
+a `RetF` head *is* the iota step; `Seq` of two returns costs zero emitted instructions).  `≅`
+stays where no fold is chosen (source-side monad laws, `RealizeCorners.v`, `RealizeCompose.v`).
+`≅`-only "monad laws" are not a wart to repair; they are a flag that a fold is missing.  This is
+the answer to the observation that the § 13.16 correction was disturbing: the correction was not
+a retreat from `=`, it was the discovery that `=` requires planting a fold first.
+
+**What the leaf will therefore be** (`coq/Compile.v`, its own leaf, hub untouched): `h : void1 ~>
+M` empty; `g : B2 ~> M` the scheduler whose bool is justified by the hub's determinacy lemmas;
+`compile := fold h g`; per-arm fusion lemmas in the `reflexivity` regime; correctness as a
+`cog`-simulation composed with the existing `T6_T4_match_*` bridges, not an equality of normal
+forms.  Guard rails, so the framing stays load-bearing: no `bind` on the compile path (it survives
+only in the `Monad` dictionary), no whole-program normalization in any proof, and the fusion lemma
+stated and used.  The ordered-vs-bag carrier question (RULES-AUDIT sec. 4) is *not* closed by
+this probe - probe fact 3 makes it sharper: the carrier question is now operationally "which bool
+for which program", and it must be ruled when `Compile.v` is written.  `FoldStateT.v` (a `stateT`
+wrapper with `Typeclasses Opaque`, `iter` inherited from an inner monad) is ruled a distraction;
+the inline state is where the resumption policy lives.  The toolchain traps measured here
+(pattern-level `@` for parameterized inductives, explicit binders for class fields, `MonadIter`'s
+`{R I}` order, term-position empty matches needing `return ... with`, `Import ListNotations`'s
+module-path rule) are archived in the probe README, where their re-measurement recipes are.
