@@ -145,7 +145,7 @@ the generic `RewPrim` schema. Ill-typed application is **stuck**, not `fail` (li
 | IsInt1 | `isInt[ki] ⟶ ki` | `RewIsInt1` | 1 |
 | IsInt2 | `isInt[v] ⟶ fail  if v not an integer` | `RewIsInt2` | 1 |
 | Cons | `cons[v0, ⟨v1..vn⟩] ⟶ ⟨v0, v1, …, vn⟩` | `RewCons` | 1 |
-| DotDot | `dotdot[ki1, ki2] ⟶ ki1 (ki1+1) … ki2` | `RewDotDot` (range materialised as the value tuple `VTup (map VInt (seq_z ki1 ki2))`; `seq_z` is **inclusive** on `hi` and `nil` when `ki1 > ki2` — see the range note at the end of § 3) | 1 |
+| DotDot | `dotdot[ki1, ki2] ⟶ ki1 | (ki1+1) | … | ki2` (bars as printed, glyph-verified 2026-11-27 from the OPLSS figure PDF; the M0-era line transcribed this RHS without the bars — dated amendment, see DEV-21) | `RewDotDot` (KERNEL materialises the range as the value tuple `VTup (map VInt (seq_z ki1 ki2))` — a NAMED DEVIATION from the printed rule, recorded at DEV-21; `seq_z` is **inclusive** on `hi` and `nil` when `ki1 > ki2` — see the range note at the end of § 3) | 1 |
 | Prim-schema | `op[gv…] ⟶ result-of-host-eval` or stuck | `RewPrim : prim_total op gvs = Some v → Rew (App (Prim op) (Tup gvs)) (Ret v)` — total-part function mirrors `Expr.hs primOpCanFail/PreCond` | 1 (schema), table Tier 1 |
 
 `Mul Div Neg Pls Lt GEq LEq NEq ArrLen ArrApp ArrMap ArrMap…` audit note: no paper
@@ -163,12 +163,15 @@ shapes (`dotdot_range_inclusive`, `dotdot_single_element`, `dotdot_descending_em
 oracle agrees independently: `verse-semantics/reduction/Red.hs:1384` enumerates `i <- [l..h]`
 (Haskell's inclusive `enumFromTo`, empty when `l > h`), and its tests use it inclusively
 (`tests/tests.versetest`: `all{1..4}` → `array{1,2,3,4}`, `for(1..4){7}` → 4 elements).
+  *2026-11-27 amendment (issue #1 comment 2; probe p532): the printed line 459 enumerates with CHOICE bars (`ki1 | (ki1+1) | … | ki2`, glyph-verified from `SPJ_Verse-figures.pdf` — contrast CONS line 457, whose RHS is the comma'd tuple `⟨v0, v1, …, vn⟩`; the printed language distinguishes a choice of values from a single tuple value, and line 459 prints the former). The oracle pin above covers INCLUSIVITY and re-verified at the pinned rev (`all{1..3}` → flat `array{1,2,3}`; `one{1..3}` → `1`; `all{x := 1..3; x*2}` → `array{2,4,6}`; `all{3..1}` → `array{}`). It does NOT cover the arity mode: `Red.hs:1382-1386` is commented "Return multiple results" — the oracle enumerates as a choice, the kernel as one tuple. That divergence is DEV-21.
 
 **Division rounding.** Line 452's `ki1 / ki2` does not fix the rounding for negative operands.
 The kernel uses `Z.div` (floors toward −∞: `(-7)/2 = -4`) and the pinned oracle uses Haskell `div`
 (`reduction/Red.hs:1346-1347`: `reduceArithOp Div ... | j /= 0 = P_Done $ IntE (i \`div\` j)`), which
 floors the same way; `prim_div_zero_is_stuck` and `prim_div_negative_floor` pin both halves of that
 reading (`Div 0` = stuck, not `fail`).
+
+**Recorded deviation (`DEV-21`, recorded 2026-11-27; issue #1 comment 2 + probe p532).** The printed line 459 makes `dotdot` a CHOICE of integers (`ki1 | (ki1+1) | … | ki2`); the kernel materialises one tuple (`coq/Syntax.v` `PDotDot → PRes (VTup (map VInt (seq_z a b)))`), pinned by `prim_dotdot_range`, `KernelTest.v` and the corpus. Measured against the pinned oracle (probe p532, 19/19 green at `d0eababf`): flat multi-result enumeration (`all{1..3}` → `array{1,2,3}` — the kernel reading would answer `array{array{1,2,3}}`). The kernel stands ALONE against paper, oracle and (per openverse's probes) Epic's VM. Consequences, recorded not ruled: `RewSound_DotDot` proves the tuple transcription, not the printed rule; `det_struct` admits `PDotDot` and the m2 corpus marks `dotdot_zero_start`/`dotdot_negative_span` "det=yes" — a determinacy claim about a term the printed rule branches on; `iter(all){dotdot[1,3]}{⟨⟩}` would nest where the printed rule flattens. M2's gate evidence is NOT affected (no golden program uses dotdot or iter syntax — checked at `GoldenCompile.v` 2026-11-27). Ruling owed at M3 before external IR arrives (PLAN § 5.0 M3 DoD): re-materialise dotdot as a kernel-side choice (re-prove the row at choice level, re-pin corpus rows) or declare the tuple a kernel-side divergence with a lowering-boundary conversion.
 
 **Recorded open question (`DEV-5`, recorded 2026-11-19).** Two halves of this are *not* settled,
 and neither is allowed to be written as a fact:
@@ -199,6 +202,7 @@ survives the probes: the VM's surface `/` on two ints yields a rational, and not
 surface function onto the calculus `div` primitive.  The kernel row (`PStuck`,
 `prim_div_zero_is_stuck`) stays measured as recorded; the ruling is still owed, and still
 owed before M2 lowers arithmetic into C.
+  *2026-11-27 addendum (issue #1 comment 2 + probe p532): both research-language authorities answer *stuck*.  Measured ourselves at the pinned oracle rev (probe docs/probes/p532/, fresh build, pinned nixpkgs GHC 9.10.3): `1/0` → `wrong` (the suite itself pins it — `Arith5`, tests.versetest:30; our `p532-div-zero`), and the stuck is NOT catchable through an explicit `if` (`p532-div-zero-if` — the opposite of the VM probes, where the else branch fires); the verifier pair `T53`/`T54` accepts `x/2` and rejects `x/0`.  Newly measured in the same run: the oracle's surface `/` is *integer* division (`Arith4`: `32/4` → `8` — against Epic's rational), and its rounding rows re-pin F (`7/(0-2)` → `-4`, `(0-7)/(0-2)` → `3`, `(0-6)/(0-4)` → `1`).  Half 2 therefore reads as a research-vs-shipping design difference awaiting a named ruling, not an unanswered question about either side: printed rules + pinned oracle say stuck; Epic's VM says catchable fail; the kernel row (`PStuck`) stays measured, and M2 landed on exactly that reading (refusals pinned as refusals, the divZ/DEV-20 ladder carried).  M2 having since lowered arithmetic into C does not close the question — it fixed the *kernel* convention in C; the ruling about the *language* is still owed at M3.
 
 **Named divergence row (recorded 2026-11-25, issue #1 comparison): kernel F vs. surface E.**
 In Leijen's taxonomy (*Division and Modulus for Computer Scientists*, 2001 — E Euclidean
@@ -270,7 +274,7 @@ our judgment.
 | Rule | Paper form | Kernel constructor | Tier |
 |---|---|---|---|
 | IterFail | `iter(ic){B[C[fail]]}{e} ⟶ e` | `RewIterFail : Rew (Iter ic (fillB (fillC Fail)) e) e` | 1 |
-| IterChoice | `iter(ic){B[C[b1 b2]]}{e} ⟶ iter(ic){B[C[block{b1}]]}{iter(ic){B[C[block{b2}]]}{e}}  if leftChoiceFree(C)` — the paper's *candidate-splitting* rule; kernel `Choice` = `Select` op; side condition `leftChoiceFree(C)` is the kernel function of § 1 | `RewIterChoice` | 1 (T2 algebra: = `bind/br2` interchange — **not** a ctrees lemma: the vendored ctrees carries the br2 laws and the up-to-bind machinery (`bind_chain_gen`), not this distributivity; tracked as the iter/choice corner in `docs/RULES-AUDIT.md` § 3-4) |
+| IterChoice | `iter(ic){B[C[b1 b2]]}{e} ⟶ {iter(ic){B[C[block{b1}]]}{e}} | {iter(ic){B[C[block{b2}]]}{e}}  if leftChoiceFree(C)` — printed CHOICE (lines 517-518, read 2026-11-27) juxtaposes the two recursive iters with a choice bar: each candidate forks the continuation. The M0-era transcription nested them (`iter(b1){iter(b2){e}}`), and that nested shape is what gave the tracked bind/br2-interchange corner (§ 3.4 note below, RULES-AUDIT § 4) its stated form — the M3 RewSound_IterChoice statement must be written from the printed juxtaposition (dated amendment 2026-11-27, probe p532). The rule is the paper's *candidate-splitting* rule; kernel `Choice` = `Select` op; side condition `leftChoiceFree(C)` is the kernel function of § 1 | `RewIterChoice` | 1 (T2 algebra: = `bind/br2` interchange — **not** a ctrees lemma: the vendored ctrees carries the br2 laws and the up-to-bind machinery (`bind_chain_gen`), not this distributivity; tracked as the iter/choice corner in `docs/RULES-AUDIT.md` § 3-4) |
 | IterIf | `iter(if){B[delay{e1}]}{e2} ⟶ block{B[e1]}` | `RewIterIf` | 1 |
 | IterAll | `iter(all){B[v]}{e} ⟶ cons[B[v], e]` | `RewIterAll` | 1 |
 | IterFor | `iter(for){B[v]}{e} ⟶ block{∃x{}. cons2[⟨x, B[v]⟩, e]}` | `RewIterFor` (`cons2` = kernel pair-cons primop) | 1 |

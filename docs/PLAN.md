@@ -128,6 +128,11 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
 2. T2 M-algebra: or commutative/idempotent/associative - scoped by decision 15 to contexts
    where no `all`/`for`/`if`/`one` observes the choice - fail as zero, monad laws
    (CTrees equational theory), mirroring the paper's candidate-set claims.
+   2026-11-27 evidence note (issue #1 follow-up; probe docs/probes/p532/): the paper's M(·) carries
+   BOTH choices - ordered ⧳m and unordered ⊍m (Fig. 22; unit laws only) - and SCHOICE (Fig. 26 line 1073)
+   pins the source bar to the ORDERED one; the bag reading is the Fig. 19/24 "no choice" fragment's, i.e.
+   Timbda-0 proper's.  decision 15's scoping stands, now anchored on the paper's own two-operator
+   structure; the ordered-side obligations are M3's (see the M3 DoD below and RULES-AUDIT § 4's follow-up).
 3. T3 delta-primop agreement: for each primop, Gallina primop_eval agrees with int63/Clight
    evaluation of the constant the delta-rule produces. The hinge of "straight C code" fidelity.
    One obligation is already open and unclosed, and it is recorded rather than assumed: integer
@@ -587,6 +592,13 @@ attestations):
   implementation with zero boost.context dependency - a Coq-side statement: candidate sets run as
   data (work-queues) there, indeterminate programs included; native execution of those programs
   is M4's semantic layer.
+  Owed BEFORE the first iter row (2026-11-27, issue #1 follow-up; probes p532 + the figure-PDF
+  re-read): (i) the ordered-phrasing ruling - `RewIter*` statements and every ordered-tuple corpus
+  claim written on the printed side (SCHOICE line 1073: source `|` = ⧳m; printed CHOICE juxtaposes forks,
+  not the § 3.4 nesting), the bag algebra kept as decision 15's reading of ⊍m on unobserved contexts,
+  and an ordered-side equivalence or carrier for the ordered claims (Amendment A drawer); (ii) the
+  DEV-21 `dotdot` ruling - choice re-materialisation vs. named divergence with a lowering-boundary
+  conversion (docs/VERSE-RULES.md § 3).
 - M4: the semantic runtime layer for materialized choice nodes (decision 15), carrying the
   performance/streaming path with it. dcont lowering + generated ContextExtern annotations + shim;
   T12 (static; shipping monitor-free per § 4 boundary policy). Skippable only for determinate-only
@@ -1219,8 +1231,11 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
 
 - Verse papers: simon.peytonjones.org/oplss-26/ ; OPLSS authoritative lecture PDFs at
   cs.uoregon.edu/research/summerschool/summer26/_lectures/ : SPJ_lecture{1..4}_Notes.pdf (fully
-  read), SPJ_Verse-figures.pdf (24 pp.; pages 9-12 — the rewrite rules — still unread: first
-  transcription target), SCW_Verse.pdf (47 pp.; derived material, de-emphasized).
+  read), SPJ_Verse-figures.pdf (24 pp.; pages 9-11 glyph-verified 2026-11-27 via the render pipeline -
+  Figs. 9-15: line 459's choice bars confirmed (DEV-21), Fig. 13's printed CHOICE juxtaposition
+  (§ 3.4 dated amendment); pages 17-24 read the same day - Figs. 22/24-26 carry the two-choice-operator
+  record used in § 3 and RULES-AUDIT § 4; the remaining pages stand as transcribed at M0.  The PDFs serve
+  from www.cs.uoregon.edu - the bare host answers an HTML shell, measured 2026-11-27), SCW_Verse.pdf (47 pp.; derived material, de-emphasized).
 - Prototype/oracle: github.com/augustss/verse-semantics (Haskell repl + tester; :set match-first,
   :set trace).
 - DCont/WAMI: arXiv:2506.16048 ; github.com/CMUAbstract/mlir-wasm-dialect ; upstreaming PR
