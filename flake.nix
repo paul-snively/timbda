@@ -469,7 +469,10 @@
               # Since the increment-C fan-in split (2026-11-26, decision 12) the family is
               # the Realize hub plus the leaves RealizeBridges/RealizeDiv/RealizeCorners
               # composing in RealizeCompose; checking the two roots covers all of them
-              # transitively.  rocqchk re-checks the whole transitive cone; the CONTEXT
+              # transitively.  As of M2 increment D1 (2026-11-26) the root list also
+              # carries Timbda.Compile: measured before wiring, `rocq check` prints for
+              # it exactly the pinned 13 axioms below - the fold path adds none, and no
+              # Compile-family file carries a Print Assumptions line (same header rule).  rocqchk re-checks the whole transitive cone; the CONTEXT
               # SUMMARY's axiom block must match the pinned list verbatim, and the
               # type-in-type / unsafe-(co)fixpoint / assumed-positivity sections must all
               # stay <none>.
@@ -477,8 +480,15 @@
                 || { echo "FAIL the T6 realization theory (Realize.v) did not compile"; exit 1; }
               test -f _build/default/RealizeCompose.vo \
                 || { echo "FAIL the T6 composition leaf (RealizeCompose.v) did not compile"; exit 1; }
-              rocq check -silent -o -Q _build/default Timbda Timbda.Realize Timbda.RealizeCompose > cone.log 2>&1
-              test "$?" = 0 || { echo "FAIL rocq check on Timbda.Realize/Timbda.RealizeCompose"; tail -40 cone.log; exit 1; }
+              # M2 increment D1 (2026-11-26, docs/COMPILE-STRATEGY.md sec. 8): Compile.v is
+              # the CertiRocq->C wiring leaf (fold-specialized hylomorphism, decision 14);
+              # it and its test lane stand in this gate like the Realize family does.
+              test -f _build/default/Compile.vo \
+                || { echo "FAIL the M2 compile leaf (Compile.v) did not compile"; exit 1; }
+              test -f _build/default/tests/CompileTest.vo \
+                || { echo "FAIL the M2 compile test lane did not compile"; exit 1; }
+              rocq check -silent -o -Q _build/default Timbda Timbda.Realize Timbda.RealizeCompose Timbda.Compile > cone.log 2>&1
+              test "$?" = 0 || { echo "FAIL rocq check on Timbda.Realize/Timbda.RealizeCompose/Timbda.Compile"; tail -40 cone.log; exit 1; }
               if grep -n "Admitted" cone.log; then
                 echo "FAIL Admitted appeared in the cone check"; exit 1
               fi
