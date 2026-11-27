@@ -1769,7 +1769,10 @@ lanes).  What was measured:
 
 - **The bazel graph is buildable on this host today**: `bazel --batch test //dialect:...`
   completed with 2141 action-cache hits, dialect test PASSED in 7.6 s — the hermetic-llvm
-  0.8.27 / LLVM-MLIR 23.1.2 closure is fully cached (~7.6 GiB `~/.cache/bazel`).  So the
+  0.8.27 / LLVM-MLIR 23.1.2 closure is fully cached (~7.6 GiB `~/.cache/bazel`).  (2026-11-27
+  amendment, decision 20: the module pin moved to 0.8.23 / LLVM 23.1.0 - the vintage nixpkgs
+  carries at the pinned rev - and the closure was rebuilt at the aligned vintage; the sentence
+  above stands as the M1-era measurement.)  So the
   "bazel builds, nix checks consume as prebuilt" contract (§ 6) needs no new infra: it just
   had to be *attested*.
 - **Evidence shape.**  `tools/build/bazel-lane.sh` (bazel side, run via `nix develop .#cpp`)
@@ -1801,7 +1804,12 @@ artifacts" - but the question was whether nixpkgs can actually build a TableGen 
 pinned vintage.  It can, and the shape of the job is now measured:
 
 - **nixpkgs llvmPackages_23 = 23.1.0** (vs the hermetic-llvm/bazel pin 23.1.2: same 23.1 series;
-  the pair is now pinned as `[formal.mlir_gen]` and asserted by the version-consistency lane).
+  the pair is now pinned as `[formal.mlir_gen]` and asserted by the version-consistency lane.
+  (2026-11-27, decision 20 "one clang law": the pair was CLOSED from the bazel side - hermetic-llvm
+  moved 0.8.27 -> 0.8.23 so both corners evaluate 23.1.0; pins [tooling.clang] pins the Nix-side
+  clang at the same version, and pins.py asserts the three-way equality.  23.1.2 was measured
+  absent from nixpkgs entirely: master 23.1.0 -> 23.1.3 at bac772ef57a2, stable backport
+  d2ae523a695d.)
   It substitutes from cache in seconds - no MLIR-from-source build needed on the Nix side.
 - **What nixpkgs ships**: `llvmPackages_23.llvm.lib` = `libLLVMTableGen.a`, `libLLVMSupport.a`,
   `libLLVMDemangle.a` (plus the rest); `llvm.dev` carries the full classic TableGen C++ API

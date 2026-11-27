@@ -3,10 +3,10 @@
 lane=timbda-bazel-native-tests
 bazel_version=bazel 9.3.2
 bazelversion_file=9.3.2
-llvm_bazel_dep=bazel_dep(name = "llvm", version = "0.8.27")
+llvm_bazel_dep=bazel_dep(name = "llvm", version = "0.8.23")
 build_targets=//dialect:timbda_dialect_test //dialect:TimbdaCanonicalization //dialect:TimbdaCanonicalizationIncGen //dialect:TimbdaDialect
-build_completed=INFO: Build completed successfully, 1 total action
-test_summary=//dialect:timbda_dialect_test                                   (cached) PASSED in 0.1s
+build_completed=INFO: Build completed successfully, 1799 total actions
+test_summary=//dialect:timbda_dialect_test                                            PASSED in 0.0s
 bazel_rc=0
 === source hashes ===
 97f26cc3d41fef8093be30dce5fc304fb20c05a03f5f7f2c3d5ac2e37dfaffc7  dialect/Timbda.td
@@ -19,8 +19,8 @@ e54e21bff72b103c564200976ab9a5e87f3ddcc7a105753560634710ea8b2e9b  dialect/timbda
 3b227b08002b5aecd3b7a87608a0296d3dedc27ca43c5af98cbf462c4e761b26  dialect/TimbdaCanonicalization.h
 be3c3133c36d218b2e60634948f35e46234836d318bb099286ee9ba59f15a4d8  dialect/TimbdaDialect.h
 d8d419012db0a3d01841f80978f9701116f5902544d14329426791a4ce115897  dialect/BUILD.bazel
-b281ba6cac61ce2488aeb2609dcfa0396e5da4aabae32b0e32bb18ec370f1969  MODULE.bazel
-f1b5bdd8c938027ad043347c0f50f1dab549568ce49a4252ae47358376591f3c  MODULE.bazel.lock
+d503fd4f3fe5ccaf1190dc25f846e1fb1e0f32723700e2f796f6f8c8a1712900  MODULE.bazel
+37b91581227792bfaed8299a711fd947cbad8faa40855565f39b40d75da98543  MODULE.bazel.lock
 4d9dfd02f463b487bd0bff68cf9292b3626b31c81febb54e8911e493f64793d0  .bazelversion
-28f535f769ff36cca0ec01062209e10d0d52b45cd9a7a310f1fe02fa987e480e  tools/pins/pins.toml
+ccccb809969afdbe32b2e988e8c8ccd3840895ac7d349816bbc3c8d3d3e72e12  tools/pins/pins.toml
 92bb320e85efdbb9b6d667f979a7be18842b9ecf6735792273e9eea09eb43e5d  tools/build/bazel-evidence/TimbdaCanonicalization.cpp.inc

@@ -1179,6 +1179,41 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
     render.py correctly refused it - the first warm run FAILED CLOSED, no silent fallback;
     render.py's shape gates are the guard by design, and the drv now dumps its log evidence
     on every failure path).  **M2 closes with this increment** (sec. 5.0 closure block).
+20. (2026-11-27) **One clang law: the pin table pins ONE LLVM/clang vintage across both
+    toolchain corners - 23.1.0 - and CI asserts the EQUALITY, not just each side separately.**
+    The wish that forced the measurement: "the Nix clang and the hermetic-llvm clang shall be
+    the same version."  What the measurement found (all 2026-11-27): the project carried THREE
+    clang vintages, one of them never logged - nixpkgs' default `llvmPackages` clang at the
+    pinned rev is 21.1.8 (the D4b golden lane had been compiling with it), `llvmPackages_23`
+    is 23.1.0 (`[formal.mlir_gen]`), and hermetic-llvm 0.8.27 pins 23.1.2.  Eliminations, not
+    a menu:
+    (a) align-at-23.1.2 is impossible: 23.1.2 never existed in nixpkgs - master bumped
+    23.1.0 -> 23.1.3 (bac772ef57a2, 2026-10-06) and nixos-26.05 backported the same jump
+    (d2ae523a695d); no rev evaluates clang 23.1.2, so no substitute exists.  Injecting the
+    23.1.2 source into the pinned nixpkgs via its `llvmVersions` hook means building
+    LLVM+clang from source inside a 5 GiB-guarded lane - refused by the memory regime
+    (DESIGN-NOTES sec. 4.2 measure-and-refuse).  Vendor clang tarballs - refused by the
+    provenance doctrine (every compiler here derives from a pinned source).
+    (b) align-at-23.1.3-or-newer is impossible on the bazel side: the BCR `llvm` module tops
+    out at 0.8.27 (measured: metadata.json version list), which pins 23.1.2.
+    (c) align-at-22.x is refused by watch-out #1: the DCont fork vintage is 23.x-line MLIR.
+    The 23.1-series intersection of the two registries is EXACTLY 23.1.0 - hermetic-llvm
+    0.8.23's default (`bazel_compatibility >=7.7.0` covers the pinned bazel 9.3.2; 0.8.23's
+    transitive pins are the versions our MODULE.bazel already declares).  So the BAZEL corner
+    moves (0.8.27 -> 0.8.23; hermetic clang/MLIR rebuild at 23.1.0; the lane's committed,
+    hash-bound evidence re-attested by one `bazel-lane.sh` run) and the NIX corner stays
+    (llvmPackages_23 = 23.1.0 at the pinned nixpkgs rev, already substituted - the kernel
+    lane's inputs are untouched, the 13-axiom cone untouched), while golden-compile drops
+    `pkgs.clang` for `pkgs.llvmPackages_23.clang`: the 21.1.8 vintage leaves the chain
+    entirely.  Enforcement joins the pin family: new pins entry [tooling.clang] =
+    llvmPackages_23.clang 23.1.0 (auto-asserted by `checks.version-consistency` via
+    `pinVersionEntries`) and pins.py's cross-entry check asserting
+    [tooling.clang] == [hermetic_llvm].llvm_default_version == [formal.mlir_gen].  Named
+    residual: at M-2, watch-out #1 moves the bazel MLIR to the DCont fork commit - a
+    deliberate MLIR-only fork of the vintage, re-pinned by its own batch; the clang law then
+    constrains the two CLANG corners (nix + hermetic toolchain), not the fork's MLIR APIs.
+    The M-1..M2-era record stands: those increments ran 0.8.27/23.1.2, and sec. 13.10's
+    "vintage pair" (23.1.0 vs 23.1.2) is closed by this batch.
 
 ## 9. Known reference anchors
 

@@ -11,20 +11,27 @@ note = "chosen for compcert 3.17 + rocq 9.1 window (PLAN pin matrix)"
 
 [bazel]
 version = "9.3.2"
-note = "= .bazelversion; hermetic-llvm v0.8.27 pins 9.3.2; bazelisk in devShell"
+note = "= .bazelversion; hermetic-llvm 0.8.23 declares bazel_compatibility >=7.7.0 (the 0.8.27-era pairing pinned 9.3.2 too); bazelisk in devShell"
 
 [hermetic_llvm]
 source = "github:hermeticbuild/hermetic-llvm"
 bcr_module = "llvm"
-bcr_version = "0.8.27"
-llvm_default_version = "23.1.2"
-ref_tag = "v0.8.27"
-note = "M-1 builds MLIR 23.1.2 from the module's default source archive"
+bcr_version = "0.8.23"
+llvm_default_version = "23.1.0"
+ref_tag = "v0.8.23"
+note = "one clang law (decision 20, 2026-11-27): this vintage == [tooling.clang] == [formal.mlir_gen] == 23.1.0.  The M-1..M2-era record stands: those builds ran on 0.8.27 / LLVM 23.1.2; the elimination ledger is PLAN decision 20."
+# 23.1.2 (modules 0.8.24..0.8.27) measured ABSENT from nixpkgs: master bumped
+# 23.1.0 -> 23.1.3 (bac772ef57a2, 2026-10-06), nixos-26.05 backported the same
+# jump (d2ae523a695d); no nixpkgs rev ever evaluates clang 23.1.2 and no
+# substitute exists.  BCR tops out at 0.8.27, so >=23.1.3 is unreachable on the
+# bazel side.  The shared vintage is therefore exactly 23.1.0.
 
 [llvm_project]
 # Watch-out #1: our dialect <-> DCont fork <-> llvm-project commit must share
 # ONE MLIR API vintage.
 m1_source = "hermetic-llvm default source archive (llvm-project-23.1.2.src)"
+# 2026-11-27 (decision 20): the live default archive is hermetic-llvm 0.8.23's
+# llvm-project-23.1.0.src; the line above stays as the M-1-era record.
 dcont_vintage_repo = "https://github.com/byeongjee/llvm-project.git"
 dcont_vintage_commit = "67772838e389c548f68c5513a0d417c0534ac9c7"
 dcont_vintage_date = "2026-02-15"
@@ -64,6 +71,12 @@ note = "ccomp lane is license-gated (later milestone); build-time lib dep only f
 # 23.1.2 (Bazel dialect side): same 23.1 series; divergence between the two
 # corners surfaces as generation-lane drift and is resolved by a deliberate pin
 # batch, never silently.
+# 2026-11-27 (decision 20): the batch landed.  The Bazel corner moved to 23.1.0
+# (hermetic-llvm 0.8.23); both corners now share ONE vintage, and pins.py's
+# one-clang-law check asserts this version == [tooling.clang].version ==
+# [hermetic_llvm].llvm_default_version.  M-2's from_git fork commit (watch-out
+# #1) is the named successor divergence: an MLIR-only fork of the vintage,
+# re-pinned by its own batch.
 nixpkgs_attr = "llvmPackages_23.mlir"
 version = "23.1.0"
 
@@ -153,6 +166,15 @@ note = "record WAMI stack-switching engine flags per harness when WAMI leg lands
 [tooling.lit]
 nixpkgs_attr = "lit"
 version = "18.1.8"
+
+# the clang checks.golden-compile builds the golden translation unit with (D4b).
+# Moved 2026-11-27 (decision 20) off pkgs.clang - nixpkgs' DEFAULT llvmPackages
+# clang at this rev, measured 21.1.8: a third vintage nothing ever logged.
+# version-consistency asserts it against nixpkgs; pins.py asserts it equals
+# [hermetic_llvm].llvm_default_version and [formal.mlir_gen].version.
+[tooling.clang]
+nixpkgs_attr = "llvmPackages_23.clang"
+version = "23.1.0"
 
 [tooling.dune]
 nixpkgs_attr = "dune"

@@ -82,6 +82,13 @@ def main():
             check(n.get("owner") == owner and n.get("repo") == repo and n.get("rev") == want_rev,
                   f"flake.lock {tbl['flake_input']} == pins {owner}/{repo}@{want_rev[:12]}")
 
+    cc = pins.get("tooling", {}).get("clang", {})
+    hv = pins["hermetic_llvm"]["llvm_default_version"]
+    mv = pins["formal"]["mlir_gen"]["version"]
+    check(cc.get("version") == hv == mv,
+          f"one clang law (decision 20): pins [tooling.clang] {cc.get('version')} == "
+          f"[hermetic_llvm].llvm_default_version {hv} == [formal.mlir_gen].version {mv}")
+
     if not OFFLINE:
         url = (f"https://bcr.bazel.build/modules/llvm/"
                f"{pins['hermetic_llvm']['bcr_version']}/MODULE.bazel")

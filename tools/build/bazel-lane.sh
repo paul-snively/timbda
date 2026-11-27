@@ -36,7 +36,17 @@ LOG="$(mktemp)"
 
 # The M1 lane target set (decision 9 item 4): generated rewriters, the
 # canonicalization TU, the dialect ops library, and its test.
-if ! bazel --batch test \
+#
+# Memory discipline (2026-11-27, decision 20 run): this host may carry a large
+# resident workload, so the lane can run under an explicit parallelism cap
+# instead of bazel's core-count defaults.  TIMBDA_BAZEL_JOBS maps to --jobs.
+# (TIMBDA_BAZEL_LOCAL_RAM_RESOURCES would map to bazel's --local_ram_resources,
+# but that flag is measured unrecognized on bazel 9.3.2; --jobs is this
+# bazel's envelope knob.  With the LLVM/MLIR link peaks, --jobs=4 fits a
+# ~10 GiB footprint - the lane ran at that setting on the decision-20 day.)
+BAZEL_MEM_FLAGS=""
+if [ -n "${TIMBDA_BAZEL_JOBS:-}" ]; then BAZEL_MEM_FLAGS="$BAZEL_MEM_FLAGS --jobs=$TIMBDA_BAZEL_JOBS"; fi
+if ! bazel --batch test $BAZEL_MEM_FLAGS \
       //dialect:timbda_dialect_test \
       //dialect:TimbdaCanonicalization \
       //dialect:TimbdaCanonicalizationIncGen \

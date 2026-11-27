@@ -876,7 +876,11 @@
             pname = "timbda-golden-compile";
             version = "0.0.0";
             src = ./tests/golden-compile;
-            nativeBuildInputs = [ pkgs.python3 pkgs.clang ] ++ stack.ocamlForRocq;
+            # pkgs.llvmPackages_23.clang, not pkgs.clang (decision 20 "one clang law":
+            # 23.1.0 = pins [tooling.clang] == [formal.mlir_gen] == hermetic-llvm
+            # 0.8.23's LLVM_VERSION; the default llvmPackages clang at this rev is 21.1.8
+            # and now compiles nothing in the chain).
+            nativeBuildInputs = [ pkgs.python3 pkgs.llvmPackages_23.clang ] ++ stack.ocamlForRocq;
             buildInputs = [ self.packages.${system}.timbda-kernel ] ++ stack.rocqDeps;
             phases = [ "buildPhase" "installPhase" ];
             buildPhase = ''
