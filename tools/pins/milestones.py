@@ -82,11 +82,11 @@ def about_string(pins):
     mm = latest_closed(pins)
     if mm is None:
         return None
-    nxt = next((x for x in pins["milestone"] if x["status"] != "CLOSED"), None)
-    s = (pins["about"]["prefix"]
-         + f"Latest milestone: {mm['id']} closed {mm['closed']} - {mm['about_line']} "
-         + (f"Next: {nxt['id']}." if nxt else "All milestones closed."))
-    return s + pins["about"]["suffix"]
+    a = pins["about"]
+    # Terse shape (user ruling 2026-11-27): base - OPLSS link - current completed
+    # milestone.  The em dash is spelled as a \u escape so the source stays ASCII.
+    return (f"{a['base']} \u2014 {a['link']}. "
+            f"{a['milestone_lead']} {mm['id']} (closed {mm['closed']}).")
 
 
 def do_check():

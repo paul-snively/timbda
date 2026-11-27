@@ -113,8 +113,9 @@ same sweep).  A diff nobody can explain is a mis-emit; the lane fails closed.
 ### T-005: the push task (2026-11-27) — milestone table + GitHub About in the ritual
 
 `tools/pins/milestones.toml` is the **milestone table of record**: one entry per
-milestone (id, one-sentence summary, status, closure date when PLAN dates it, and
-an `about_line` for the repo's About section).  Three surfaces assert it:
+milestone (id, one-sentence summary, status, closure date when PLAN dates it; the
+About text itself comes from the `[about]` block + the latest dated CLOSED
+milestone, per the terse-shape ruling below).  Three surfaces assert it:
 
 - `checks.milestones-consistency` in the gate chain (default chain now TEN lanes),
   and the CI pins job run `tools/pins/milestones.py check`: the README "Milestones
@@ -124,9 +125,12 @@ an `about_line` for the repo's About section).  Three surfaces assert it:
 - `tools/build/push-task.sh` is the **fast, verifiable tail of the landing ritual**,
   run after the pinned gate chain is green: milestone check -> bookmark `main` to @
   (recording the full commit id) -> `jj new` -> `jj git push` -> `git ls-remote`
-  verification that `origin/main` is exactly the bookmarked commit -> `gh api`
-  PATCH of the repo About, composed from the latest dated CLOSED milestone,
-  verified by round-trip GET.  The gate stays a separate (long) step; the Strata
+  verification that `origin/main` is exactly the bookmarked commit -> `gh api -X PATCH`
+  of the repo About (the method is a `-X` flag - measured: positional `PATCH` parses
+  as an endpoint), composed per the user ruling of 2026-11-27: *terse* - what the
+  repo is, the OPLSS'26 link defining "Timbda-0", and `Current completed milestone:
+  Mx (closed date)` - no achievement sentences (PLAN sec. 5.0 carries those), verified
+  by round-trip GET.  The gate stays a separate (long) step; the Strata
   memory note stays the agent-side last step.
 - A milestone transition MUST edit `milestones.toml` in the same commit as its
   PLAN closure block - the check makes a stale README a red gate, not a todo item.
