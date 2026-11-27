@@ -487,6 +487,10 @@
                 || { echo "FAIL the M2 compile leaf (Compile.v) did not compile"; exit 1; }
               test -f _build/default/tests/CompileTest.vo \
                 || { echo "FAIL the M2 compile test lane did not compile"; exit 1; }
+              # M2 increment D4b (2026-11-27): the golden-compile record is part of the
+              # kernel build too - checks.golden-compile loads its .vo from the install.
+              test -f _build/default/tests/GoldenCompile.vo \
+                || { echo "FAIL the M2 golden-compile record (GoldenCompile.v) did not compile"; exit 1; }
               rocq check -silent -o -Q _build/default Timbda Timbda.Realize Timbda.RealizeCompose Timbda.Compile > cone.log 2>&1
               test "$?" = 0 || { echo "FAIL rocq check on Timbda.Realize/Timbda.RealizeCompose/Timbda.Compile"; tail -40 cone.log; exit 1; }
               if grep -n "Admitted" cone.log; then
@@ -660,6 +664,12 @@
       checks = forAllSystems (system: pkgs:
         let
           stack = coqStack pkgs;
+
+          # checks-scope twin of packages' `kernelTheoryDir` (sec. 675 note: the fan-out
+          # rebinds what corners need by name): where timbda-kernel installs its .vo
+          # trees, for the golden-compile driver's Require Import TimbdaTests.*.
+          goldenKernelTheoryDir =
+            "${self.packages.${system}.timbda-kernel}/${stack.userContrib}";
           cornerCoq = self.packages.${system}.timbda-corpus-coq-corner;
           cornerOcaml = self.packages.${system}.timbda-corpus-ocaml-corner;
           cornerCoqM2 = self.packages.${system}.timbda-corpus-coq-corner-m2;
@@ -849,6 +859,54 @@
               mkdir -p $out
               cp actual.out $out/golden.out
               cp golden.expected $out/
+            '';
+          };
+
+          # ---- M2 golden-compile lane (D4b, 2026-11-27): the compiler's golden test ----
+          # coq/tests/GoldenCompile.v renders every golden program's compile fragment
+          # to C source lines against the harness contract (tests/golden-compile/
+          # README.md).  This lane recomputes the rendering FROM THE INSTALLED kernel's
+          # .vo trees (the driver re-checks TimbdaTests.GoldenCompile and, through it,
+          # the Compile leaf), requires it byte-equal to the checked-in golden.c.
+          # expected, compiles that file with clang -std=c11 -Wall -Werror, and requires
+          # the run's stdout to equal the pinned golden.stdout.  Triangulated: Coq says
+          # what `compile` emits, clang says the rendering is real C, the run says the C
+          # behaves exactly as the corner pins promise.
+          golden-compile = pkgs.stdenv.mkDerivation {
+            pname = "timbda-golden-compile";
+            version = "0.0.0";
+            src = ./tests/golden-compile;
+            nativeBuildInputs = [ pkgs.python3 pkgs.clang ] ++ stack.ocamlForRocq;
+            buildInputs = [ self.packages.${system}.timbda-kernel ] ++ stack.rocqDeps;
+            phases = [ "buildPhase" "installPhase" ];
+            buildPhase = ''
+              set -euo pipefail
+              export ROCQPATH="${goldenKernelTheoryDir}''${ROCQPATH:+:}$ROCQPATH"
+              # build in the writable dir: the store src is read-only (corner-corner idiom)
+              cp $src/golden_driver.v $src/render.py .
+              echo "ROCQPATH=$ROCQPATH"
+              ls "${goldenKernelTheoryDir}" || true
+              rocq compile golden_driver.v > coq-golden.log 2>&1
+              rocq_rc=$?
+              test "$rocq_rc" = 0 || { echo "FAIL: the golden driver did not compile (rc=$rocq_rc)"; tail -40 coq-golden.log; exit 1; }
+              echo "coq-golden.log bytes: $(wc -c < coq-golden.log)"
+              head -5 coq-golden.log
+              if ! python3 render.py < coq-golden.log > golden.c.actual; then
+                echo "FAIL: render.py rejected the rocq output; log head/tail:"
+                head -10 coq-golden.log; echo "..."; tail -10 coq-golden.log
+                exit 1
+              fi
+              diff -u $src/golden.c.expected golden.c.actual \
+                || { echo "FAIL: Coq-rendered C differs from golden.c.expected"; exit 1; }
+              clang -std=c11 -Wall -Werror -x c -o golden_c $src/golden.c.expected
+              ./golden_c > golden.stdout.actual
+              diff -u $src/golden.stdout golden.stdout.actual \
+                || { echo "FAIL: golden run stdout differs from golden.stdout"; exit 1; }
+              echo "OK golden-compile: rendering byte-equal, clang clean, stdout pinned ($(wc -l < golden.stdout.actual) lines)"
+            '';
+            installPhase = ''
+              mkdir -p $out
+              cp golden.c.actual golden.stdout.actual coq-golden.log $out/
             '';
           };
 

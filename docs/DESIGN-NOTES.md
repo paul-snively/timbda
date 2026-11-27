@@ -107,7 +107,8 @@ Canonical loop:
 
 ```sh
 python3 tools/pins/pins.py check                          # pins.toml == MODULE.bazel == flake.lock
-tools/build/nix-gate.sh                                   # the default eight-lane chain, --max-jobs 1, and
+tools/build/nix-gate.sh                                   # the default nine-lane chain (golden-compile joined
+                                                        # at D4b, 2026-11-27), --max-jobs 1, and
                                                         # a refusal to start if the host has no headroom
    # (nix builds cannot be cgroup-capped from here: see sec. 4.3).  Individually they are:
 nix build .#checks.x86_64-linux.version-consistency       # nixpkgs tool versions == pin table

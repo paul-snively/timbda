@@ -1,7 +1,7 @@
 # Timbda-0 Verified Compiler — Master Plan
 
-Status: plan settled; per-milestone DoDs + statuses recorded at § 5.0 (M-1/M0 closed, M1 open,
-M2 paused behind M1 - decision 9). Last updated: 2026-11-25.
+Status: plan settled; per-milestone DoDs + statuses recorded at § 5.0 (M-1/M0 closed, M1 closed,
+M2 closed 2026-11-27; M3 next). Last updated: 2026-11-27.
 Authoritative recapitulation. Supporting decision records are also stored in Strata memory
 (tags: timbda, gallina-kernel, ctrees, certirocq, boost-context, nix, bazel, hermetic-llvm,
 compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbda".
@@ -369,8 +369,9 @@ attestations):
   annotation chain (sec. 2 artifact 5) -> M4; vendored DCont fork subtree (sec. 6) -> M4/M5
   when the conversion passes start.
 
-- **M2 - OPEN; M1-closure pause LIFTED 2026-11-25** (M1 declared closed above;
-  decision 9's ordering obligation is met). Landed: T4 both legs +
+- **M2 - OPEN at lift; CLOSED 2026-11-27** (M1-closure pause LIFTED 2026-11-25, decision 9's
+  ordering obligation met; the full close-out record is below at the end of this status block).
+  Landed: T4 both legs +
   `T4_value_unique`, T5 for the accepted fragment, T7, the m2-det gate corpus (29/7), CompCert
   toolchain. Outstanding, in forced order: T6 (design obligations settled 2026-11-25 by probes
   p519 - decision 10, docs/DESIGN-NOTES.md § 13.14; the proof landed 2026-11-26, decisions 12
@@ -534,10 +535,54 @@ attestations):
   carriers now pinned as traps), and the budget law generalizes honestly to the dispatch: exact 1/0 on every
   `compile_h` path, `1 \/ 3` overall (a program holds at most one pair node under the
   exactly-one-site scope). All three D4a lemmas print `Closed under the global context` -
-  zero axioms added, cone still the pinned 13.  What M2 now owes: D4b (the golden test +
-  gate chain 9 + M2 close-out).*
+  zero axioms added, cone still the pinned 13.*
+  *Increment D4b landed 2026-11-27 (decision 19): the golden test as gate lane
+  `checks.golden-compile` (chain 9).  `coq/tests/GoldenCompile.v` is the golden record -
+  13 programs (G1-G13 of `tests/golden-compile/README.md`), every verdict a fuel-pinned
+  mirror of a landed corner lemma, including Amendment B's obligation: G11/G12 are TRUE
+  multi-candidate programs (the value pair `Choice (Ret 1) (VInt 2)`) compiled to the named
+  arbiter `Scall`, and G13 pins the same node complete at fuel 1.  The Coq-side C renderer
+  emits the whole translation unit (`golden_lines`); the lane recomputes it from the
+  installed kernel's `.vo` trees, requires byte-equality with `golden.c.expected`, compiles
+  with `clang -std=c11 -Wall -Werror`, and requires the run's stdout to equal the pinned
+  `golden.stdout` - triangulated: Coq says what compile emits, clang says the rendering is
+  real C, the run says the C behaves as the corners promise.  Refusals (genuine Fail-pair,
+  two-site, context-carried pairs) stay Coq-side record entries, not C programs.  The
+  determinate golden programs - out-of-order constant expressions included (G3, G4, G5) -
+  compile to straight-line C with ZERO switch sites: the DoD's sentence, measured.*
   *Ordering 2026-11-25 (decision 9): what remains of M2 and the order it must land in are
   pinned at § 5.0 - M1 closure first.*
+
+- **M2 - CLOSED 2026-11-27** (deadline: Thanksgiving, met).  Closure condition (sec. 6,
+  decision 8's rule): every item of the written DoD (§ 5.0 line "M2: the non-naive leg")
+  landed on `main` gate-attested.
+  - *Checks.v (T4) both legs + `T4_value_unique`; T5; the m2-det gate corpus (29/7) with its
+    two corners; CompCert toolchain pinned* - landed 2026-11-21..24 (decisions 10-12 era).
+  - *T6/T7 (`coq/Lower.v` determinate-fragment lowering)* - landed 2026-11-25, decision 10a's
+    cone audit (13 pinned axioms, `expected_cone` in the kernel lane).
+  - *CertiRocq->C wiring* - `coq/Compile.v`, landed corner by corner 2026-11-26/27 as
+    increments D1 (`8a8f9a47`), D2 (`d00852ad`), D3 (`a4752619`, probe p530, decision 17),
+    D4a (`2a858edf`, probes p530/p531, decision 18), D4b (this increment, decision 19):
+    `compile` is the fold-specialized hylomorphism of decision 14 on the ruled carrier, its
+    budget law a first-class lemma (`c_compile_frag_bound`), every nondeterminism either
+    proved away (candidate-peek certificate, decision 17) or printed as a named, specified
+    choice node (decision 18).  The cone re-attested to the same 13 axioms at every corner;
+    the D4-family lemmas themselves print `Closed under the global context`.
+  - *Golden test* - `checks.golden-compile` (D4b): 13-program golden table, Coq-rendered C
+    byte-pinned, clang-compiled, stdout-pinned; determinate programs straight-line with zero
+    switch sites; the two genuine two-candidate programs exercise the arbiter node; refusals
+    pinned as refusals.  Gate chain now NINE lanes; this increment gate-attested with the
+    full chain green (`nix failures: 0`, `watchdog kills: 0`).
+  Named debts carried out of M2 (each already lives in a decision line, none invented at
+  closure): the loop-fusion regime is unimplementable on `ctree void1 B2` and moves to M3
+  with the carrier ruling (COMPILE-STRATEGY Amendment A); context-carried choice-node
+  emission (three-valued hint inside the fold), the multi-site hint queue, and the
+  fail-as-carrier ruling are M3's compile-side drawer (decision 18, probe p531); the arbiter
+  IMPLEMENTATION (re-enterable control) is M4/M5, its SPEC pinned at the node (decision 18);
+  the general vacuous-site argument stays a corner pin until a lane needs the lemma
+  (decision 17); T6's Vint-1 guard-map spelling vs the value-faithful compile stays a
+  golden-pins-take-values deviation (Amendment-era note).  M3's DoD stands as written above;
+  nothing in M2 closure rewrites it.
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
   implementation with zero boost.context dependency - a Coq-side statement: candidate sets run as
   data (work-queues) there, indeterminate programs included; native execution of those programs
@@ -1107,6 +1152,33 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
     sweep still the 13. Named debts unchanged from 17 plus: the Coq-side execution lemma for
     the node (arbiter extern entered into `ge0`, candidate temps in the env) is M4/M5 - in M2
     the node is observed through the clang leg (D4b golden pins).
+19. (2026-11-27, increment D4b) **The golden test is a lane, and its evidence is triangulated:
+    Coq pins what `compile` emits, clang says the rendering is real C, the run says the C behaves
+    as the corners promise - and each leg can fail independently.** `coq/tests/GoldenCompile.v`
+    holds the golden record (13 programs + 3 refusals, README table), the C renderer, and the
+    whole translation unit as `golden_lines`; `checks.golden-compile` loads the record from the
+    INSTALLED kernel (`Require Import TimbdaTests.GoldenCompile` - the driver re-checks the cone
+    transitively), requires the rendered source byte-equal to `golden.c.expected`, compiles it
+    `clang -std=c11 -Wall -Werror`, and pins the run's stdout.  Rulings: (a) the harness contract
+    is part of the pin - globals for the binary-positive idents, `TIMBDA_NOTSET` sentinel because
+    `SFail` and `SStuck` both emit `Sskip` (the C cannot distinguish them; the Coq verdicts do);
+    the arbiter body in M2 IS the decision-18 spec (`res = c0`) and M4/M5 replaces the body, not
+    the call sites; (b) Amendment B's obligation is met inside the golden table (G11/G12 true
+    two-candidate programs, G13 the node complete at fuel 1) - the m2-det corpus stays the
+    eval-side gate corpus it always was; (c) renderer facts measured on Rocq 9.1.1: string
+    literals need `Open Scope string_scope`, quotes inside strings double (`""`), backslashes are
+    literal, `Z.to_string`/`Nat.to_string` do not exist, `Z.to_nat` on a 64-bit value is an OOM
+    (measured: killed at a 5 GiB scope), BinNums.Z has exactly Z0/Zpos/Zneg - the renderer works
+    in binary `Z.leb/Z.div/Z.modulo/Z.eqb` with 20 fuel; (d) the gate chain is now NINE lanes
+    (`golden-compile` joins; `coq-build.sh`'s artifact list catches up to 19, which also closes
+    the unlogged D1 gap - Compile.vo/CompileTest.vo were gated in the kernel lane but missing
+    from the tool's list); (e) **the display is part of the contract** - `golden_driver.v`
+    must open `ListNotations` + `string_scope` IN THE DRIVER (measured: the Compute result
+    prints through the notation scope of the file performing it; without the openings the
+    same `golden_lines` dumped 323 KiB of raw `String.String`/`Ascii.Ascii` constructors and
+    render.py correctly refused it - the first warm run FAILED CLOSED, no silent fallback;
+    render.py's shape gates are the guard by design, and the drv now dumps its log evidence
+    on every failure path).  **M2 closes with this increment** (sec. 5.0 closure block).
 
 ## 9. Known reference anchors
 

@@ -171,7 +171,7 @@ mkdir -p "$(dirname "$LOG")" || fail "cannot create the log directory for $LOG"
 # actually uncontained - the flake timbda-kernel buildPhase (artifact checks +
 # the rocq check cone audit on the Realize/RealizeCompose roots).  Running
 # this wrapper on the current tree needs TIMBDA_COQ_MEMORY_MAX raised.
-EXPECTED_VO=(Syntax Rewriting RewRules RuleAst CheckerManifest Semantics Denotation Eval Checks ChecksEval KernelStub Probe Lower tests/KernelTest tests/ChecksTest tests/LowerTest)
+EXPECTED_VO=(Syntax Rewriting RewRules RuleAst CheckerManifest Semantics Denotation Eval Checks ChecksEval KernelStub Probe Lower Compile tests/KernelTest tests/ChecksTest tests/LowerTest tests/CompileTest tests/GoldenCompile)
 missing_vos() {
   local out=() t
   for t in "${EXPECTED_VO[@]}"; do

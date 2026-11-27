@@ -1,0 +1,82 @@
+#include <stdio.h>
+#define TIMBDA_NOTSET (0x7FFFFFFFFFFFFFFFL)
+static long timbda_res   = TIMBDA_NOTSET;
+static long timbda_cand0 = TIMBDA_NOTSET;
+static long timbda_cand1 = TIMBDA_NOTSET;
+static void timbda_arbiter(long c0, long c1) { timbda_res = c0; }
+static void reset(void) { timbda_res = TIMBDA_NOTSET; timbda_cand0 = TIMBDA_NOTSET; timbda_cand1 = TIMBDA_NOTSET; }
+static void report(void) { if (timbda_res == TIMBDA_NOTSET) puts("NOTSET"); else printf("%ld\n", timbda_res); }
+int main(void) {
+  reset();
+  {
+    timbda_res = 3L;
+  }
+  report();
+  reset();
+  {
+    ;
+  }
+  report();
+  reset();
+  {
+    timbda_res = 2L;
+  }
+  report();
+  reset();
+  {
+    timbda_res = 5L;
+  }
+  report();
+  reset();
+  {
+    timbda_res = -4L;
+  }
+  report();
+  reset();
+  {
+    ;
+  }
+  report();
+  reset();
+  {
+    timbda_res = 1L;
+  }
+  report();
+  reset();
+  {
+    timbda_res = 2L;
+  }
+  report();
+  reset();
+  {
+    ;
+  }
+  report();
+  reset();
+  {
+    ;
+  }
+  report();
+  reset();
+  {
+    timbda_cand0 = 1L;
+    timbda_cand1 = 2L;
+    timbda_arbiter(timbda_cand0, timbda_cand1);
+  }
+  report();
+  reset();
+  {
+    timbda_cand0 = 2L;
+    timbda_cand1 = 1L;
+    timbda_arbiter(timbda_cand0, timbda_cand1);
+  }
+  report();
+  reset();
+  {
+    timbda_cand0 = 1L;
+    timbda_cand1 = 2L;
+    timbda_arbiter(timbda_cand0, timbda_cand1);
+  }
+  report();
+  return 0;
+}

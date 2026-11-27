@@ -75,8 +75,9 @@
 #                                            disables it, which is the way to make this script worse.
 #   TIMBDA_NIX_GATE_JOBS      default 1      passed as `nix build --max-jobs`.
 #   TIMBDA_NIX_GATE_ALLOW     default no     `yes` runs past a failed preflight, at your own risk.
-#   TIMBDA_NIX_GATE_TARGETS   default: the eight documented targets (the four M2-era
-#                                            lanes + the four M1 lanes of decision 9 § 5.0),
+#   TIMBDA_NIX_GATE_TARGETS   default: the nine documented targets (the five M2-era
+#                                            lanes incl. golden-compile (D4b) + the four M1
+#                                            lanes of decision 9 § 5.0),
 #                                            cheapest-first EXCEPT that the Coq package lane
 #                                            runs before the check lanes that drag it; a
 #                                            space-separated override.
@@ -213,6 +214,7 @@ if [ "$#" -eq 0 ]; then
       .#packages.x86_64-linux.timbda-kernel
       .#checks.x86_64-linux.corpus-differential
       .#checks.x86_64-linux.golden-test
+      .#checks.x86_64-linux.golden-compile
     )
   fi
 fi

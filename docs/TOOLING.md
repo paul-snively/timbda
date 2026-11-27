@@ -87,3 +87,25 @@ probe under `docs/probes/`.
   dirty the kernel drv (its `src` is `./coq`), so docs gates stay light even warm.
 - **Status.** `in use`. Not a substitute for the watchdog (which stays armed for anything NOT
   warmed); revisit if the model server stops being resident or the lanes' memory profile changes.
+
+### T-004: regenerating the golden-compile artifacts (D4b, 2026-11-27)
+
+`tests/golden-compile/golden.c.expected` and `golden.stdout` are NEVER hand-edited.
+They are regenerated only from the lane itself - the check derivation IS the
+regeneration (one source of truth; a hand-run reproduction must replicate the
+driver's `ListNotations`/`string_scope` openings, which is exactly why the lane,
+not a shell recipe, is authoritative):
+
+```sh
+TIMBDA_COQ_MEMORY_HIGH=2G TIMBDA_COQ_MEMORY_MAX=3G TIMBDA_COQ_MIN_AVAIL=1G \
+  nix develop .#devShells.x86_64-linux.rocq -c tools/build/coq-build.sh        # 19 .vo gate
+nix build --no-link .#checks.x86_64-linux.golden-compile                       # rebuild with the current tree
+OUT=$(nix build --no-link --print-out-paths .#checks.x86_64-linux.golden-compile)
+diff -u "$OUT/golden.c.actual"    tests/golden-compile/golden.c.expected
+diff -u "$OUT/golden.stdout.actual" tests/golden-compile/golden.stdout
+```
+
+An intentional change to the compile algebra shows up as a diff here *before* it
+shows up in the gate - which is the point: a golden edit is a decision, so it lands
+in the same commit as the decision that justifies it (the README table changes in the
+same sweep).  A diff nobody can explain is a mis-emit; the lane fails closed.
