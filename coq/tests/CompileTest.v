@@ -43,6 +43,17 @@ Definition c_choice_prog : Expr := Choice (Ret (VInt 1)) Fail.
 Definition c_nest4 : Expr :=
   Seq (Seq (Seq (Ret (VInt 1)) (Ret (VInt 2))) (Ret (VInt 3))) (Ret (VInt 4)).
 
+(* Corner 2 (D2) corner spellings: decision 5's `op[..]` shape, same as
+   RealizeCorners' prim_corner and Compile.v's local cprim. *)
+Definition c_prim_add_prog : Expr :=
+  App (Ret (VPrim PAdd)) (TupE (map Ret [VInt 2; VInt 3])).
+Definition c_prim_gt_prog : Expr :=
+  App (Ret (VPrim PGt)) (TupE (map Ret [VInt 3; VInt 2])).
+Definition c_prim_div_neg_prog : Expr :=
+  App (Ret (VPrim PDiv)) (TupE (map Ret [VInt 7; VInt (-2)])).
+Definition c_prim_div0_prog : Expr :=
+  App (Ret (VPrim PDiv)) (TupE (map Ret [VInt 1; VInt 0])).
+
 (* Coq re-exports a module's OWN definitions but not the libraries it
    `Require Import`ed, so the Clight statement constructors and the landed
    Lower spellings are named explicitly here (Compile.v itself imports both
@@ -83,3 +94,34 @@ Proof. reflexivity. Qed.
 Compute compile c_seq_prog 2%nat.
 
 Print Assumptions c_ret.
+
+(* Corner 2 (D1 seq. 7's pins at the test lane): fuel 4 exhibits the prim
+   spine's stuck specimen and fuel 5 completes it - the kernel budget for the
+   spine is 5, measured.  Guard success writes the LEFT operand (Fig. 10 test
+   shape); guard failure is fail-as-zero; the floor-`Z.div` value lands as a
+   constant (the emitted C contains no division - the truncation-fork tension
+   is T6's binop spelling's, not this algebra's); the zero divisor is the
+   prim-guard stuck: same observable shape as the fuel stuck, different
+   provenance (p529 law 2). *)
+Example compile_prim_fuel4_pin : compile c_prim_add_prog 4%nat = CDone SResult [Sskip] SStuck.
+Proof. reflexivity. Qed.
+
+Example compile_prim_add_pin :
+  compile c_prim_add_prog 5%nat
+  = CDone SResult [Sset lower_res (vconst (VInt 5))] (SOk (VInt 5)).
+Proof. reflexivity. Qed.
+
+Example compile_prim_gt_left_pin :
+  compile c_prim_gt_prog 5%nat
+  = CDone SResult [Sset lower_res (vconst (VInt 3))] (SOk (VInt 3)).
+Proof. reflexivity. Qed.
+
+Example compile_prim_div_floor_pin :
+  compile c_prim_div_neg_prog 5%nat
+  = CDone SResult [Sset lower_res (vconst (VInt (-4)))] (SOk (VInt (-4))).
+Proof. reflexivity. Qed.
+
+Example compile_prim_div0_stuck_pin : compile c_prim_div0_prog 5%nat = CDone SResult [Sskip] SStuck.
+Proof. reflexivity. Qed.
+
+Compute compile c_prim_div_neg_prog 5%nat.

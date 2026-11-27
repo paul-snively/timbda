@@ -530,3 +530,104 @@ Qed.
 Lemma c_agrees_with_lower : forall (v : Val),
   clight_of (lower (Ret v)) = terminal_stmt (SOk v).
 Proof. intros v. reflexivity. Qed.
+
+(* ============================================================================
+   7. Corner 2 (strategy sec. 8's second stop): primops through the fold -
+   value-faithful straight-line, pins only.
+
+   The corner spelling mirrors RealizeCorners.v:70's `prim_corner` (decision 5:
+   `op[a1..an]` = `App (Ret (VPrim p)) (TupE (map Ret vs))`), redefined LOCAL to
+   this leaf so the compile leaf never depends on a Realize-family leaf.
+
+   Measured kernel budget (not estimated): the prim spine - `App` head, `TupE`
+   argument evaluation, the prim application - spends one unit per nesting layer
+   (Semantics.v:127, decision 2), and it needs FIVE: fuel 4 exhibits the stuck
+   specimen, fuel 5 completes (pinned as a lemma pair below; the `Ret`/`Seq`
+   corners of section 5 were 1 and 2 - prim depth is measured, like everything
+   here).
+
+   What compile EMITS for a primop: nothing but the final constant write.  The
+   kernel's `prim_total` (Syntax.v:344) runs INSIDE the observation; the fold
+   sees only its resulting `RetF` (p529 law 4).  Three consequences, recorded as
+   pins rather than prose:
+
+   (a) The guards are the paper's test shape (Fig. 10, lines 452-459):
+       `PGt a b` success carries the LEFT operand forward (`PRes (VInt a)`),
+       failure is `PFail` -> `SFail` -> `Sskip` (fail as zero).  T6's Vint-1
+       guard map (`prim_guard_match_*`, RealizeCompose.v:177) is the C-side
+       spelling of the SAME fact for its binop-emitting lowering; the two
+       spellings agree on value and the golden test pins THIS one (strategy
+       sec. 9 amendment A).
+   (b) The div semantics fork (decision 11, probe p528) cannot bite here: the
+       kernel value is `Z.div` - true floor, `7 / (-2) = (-7) / 2 = -4`
+       (RealizeCompose's `floor_literal_*` rungs) - and compile emits NO division
+       node: it writes the constant, so the emitted C executes what the kernel
+       computed, by construction.  The truncating `Int64.divs` leg and its `divZ`
+       ladder belong to T6's `prim_clight` binop spelling (pinned there by
+       `divZ_ladder_div`), not to this algebra.
+   (c) A `PStuck` prim result (the zero-divisor arm, Syntax.v:349) arrives as
+       `SStuck` DATA in a `CDone` verdict - the third stuck specimen, and an
+       honesty note the corpus must keep: at the verdict level prim-guard stuck
+       and kernel-fuel stuck are the SAME observable shape (`CDone [Sskip]
+       SStuck`); the distinction is provenance, not output.  Section 5's
+       `c_kernel_fuel_nest` pins the fuel side on a division-free program.
+
+   Every corner below satisfies the budget law (`c_compile_frag_bound`):
+   exactly one write for the value corners, zero for the fail/stuck corners. *)
+
+Definition cprim (p : Prim) (vs : list Val) : Expr :=
+  App (Ret (VPrim p)) (TupE (map Ret vs)).
+
+(* The measured minimum: spine stuck at 4, complete at 5. *)
+Lemma c_prim_fuel4_stuck :
+  compile (cprim PAdd [VInt 2; VInt 3]) 4%nat
+  = @CDone SResult [Clight.Sskip] SStuck.
+Proof. reflexivity. Qed.
+
+Lemma c_prim_add :
+  compile (cprim PAdd [VInt 2; VInt 3]) 5%nat
+  = @CDone SResult [Clight.Sset Lower.lower_res (Lower.vconst (VInt 5))] (SOk (VInt 5)).
+Proof. reflexivity. Qed.
+
+(* (a) Guard success carries the left operand (Fig. 10's `gt1` witness shape). *)
+Lemma c_prim_gt_left :
+  compile (cprim PGt [VInt 3; VInt 2]) 5%nat
+  = @CDone SResult [Clight.Sset Lower.lower_res (Lower.vconst (VInt 3))] (SOk (VInt 3)).
+Proof. reflexivity. Qed.
+
+(* (a) Guard failure is fail-as-zero: a result (not a trap), no candidate written. *)
+Lemma c_prim_gt_fail :
+  compile (cprim PGt [VInt 2; VInt 3]) 5%nat
+  = @CDone SResult [Clight.Sskip] SFail.
+Proof. reflexivity. Qed.
+
+(* (b) The two negative quadrants of the floor ladder, as constants: the kernel
+       floors (Z.div), and C never sees a division. *)
+Lemma c_prim_div_floor_negq :
+  compile (cprim PDiv [VInt 7; VInt (-2)]) 5%nat
+  = @CDone SResult [Clight.Sset Lower.lower_res (Lower.vconst (VInt (-4)))] (SOk (VInt (-4))).
+Proof. reflexivity. Qed.
+
+Lemma c_prim_div_floor_negp :
+  compile (cprim PDiv [VInt (-7); VInt 2]) 5%nat
+  = @CDone SResult [Clight.Sset Lower.lower_res (Lower.vconst (VInt (-4)))] (SOk (VInt (-4))).
+Proof. reflexivity. Qed.
+
+(* (c) The prim-guard stuck: zero divisor is `PStuck` in prim_total, SStuck data
+       in a CDone verdict, `Sskip` terminal - the third stuck specimen. *)
+Lemma c_prim_div_zero :
+  compile (cprim PDiv [VInt 1; VInt 0]) 5%nat
+  = @CDone SResult [Clight.Sskip] SStuck.
+Proof. reflexivity. Qed.
+
+(* `PNEq` in both directions: equal is `PFail` (the paper's negative-guard
+   polarity, Syntax.v:357), different carries the left operand. *)
+Lemma c_prim_neq_equal_fail :
+  compile (cprim PNEq [VInt 1; VInt 1]) 5%nat
+  = @CDone SResult [Clight.Sskip] SFail.
+Proof. reflexivity. Qed.
+
+Lemma c_prim_neq_diff :
+  compile (cprim PNEq [VInt 1; VInt 2]) 5%nat
+  = @CDone SResult [Clight.Sset Lower.lower_res (Lower.vconst (VInt 1))] (SOk (VInt 1)).
+Proof. reflexivity. Qed.
