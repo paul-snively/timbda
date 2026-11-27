@@ -1,5 +1,7 @@
 # Timbda-0
 
+[![CI status](https://github.com/paul-snively/timbda/actions/workflows/consistency.yml/badge.svg)](https://github.com/paul-snively/timbda/actions/workflows/consistency.yml)
+
 **A verified compiler for the core semantics of the Verse language — built for
 real, in MLIR and C++, with the proofs done in Rocq.**
 
