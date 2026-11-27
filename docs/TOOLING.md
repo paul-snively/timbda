@@ -47,6 +47,29 @@ probe under `docs/probes/`.
 - **Status.** `parked`. Revisit when `Compile.v`'s per-arm lemma flow starts paying the
   re-import cost measurably; if it earns evaluation, run it as a probe (`docs/probes/`) against
   the current `nix develop .#rocq` loop before any PLAN change. Strata: tag "rq"/"parked".
+- **Revisit + ruling (2026-11-27; measured arithmetic — no probe needed).** Three walls:
+  (1) **OCaml version contradiction.** The worker links `rocq-runtime.toplevel` with
+  `-linkall`, so it must build inside the Rocq's own compiler scope. At the pinned rev
+  `rocq-core` 9.1.1 is built with **OCaml 4.14.4** (nix eval, measured), and **every eio
+  release requires OCaml >= 5.2** (dune-project measured: v1.3 >= 5.2.0 — nixpkgs' own
+  stock — and v1.7 >= 5.4.0; eio's core is effect-handler-based). No version of the worker
+  can link against our tree's Rocq.  (2) **The move across is pre-ruled.** rq lives in
+  Brockman's `rocqPackages_9_2` override scope (rocq-core 9.3.0 fetchzip, OCaml 5.4.1,
+  std++/iris git-dev pins — all measured in `nanofil/nix/rocq-packages.nix`). At our pinned
+  nixpkgs `rocqPackages_9_2` = 9.2.0 EXISTS but `coqPackages_9_2.compcert` is ABSENT — the
+  CertiRocq->C side consumes CompCert 3.17 in `coqPackages_9_1`, and the pin was chosen for
+  exactly that window. Adoption would cost a whole Rocq+CompCert+proof-library pin batch
+  (full kernel recompile, golden re-attestation).  (3) **License.** `filnix` carries none
+  (GitHub API `license: null`; no LICENSE/COPYING file in the tree — measured). Vendoring
+  is out regardless; adoption would need the author's permission or a clean reimplementation.
+- **Status, final.** **DECLINED** (walls 1–3). Named unlock, not scheduled: a future pin
+  batch that puts CompCert on an OCaml-5-built Rocq >= 9.2 would put the *design*
+  (transactional step, try/back, reload-from-first-changed-byte, cgroup session accounting)
+  back on the table — the distillation above is license-free material. The warm-session want
+  itself survives via our own tree: `rocq-lsp` already in the devShell (T-002); if a
+  CLI/agent-shaped session tool ever earns evaluation it gets built on the Rocq tree
+  (persistent `rocq top` driver or reimplementation of the design), not on an unlicensed
+  fork. Strata: tag "rq"/"declined".
 
 ## T-002 · `rocq-lsp` in the rocq devShell (already in service, unledggered until now)
 
@@ -61,6 +84,9 @@ probe under `docs/probes/`.
 - **Status.** `in use, undocumented` → candidate for a short evaluation entry if the editor loop
   ever becomes a first-class part of leaf development. If T-001 is adopted, decide the pair
   together (one interactive-loop story, not two).
+  *(2026-11-27: T-001 was DECLINED — the pairing question dissolved; this is now the tree's
+  only warm-session tool, and any future CLI/agent session tool would be built on the Rocq
+  tree per the T-001 ruling.)*
 
 ## T-003 · Warm-the-gate: cgroup-capped client-side drv warm under the model server (in use since 2026-11-26)
 
