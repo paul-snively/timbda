@@ -493,6 +493,26 @@ attestations):
   corner-denotation half first landed mis-stated as Leibniz equalities and is re-pinned at ctrees'
   structural equality `≅` (decision 12f, DESIGN-NOTES § 13.16);
   what remains of M2 is the CertiRocq->C wiring and the golden test.*
+  *Increment D1 landed 2026-11-26 (COMPILE-STRATEGY § 8's sequence, corner 1):
+  `coq/Compile.v` — an `iterF` fuel fold over `ctree void1 B2` with `h` the empty match
+  and `g` the documented trap (decision 15: an uncertified choice has no defined emitted
+  C; the `chint` field is the D4 scheduler-hint seam), the terminal write appended AFTER
+  the fold at the landed `Sset lower_res (vconst v)` spelling, the budget law as
+  first-class lemmas about THIS algebra (`fold_bridge` pins the library fold to a `cstep`
+  observation mirror; `c_compile_frag_bound` states § 5's strength at exactness: `CDone`
+  ⇒ fragment length 1, `CLoop`/`CTrap` ⇒ 0), the corners `c_ret`/`c_fail`/`c_seq`/
+  `c_kernel_fuel_nest`/`c_compile_fuel`/`c_choice_traps` at Leibniz `=` (the two stucks
+  kept distinct per p529 law 2: kernel fuel exhaustion is a `CDone` carrying `SStuck`,
+  compile fuel exhaustion IS the `CLoop` verdict), and gluing that rides attested lemmas
+  only (`c_terminal_exec` via `Realize.eval_vconst_val` + `exec_Sset`; `c_agrees_with_lower`
+  against Lower.v:162 construct-for-construct). New test lane `coq/tests/CompileTest.v`
+  (`Print Assumptions c_ret` is `Closed under the global context` — zero new axiom lines
+  in build.log); the kernel lane's cone sweep gained root `Timbda.Compile` and printed the
+  pinned 13 axioms verbatim — the fold path adds none. Measured deviations recorded as
+  COMPILE-STRATEGY § 9 amendments A/B: the IFor rebound regime is a carrier gap (→ M3),
+  and the 7-bag wording needs true multi-candidate golden programs at D4.
+  What M2 now owes: Compile corners D2 (primops with guards)–D4 (choice nodes) and the
+  golden test.*
   *Ordering 2026-11-25 (decision 9): what remains of M2 and the order it must land in are
   pinned at § 5.0 - M1 closure first.*
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
@@ -990,6 +1010,22 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
     collection order (Eval.v:330) whose bag claims remain true under the scoped law, corpus
     unchanged.  Audit trail: docs/DESIGN-NOTES.md sec. 13.18; probe-side mechanism:
     docs/probes/p529/.
+16. (2026-11-26, landing fact + two rulings) **Compile.v D1 confirms decision 14's fold
+    shape at first contact, and two rulings ride the increment.** The landed leaf is per-
+    observation exactly as ruled: `iterF` over a `cstep` mirror of `observe` (`fold_bridge`
+    holds by `reflexivity` — the library fold and the mirror ARE the same function on this
+    carrier), the terminal write appended AFTER the fold rather than per-arm, and no primop
+    unfolded during compilation. Ruling (a): the budget law is proved ABOUT this algebra —
+    the lemma triple `iterF_frag_stable` → `c_frag_of_fold` → `c_compile_frag_bound` —
+    never quoted from an arbitrary step function; a law that did not pin the actual fold
+    would not be a footprint theorem. Ruling (b): the strategy's loop regime is amended to
+    M3 (COMPILE-STRATEGY § 9A): on `ctree void1 B2` the fold cannot see an iteration head,
+    so `Sloop` has no origin there; Iter was already outside M2, and the *why* is now a
+    measured fact. Amendment § 9B pins the corpus-side obligation for D4 (true multi-
+    candidate golden programs — only `wtn_choice_dup_two_entries` is genuinely 2-candidate
+    in m2-det). Cone audit unchanged: `rocq check Timbda.Compile` prints exactly the 13
+    pinned axioms, `Print Assumptions c_ret` is closed, and the kernel lane's strict
+    single-axiom gate survived the CompCert-window test lane untouched.
 
 ## 9. Known reference anchors
 

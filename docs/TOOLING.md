@@ -61,3 +61,29 @@ probe under `docs/probes/`.
 - **Status.** `in use, undocumented` → candidate for a short evaluation entry if the editor loop
   ever becomes a first-class part of leaf development. If T-001 is adopted, decide the pair
   together (one interactive-loop story, not two).
+
+## T-003 · Warm-the-gate: cgroup-capped client-side drv warm under the model server (in use since 2026-11-26)
+
+- **Date / source.** Measured while landing M2 increment D1 (2026-11-26): the pinned gate
+  (`TIMBDA_NIX_GATE_MIN=5G TIMBDA_NIX_GATE_GUARD=8 NIX_CONFIG="cores = 2"`) killed the kernel
+  and corpus-differential lanes at its 5120 MiB watchdog floor TWICE on an idle run — the
+  daemon-side Coq rebuild crossed 6.9 → 5.1 GiB available while the local model server is
+  resident (~54.5 of 63.9 GiB). The daemon build is invisible to the host cgroup that caps
+  `coq-build.sh` (same lesson the gate's own watchdog exists for), so the measured host-lane
+  peak (~0.5 GiB) understates it.
+- **Practice.** Before the pinned gate, warm exactly the heavy drv's CLIENT-side inside a cap:
+  `systemd-run --user --scope -p MemoryMax=6G -p MemorySwapMax=0 --quiet bash -c 'nix build
+  --no-link --cores 2 --max-jobs 2 .#packages.x86_64-linux.timbda-kernel
+  .#checks.x86_64-linux.corpus-differential'`, then run the pinned gate, which attests them
+  from store (`rc=0`, `elapsed 0s`, watchdog kills 0). Data-structure fix (store warm +
+  client-side cgroup), not a system-service fix: the gate still pins the same drv's and
+  their buildPhase audits (single-axiom kernel gate, 13-axiom cone diff) must pass for the
+  warmed outPaths to exist at all.
+- **Traps measured.** `NIX_CONFIG` takes one entry per line (a space-separated string parses
+  `cores = 2 max-jobs = 0` as one invalid value); `max-jobs = 0` DISABLES local builds (it
+  means "delegate to the daemon"); a nonzero value builds client-side. When outputs are
+  cached, the gate's per-target log is empty — the buildPhase audit evidence lives in the
+  warm build, whose nonzero exit is what catches a failing audit. Docs-only commits don't
+  dirty the kernel drv (its `src` is `./coq`), so docs gates stay light even warm.
+- **Status.** `in use`. Not a substitute for the watchdog (which stays armed for anything NOT
+  warmed); revisit if the model server stops being resident or the lanes' memory profile changes.
