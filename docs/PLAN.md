@@ -23,11 +23,14 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
 - Timbda-0 only = Core Verse semantics. Source Verse and Essential Verse out of scope.
 - Goal: a working Timbda implementation in C++, aggressive about proving it is (a) really a
   Timbda-0 implementation and (b) a non-naive one (out-of-order constant-expression reduction
-  provably yields straight C with no unneeded boost::context calls).
+  provably yields straight C with no unneeded boost::context calls - the *unneededness* is a
+  theorem of determinacy, and the calls that ARE needed are semantic: decision 15 materializes
+  choice nodes for multi-candidate programs).
 - Principle: whenever there is a "prove" vs "runtime contract" choice, PROVE, even if harder
   upfront. Consequences: determinacy analysis lives in the Gallina kernel; strategy execution is
-  a Gallina evaluator (search as data/work-queues, not stack switches); boost::context demoted
-  to a later, provably-mapped optimization (M4).
+  a Gallina evaluator (search as data/work-queues, not stack switches); boost::context as the
+  provably-mapped *semantic* layer for decision 15's materialized choice nodes (M4 implements
+  it; decision 2a amends the original "optimization" wording).
 - Formalization calibration "up to what the papers themselves formalize":
   - Tier 1 — papers define it => our definitions (unified expr/pat/type syntax, rewrite relation,
     denotation, M laws, partial types, ill-typed => empty).
@@ -57,9 +60,14 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
 
 - Gallina kernel owns: determinacy analysis, lowering, and the strategy evaluator (explicit
   work-queue scheduler over the ctrees model — search realized as data, not stack switches).
-- boost::context is a later, provably-mapped optimization (M4) for performance/streaming/reactive
-  control. It enters only via a T12-style theorem, never as a bare runtime contract. WASM
-  equivalent = WebAssembly stack-switching (WASI 0.3 async ABI / WAMI pipeline).
+- boost::context is the provably-mapped **semantic** runtime layer for materialized choice nodes
+  (decision 15): programs whose candidate sets genuinely offer two or more candidates - the
+  corpus's 7 candidate-bag cases among them - need re-enterable control to arbitrate them, so a
+  native runtime without stack switching is not a complete implementation of their semantics. It
+  enters only via a T12-style theorem, never as a bare runtime contract; determinate programs
+  compile with zero context calls, by theorem. Performance/streaming/reactive use sits on the
+  same layer, secondary. WASM equivalent = WebAssembly stack-switching (WASI 0.3 async ABI /
+  WAMI pipeline).
 - DCont = control-flow dialect from WAMI (Kang/Desai/Jia/Lucia, arXiv:2506.16048,
   github.com/CMUAbstract/mlir-wasm-dialect): shift/reset-style ops lowering to SsaWasm/Wasm via
   the Wasm stack-switching proposal. Not upstream yet; pinned managed fork (see sec. 6).
@@ -183,8 +191,11 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
 11. T11 (Tier-3, opportunistic): beta/delta-subsystem confluence, determinate-fragment diamond.
     Faithfully stated conjectures; strengthens T5/T7 if proved; nothing gates on them.
 12. T12 (M4, later): boost.context extern family implements its VeriFFI specification; generated
-    dcont -> extern lowering is a refinement of shift/reset semantics in the model. The C++ fast
-    path enters only as a theorem, never a contract. The proof is static; shipping carries no
+    dcont -> extern lowering is a refinement of shift/reset semantics in the model. By decision 15
+    the family is the arbiter of the materialized choice nodes: for indeterminate programs it is a
+    semantic obligation, not optional performance. The C++ path — fast path for determinacy-fused
+    fragments, semantic arbiter for choice nodes — enters only as a theorem, never a contract.
+    The proof is static; shipping carries no
     monitors (§ 4 boundary policy) — monitors police the CI build of the extern region.
 
 ## 4. Verification ledger (TCB)
@@ -232,8 +243,9 @@ compcert, clight, tbaa) — recall via /recall or find_solutions with tag "timbd
   empiricism — a monitor-enabled VeriFFI build of the extern region runs in the CI lane over the
   shared generated corpus. Shipping monitors fail the project's own runtime-cost bar on three
   counts: they police the only region where the proofs already reach (M4's context-switch family —
-  the fast path); they are the state-tracking class of monitor, not cheap argument checks; and they
-  tax the very optimization whose "provably-mapped, never a bare contract" rule they sit under. The
+  the region T12's proof reaches, semantic for choice nodes per decision 15); they are the
+  state-tracking class of monitor, not cheap argument checks; and they
+  tax the very extern family whose "provably-mapped, never a bare contract" rule they sit under. The
   reversibility asymmetry decides the rest: re-enabling shipping monitors is one generated flag
   away if a named threat model ever appears (externs outside the pinned+generated+proven set);
   shipping them "just in case" is permanent cost with no named threat. The weighed-and-declined
@@ -484,10 +496,14 @@ attestations):
   *Ordering 2026-11-25 (decision 9): what remains of M2 and the order it must land in are
   pinned at § 5.0 - M1 closure first.*
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
-  implementation with zero boost.context dependency.
-- M4: performance/streaming path. dcont lowering + generated ContextExtern annotations + shim;
-  T12 (static; shipping monitor-free per § 4 boundary policy). Skippable until demanded by
-  profiling or reactive/streaming features.
+  implementation with zero boost.context dependency - a Coq-side statement: candidate sets run as
+  data (work-queues) there, indeterminate programs included; native execution of those programs
+  is M4's semantic layer.
+- M4: the semantic runtime layer for materialized choice nodes (decision 15), carrying the
+  performance/streaming path with it. dcont lowering + generated ContextExtern annotations + shim;
+  T12 (static; shipping monitor-free per § 4 boundary policy). Skippable only for determinate-only
+  programs: the corpus's 7 candidate-bag cases require stack-switch execution for complete native
+  semantics.
 - M5: WASM leg. timbda -> DCont -> SsaWasm -> Wasm (WAMI pipeline); optionally CertiRocq's
   WebAssembly target for the evaluator itself.
 
@@ -656,6 +672,17 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
 2. "Prove over runtime contract" principle => determinacy analysis in the Gallina kernel; strategy
    execution = Gallina evaluator; boost.context demoted to provably-mapped M4 optimization;
    Tier-3 conjectures non-blocking; formalization calibrated to the papers (Tier 1/2/3).
+   2a. (amended 2026-11-26, by decision 15) The word "optimization" in item 2 did not survive the
+   carrier ruling. Decision 15's materialized choice nodes make re-enterable control (boost.context
+   natively, WebAssembly stack-switching on the WASM leg) SEMANTIC for programs whose candidate
+   sets genuinely offer two or more candidates - seven such cases are already pinned in the corpus
+   - so M4 is no longer an optional improvement of the runtime; it is the layer without which the
+   full corpus has no complete native semantics. What survives the amendment intact: "provably
+   mapped, never a bare runtime contract" (T12/VeriFFI), and the determinacy-side theorem that
+   determinate programs compile to straight-line C with zero context calls
+   (docs/COMPILE-STRATEGY.md §§ 4-5). Same-day doc sweep applied the ruling to the surfaces:
+   README stack-switching bullets and milestone sentence, PLAN § 1 goal/principle, § 2 overview,
+   § 4 boundary-policy paragraph, the T12 item, and the § 5.0 M3/M4 milestone lines.
 3. Build infra: one flake, two graphs; Bazel + hermetic-llvm (BCR "llvm" 0.8.x) + LLVM in-tree
    bazel overlay; DCont pinned fork + tiny patch series + drift CI; nixpkgs rocqPackages primary,
    local mkRocqDerivation for unpinned libs, opam secondary (generated from pin table); pinned

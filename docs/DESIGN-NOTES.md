@@ -2427,3 +2427,13 @@ discharged lemma stack (`Br2_Commut_W`/`Br2_Idem_W` remain true as wbisim facts 
 restriction is about what may be used as a *code-level rewrite*, not about their truth), the corpus
 lane (cand_bag's list is a collection order; its bag claims stay valid under the scoped law), and
 every `≈`/`≅` denotation-level proof landed so far.
+
+**Doc sweep (2026-11-26, same day as the ruling).**  The ruling's status language now holds at
+every surface, not just in the decision log: the README no longer calls boost::context "a later
+optimization that a theorem licenses" but the semantic runtime layer of the materialized choice
+nodes (keeping the no-context-call theorem as the determinacy-side half of the same sentence);
+PLAN § 1's goal and principle lines, § 2's overview bullet, § 4's monitor-policy paragraph, the
+T12 item, and § 5.0's M3/M4 milestone lines are relabeled to match; decision 2 carries amendment
+2a so the original wording stays visible with its correction dated.  Where the word "optimization"
+survives anywhere in these docs near stack switching, it is now only where a theorem makes it
+true: determinacy-fused fragments, zero context calls.

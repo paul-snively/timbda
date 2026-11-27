@@ -21,9 +21,14 @@ rewrite rules, **using**:
 - **CertiRocq** to compile the Gallina kernel down to C, so the proven
   semantics is not a reference implementation but the actual code that gets
   linked and run;
-- **boost::context** (stack switching) only as a later optimization that a
-  theorem licenses — it enters through a refinement proof, never as a bare
-  runtime contract;
+- **boost::context** (stack switching) as the semantic runtime layer for
+  nondeterminism, not an optimization: programs whose candidate sets genuinely
+  offer two or more candidates compile to explicit choice nodes (PLAN
+  decision 15), and arbitrating those nodes requires re-enterable control —
+  for such programs the stack switch is part of what it *means* to run them.
+  It still enters only through a refinement proof, never as a bare runtime
+  contract, and determinate fragments compile, by theorem, with zero context
+  calls;
 - **Lennart Augustsson's [verse-semantics](https://github.com/augustss/verse-semantics)**
   Haskell prototype as the oracle for the golden and differential tests;
 - **Alive2** to police correctness at the C boundary, where clang takes over
@@ -67,7 +72,11 @@ the other. The compiler and the proof are built from the same rule table, so
   meaning. The project's theorem targets include out-of-order reordering
   soundness, adequacy of the specialized code against straight C, and a
   "no-context-call" theorem: determinate fragments compile to straight-line C
-  with *zero* stack-switching calls. Wherever there is a choice between proving
+  with *zero* stack-switching calls. The converse is semantic too, not
+  cosmetic: programs with genuine multi-candidate sets compile their choices
+  to visible choice nodes, and the stack switches that arbitrate them are
+  part of the semantics of running those programs (PLAN decision 15).
+  Wherever there is a choice between proving
   something and trusting a runtime contract, we prove — even when that is
   harder up front.
 
@@ -88,8 +97,9 @@ semantics.
 
 The project proceeds in milestones: the semantics kernel first, then the
 dialect and its generator, then the specialization proofs (straight-line C,
-no context switches), then the full certified runtime, then the optional
-stack-switching performance leg, then WASM. The authoritative plan, the
+no context switches), then the full certified runtime, then the stack-switch
+layer — semantic for indeterminate programs, empty by theorem for determinate
+ones — which also carries the performance/streaming leg, then WASM. The authoritative plan, the
 architecture, and the full theorem inventory (T1–T12) are in
 [docs/PLAN.md](docs/PLAN.md).
 
