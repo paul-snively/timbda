@@ -107,3 +107,33 @@ On your go-ahead, the landing sequence is: `Compile.v` leaf + `CompileTest` unit
 **Amendment A (2026-11-26, landed with increment D1).** The `IFor`/`Sloop` rebound regime — § 4 bullet 2, § 5's "O(1) per `IFor`", § 6's `Compile_Sim` `IFor` case, § 7's loop fusion — is **unimplementable on the ruled carrier `ctree void1 B2`**. `void1` has one constructor and `denE`'s iteration combinator consumes its fuel *internally*, so every straight-line spine — `Seq` nests as well as `IFor` bodies — collapses inside ONE `observe` (p529 law 4), and the fold's observation heads are only `RetF`/`BrF`-shaped: there is no arm in which `alg` could emit `Sloop`, and `iter`'s `inl` residual is never asked for constructively (measured in `coq/Compile.v`'s `observe`/`cstep` mirror: `fold_bridge` holds by `reflexivity`, i.e. the library fold and the mirror agree on exactly these heads). Consequence, stated plainly: **the loop-fusion corner moves to M3**, where either the carrier exposes iteration as OBSERVED data or the compile-side guard-map alternative (the Vint-1 guard-map spelling T6 already carries — two spellings; the golden pins take the value-faithful one) is revived. D1–D4 of this strategy are therefore the straight-line regime plus materialized choice nodes; Iter stays out of M2 exactly as the milestone line already says — now for a *measured* reason, not a scheduled one.
 
 **Amendment B (2026-11-26).** § 4's "exactly the corpus's 7 candidate-bag cases among the golden-test programs … each of the 7 bag cases contains exactly one choice structure" was measured against the landed corpus and half-holds: the m2-det corpus (29 claims / 7 candidate-bag claims, `tests/corpus/m2-det.texpr`) has exactly ONE genuine two-candidate program (`wtn_choice_dup_two_entries`); the other six bag claims are single-candidate bag shapes (the bag count is the corpus's *check* shape, not seven indeterminate choices). The same measurement qualifies decision 2a's "seven such cases are already pinned in the corpus" — the seven are the bag-claim cases, and only the multi-candidate ones are M4's semantic obligation. **Obligation pinned for D4:** the golden spec must ADD true multi-candidate programs so the choice-node regime — the named arbiter `Scall` — is actually exercised by the golden pins.
+
+**Amendment C (2026-11-27, landed with increment D4a).** § 4's choice-node regime is now
+measured, and two of its shapes needed ruling against what the carrier can actually emit.
+(a) *The node's C shape is statement-level:* Clight has no call EXPRESSION (measured:
+`Clight.Scall : option ident -> expr -> list expr -> stmt`; `Evar : ident -> type -> expr`
+carries its type), so the node is `Sset cand0 v1; Sset cand1 v2; Scall None (Evar arbiter
+sig) [Evar cand0 tint64; Evar cand1 tint64]` with `sig = Tfunction [tint64; tint64] Tvoid` -
+the candidate temps are fresh binary-positive idents beside `lower_res = xH`. The arbiter's
+M2 SPEC (leftmost-present is the observed value, written to `lower_res`) is pinned at the
+node; its implementation remains § 4's M4/M5 obligation, and in M2 the node is OBSERVED
+through the clang leg, not through Coq-side `Scall` execution (the `ge0`/temp-env execution
+lemma is named M4 debt). (b) *The materializable pair is the VALUE pair:* both arms must end
+`CDone ... (SOk v)`. A `Fail` arm ends in `Sskip` - nothing to seat in a candidate slot - so
+the `Choice Fail (Ret 1)` genuine pair stays decision 15's TRAPPED witness; its node waits
+for the fail-as-carrier ruling (M3+). (c) *`Pair` is a ROOT-SITE ruling:* the dispatch replaces
+whole-program compile OUTSIDE the fold, so it sees the site but not the context — p531 measured
+the context-carried genuine pair MIS-EMITTING (`Seq _ Fail` prefix emitting the node at
+`SOk 1` where the kernel says `SFail`; `Seq _ (Ret 7)` saying `SOk 1` where the kernel says
+`SOk 7`; `TupE` dropping its tuple-building), so `peek_result` splits by carrier: root
+`Choice` certifies `Pair`, a non-root genuine pair TRAPS (four carriers pinned), while the
+forced/vacuous rulings keep their context-carried, fold-decided scope (`c_pair_forced_in_seq_untouched`).
+Node emission INSIDE the fold — the three-valued hint carrying the node instruction, the
+continuation deciding the terminal — is the named D4-follow-up/M3 obligation, same drawer as
+the multi-site hint queue. (d) *The budget law generalizes as a disjunction, not a
+widening:* exact `1`/`0` for every `compile_h` path (the fold induction, verbatim), `1 \/ 3`
+citable overall because the exactly-one-site peek admits at most one pair node; the counted
+sum for multi-observer programs arrives with D4b's golden corpus (Amendment B's added
+multi-candidate programs), where the peek must also upgrade from a single hint to per-site
+hints or materialized nodes throughout.
+

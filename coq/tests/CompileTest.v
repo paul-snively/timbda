@@ -56,6 +56,10 @@ Definition c_prim_div0_prog : Expr :=
 Definition c_choice_vs_prog : Expr := Choice (Ret (VInt 1)) c_prim_div0_prog.
 Definition c_choice_sv_prog : Expr := Choice c_prim_div0_prog (Ret (VInt 2)).
 Definition c_choice_nested_prog : Expr := Choice c_choice_vs_prog (Ret (VInt 2)).
+Definition c_pair_value_prog : Expr := Choice (Ret (VInt 1)) (Ret (VInt 2)).
+Definition c_pair_flip_prog : Expr := Choice (Ret (VInt 2)) (Ret (VInt 1)).
+Definition c_pair_seq_prog : Expr := Seq c_pair_value_prog Fail.
+Definition c_pair_tup_prog : Expr := TupE [c_pair_value_prog; Ret (VInt 3)].
 
 (* Coq re-exports a module's OWN definitions but not the libraries it
    `Require Import`ed, so the Clight statement constructors and the landed
@@ -149,4 +153,55 @@ Example compile_choice_nested_refused_pin :
 Proof. reflexivity. Qed.
 
 Example compile_choice_lowfuel_pin : compile c_choice_vs_prog 1%nat = CLoop SResult nil.
+Proof. reflexivity. Qed.
+
+(* Corner 4 (D4a): the genuine VALUE pair materializes the choice node - two
+   candidate writes plus a Scall to the named arbiter, the verdict the
+   leftmost candidate (arbiter spec, Compile.v sec. 3).  No silent pick, no
+   trap: the structure IS the answer, and flipping the arms moves the
+   constants and the verdict together. *)
+Example compile_choice_pair_node_pin :
+  compile c_pair_value_prog 5%nat
+  = CDone SResult
+      [Sset choice_cand0 (vconst (VInt 1));
+       Sset choice_cand1 (vconst (VInt 2));
+       Scall None (Evar choice_arbiter arbiter_signature)
+         [Evar choice_cand0 tint64; Evar choice_cand1 tint64]]
+      (SOk (VInt 1)).
+Proof. reflexivity. Qed.
+
+Example compile_choice_pair_flip_pin :
+  compile c_pair_flip_prog 5%nat
+  = CDone SResult
+      [Sset choice_cand0 (vconst (VInt 2));
+       Sset choice_cand1 (vconst (VInt 1));
+       Scall None (Evar choice_arbiter arbiter_signature)
+         [Evar choice_cand0 tint64; Evar choice_cand1 tint64]]
+      (SOk (VInt 2)).
+Proof. reflexivity. Qed.
+
+Example compile_choice_pair_lowfuel_pin :
+  compile c_pair_value_prog 1%nat
+  = CDone SResult
+      [Sset choice_cand0 (vconst (VInt 1));
+       Sset choice_cand1 (vconst (VInt 2));
+       Scall None (Evar choice_arbiter arbiter_signature)
+         [Evar choice_cand0 tint64; Evar choice_cand1 tint64]]
+      (SOk (VInt 1)).
+Proof. reflexivity. Qed.
+
+Compute compile c_pair_value_prog 5%nat.
+
+(* Root-scope ruling (p531): a genuine pair under a CONTEXT refuses - the
+   whole-program node dispatch cannot see the context's terminal rule, and the
+   trap mis-emits nothing.  The certified FORCED ruling needs no root scope:
+   the hint travels with the fold and the terminal rule still decides. *)
+Example compile_choice_pair_in_seq_refused_pin : compile c_pair_seq_prog 5%nat = CTrap SResult nil.
+Proof. reflexivity. Qed.
+
+Example compile_choice_pair_in_tup_refused_pin : compile c_pair_tup_prog 5%nat = CTrap SResult nil.
+Proof. reflexivity. Qed.
+
+Example compile_choice_forced_in_seq_pin :
+  compile (Seq (Choice (Ret (VInt 1)) c_prim_div0_prog) Fail) 5%nat = CDone SResult [Sskip] SFail.
 Proof. reflexivity. Qed.

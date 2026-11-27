@@ -313,25 +313,110 @@ with scan_sites_list (d : nat) (es : list Expr) : option (Expr * Expr) :=
 Definition one_choice_site (p : Expr) : option (Expr * Expr) :=
   scan_sites (e_fuel p) p.
 
-Definition choice_cert (e1 e2 : Expr) (fuel : nat) : option bool :=
+(* What the peek can decide (decision 17's three rulings + D4a's fourth): *)
+Inductive peek : Type := Trap | Forced : bool -> peek | Pair.
+
+Definition arm_certify (e1 e2 : Expr) (fuel : nat)
+    (pair_at_root : bool) : peek :=
   match arm_verdict_of e1 fuel, arm_verdict_of e2 fuel with
-  | AVVal, AVStuck   => Some true    (* left arm has the candidate (p530 (1)) *)
-  | AVStuck, AVVal   => Some false   (* right arm *)
-  | AVStuck, AVStuck => Some true    (* vacuous site: output-neutral (p530 (5)) *)
-  | _, _             => None         (* the genuine pair, or any UNDECIDED arm *)
+  | AVVal, AVStuck   => Forced true    (* left arm has the candidate (p530 (1)) *)
+  | AVStuck, AVVal   => Forced false   (* right arm *)
+  | AVStuck, AVStuck => Forced true    (* vacuous: output-neutral (p530 (5)) *)
+  | AVVal, AVVal     => if pair_at_root then Pair else Trap
+                        (* THE GENUINE PAIR (decision 15: no forcing bool exists).  At the
+                           ROOT the program IS the site: the node's leftmost candidate is
+                           the whole observation (arbiter spec).  Under a CONTEXT the
+                           pair_at_root=false arm TRAPS - measured (docs/probes/p531/):
+                           a node emitted by the whole-program dispatch loses the context's
+                           terminal rule (Seq-prefix `SFail`/`SOk 7`, TupE tuple-building),
+                           contradicting the kernel verdict.  The trap mis-emits nothing;
+                           context-carried nodes (node emission INSIDE the fold, where the
+                           continuation decides the terminal) are named D4-follow-up/M3
+                           obligations. *)
+  | _, _             => Trap           (* an UNDECIDED side (p530 (3)) *)
   end.
 
-Definition peek_plan (p : Expr) (fuel : nat) : option bool :=
+Definition peek_result (p : Expr) (fuel : nat) : peek :=
   match one_choice_site p with
-  | Some (e1, e2) => choice_cert e1 e2 fuel
-  | None => None
+  | None => Trap
+  | Some (e1, e2) =>
+      match p with
+      | Choice _ _ => arm_certify e1 e2 fuel true
+      | _          => arm_certify e1 e2 fuel false
+      end
   end.
 
-(* The public compile: the hylo plus its certificate.  Choice-free programs
-   peek to `None` - no BrF can occur, so the hint is never consulted, and
-   every D1/D2 pin is unchanged by construction. *)
+(* D4a: the materialized choice node (strategy sec. 4 verbatim regime).  The
+   genuine pair gets NO silent pick and no trap - the emitted C shows BOTH
+   candidates and the named arbiter:
+
+     Sset cand0 v1 ; Sset cand1 v2 ; Scall arbiter (cand0, cand1)
+
+   ARBITER SPEC (this is the M2 pin; the implementation lands M4/M5 as the
+   semantic runtime layer decision 15 named):  `arbiter` is a declared
+   external reading the candidate slots; its specification is the VC-printed
+   leftmost order - the `one`/`if` reading of the paper's combs: the leftmost
+   candidate present IS the observed value, written to `lower_res`.  In M2 the
+   arbiter is structure only: the node's Coq-side CompCert execution needs the
+   extern entered into `ge0` and the candidate temps in the temp env - the
+   golden test observes the node through clang (D4b), and the Coq-side exec
+   lemma is recorded M4 debt, same drawer as the D1 trap's replacement.
+
+   D4a scope (measured, not assumed): the materializable pair is BOTH ARMS
+   ENDING IN A VALUE WRITE (`AVSOk` below).  A `Fail` arm ends in `Sskip` - no
+   constant to put in a candidate slot - so `Choice Fail (Ret 1)` stays TRAPPED
+   at D4a: it remains decision 15's genuine-pair witness (sec. 8's
+   `c_choice_traps` pin stands, proof untouched), and its materialization
+   waits for the fail-as-CARrier ruling (named obligation, M3+).
+
+   The arbiter call is statement-level `Scall` (Clight has no call EXPRESSION -
+   measured: `Clight.Scall : option ident -> expr -> list expr -> stmt`); the
+   candidate temps are fresh positive-binary idents beside `lower_res = xH`
+   (Lower.v:85), which the D4b printer maps to the harness globals. *)
+
+Definition choice_cand0 : AST.ident := xO xH.        (* positive 2 *)
+Definition choice_cand1 : AST.ident := xI xH.        (* positive 3 *)
+Definition choice_arbiter : AST.ident := xO (xO xH). (* positive 4 *)
+
+(* The value-carrying arm test: a materializable arm must end `CDone ... (SOk v)`. *)
+Definition arm_sok_of (e : Expr) (fuel : nat) : option Val :=
+  match compile_h e fuel None with
+  | @CDone _ _ (SOk v) => Some v
+  | _ => None
+  end.
+
+Definition choice_cand_stmt (id : AST.ident) (v : Val) : Clight.statement :=
+  Clight.Sset id (Lower.vconst v).
+
+Definition arbiter_signature : Ctypes.type :=
+  Tfunction [Lower.tint64; Lower.tint64] Tvoid (mkcallconv None false false).
+
+Definition pair_frag (v1 v2 : Val) : list Clight.statement :=
+  [choice_cand_stmt choice_cand0 v1;
+   choice_cand_stmt choice_cand1 v2;
+   Clight.Scall None (Clight.Evar choice_arbiter arbiter_signature)
+     [Clight.Evar choice_cand0 Lower.tint64; Clight.Evar choice_cand1 Lower.tint64]].
+
+(* The materialization itself, citable apart from the dispatch. *)
+Definition pair_result (p : Expr) (fuel : nat) : CRes SResult :=
+  match one_choice_site p with
+  | Some (e1, e2) =>
+      match arm_sok_of e1 fuel, arm_sok_of e2 fuel with
+      | Some v1, Some v2 =>
+          (* leftmost IS the spec's observed value (arbiter spec above) *)
+          @CDone SResult (pair_frag v1 v2) (SOk v1)
+      | _, _ => @CTrap SResult nil  (* cannot happen at `Pair` (AVVal both),
+                                       kept honest: the trap, never a guess *)
+      end
+  | None => @CTrap SResult nil      (* unreachable: `Pair` implies a site *)
+  end.
+
 Definition compile (p : Expr) (fuel : nat) : CRes SResult :=
-  compile_h p fuel (peek_plan p fuel).
+  match peek_result p fuel with
+  | Forced hint => compile_h p fuel (Some hint)
+  | Trap => compile_h p fuel None
+  | Pair => pair_result p fuel
+  end.
 
 (* ============================================================================
    4. The budget law, first-class so a lane can cite it (strategy sec. 5:
@@ -520,7 +605,7 @@ Lemma frag_bound_of_verdict : forall (v : CRes SResult),
          | @CLoop _ frag   => @CLoop SResult frag
          | @CTrap _ frag   => @CTrap SResult frag
          end) with
-  | @CDone _ l _ => Datatypes.length l = 1%nat
+  | @CDone _ l _ => Datatypes.length l = 1%nat \/ Datatypes.length l = 3%nat
   | @CLoop _ l   => Datatypes.length l = 0%nat
   | @CTrap _ l   => Datatypes.length l = 0%nat
   end.
@@ -528,22 +613,51 @@ Proof.
   intros v Hr.
   destruct v as [frag r | frag | frag];
     cbn [Datatypes.length Datatypes.app] in Hr |- *.
-  - rewrite Hr. reflexivity.
+  - left; rewrite Hr. reflexivity.
   - rewrite Hr. reflexivity.
   - rewrite Hr. reflexivity.
 Qed.
 
-(* The citable budget law, strategy strength at D1 exactness. *)
+(* The citable budget law.  D1-D3 form (exact 1 / 0) still holds VERBATIM on
+    every `compile_h` path - choice-free, certified, vacuous, trapped; that is
+    what the fold induction proves.  D4a adds the `Pair` materialization,
+    which appends its node OUTSIDE any fold (two bounded arm folds plus static
+    structure): with the peek's exactly-one-site scope a program can hold at
+    most ONE pair node, so the citable statement becomes the disjunction
+    below - 1 (straight-line terminal write) or 3 (two candidate writes + the
+    arbiter call), and 0 for the no-emit verdicts.  Strategy sec. 5's general
+    bound - linear in the program plus ONE node per indeterminate observer -
+    is what this instantiates; multi-observer programs are D4b/M3 territory
+    where the disjunction becomes a counted sum. *)
+
 Lemma c_compile_frag_bound : forall (p : Expr) (fuel : nat),
   match compile p fuel with
-  | @CDone _ l _ => Datatypes.length l = 1%nat
+  | @CDone _ l _ => Datatypes.length l = 1%nat \/ Datatypes.length l = 3%nat
   | @CLoop _ l   => Datatypes.length l = 0%nat
   | @CTrap _ l   => Datatypes.length l = 0%nat
   end.
 Proof.
   intros p fuel. unfold compile.
-  apply frag_bound_of_verdict.
-  apply c_frag_of_fold.
+  destruct (peek_result p fuel).
+  - (* Trap: the D3 chain, verbatim. *)
+    apply frag_bound_of_verdict. apply c_frag_of_fold.
+  - (* Forced: the D3 chain, verbatim. *)
+    apply frag_bound_of_verdict. apply c_frag_of_fold.
+  - (* Pair: static structure, no fold in the fragment's accounting.  The
+       node's length is pinned once (Hlen); every shape of the materialization
+       decision - site present or not, each arm a value or not - closes on it
+       or on `length nil = 0`. *)
+    assert (Hlen : forall (v1 v2 : Val),
+      Datatypes.length (pair_frag v1 v2) = 3%nat).
+    { intros v1 v2. cbn [pair_frag Datatypes.length Datatypes.app]. reflexivity. }
+    unfold pair_result.
+    destruct (one_choice_site p) as [[e1 e2] |].
+    + destruct (arm_sok_of e1 fuel) as [v1 |].
+      * destruct (arm_sok_of e2 fuel) as [v2 |].
+        { right. rewrite Hlen. reflexivity. }
+        { cbn [Datatypes.length Datatypes.app]. reflexivity. }
+      * cbn [Datatypes.length Datatypes.app]. reflexivity.
+    + cbn [Datatypes.length Datatypes.app]. reflexivity.
 Qed.
 
 (* ============================================================================
@@ -786,9 +900,12 @@ Lemma c_choice_vacuous_agrees :
   = compile_h (Choice (cprim PDiv [VInt 1; VInt 0]) (cprim PDiv [VInt 2; VInt 0])) 5%nat (Some false).
 Proof. reflexivity. Qed.
 
-(* (2): the genuine pair stays trapped - section 5's `c_choice_traps` is THIS
-       corner and its proof did not move: both arms answer `AVVal` (fail IS a
-       candidate, T2), `choice_cert` returns None, `g` traps. *)
+(* (2): the genuine pair with a Fail arm stays TRAPPED even at D4a: peek says
+       `Pair`, but the Fail arm ends `Sskip` - no constant to seat in a
+       candidate slot - so section 5's `c_choice_traps` stands, proof untouched
+       (the honest scope line of sec. 3's D4a block: materialization needs
+       both arms ending in VALUE writes; the fail-as-carrier ruling is named
+       M3+ debt). *)
 
 (* (4): two sites refuse the single-hint certificate - the trap stands even
        though the OUTER site alone would certify. *)
@@ -809,6 +926,94 @@ Proof. reflexivity. Qed.
    certified; the discarded-prefix value rule (Semantics.v) still decides what
    the terminal write says. *)
 Lemma c_choice_certified_in_seq :
+  compile (Seq (Choice (Ret (VInt 1)) (cprim PDiv [VInt 1; VInt 0])) Fail) 5%nat
+  = @CDone SResult [Clight.Sskip] SFail.
+Proof. reflexivity. Qed.
+
+(* ============================================================================
+   9. Corner 4 (D4a): the genuine value pair MATERIALIZES a choice node.
+   The strategy's regime - "candidate blocks followed by a Scall to a named
+   arbiter" - at its specimen size, with the arbiter spec pinned where the
+   shape is pinned (sec. 3): leftmost-candidate-present is the observed value.
+   Every pin is `reflexivity` over closed terms: the emitted structure is what
+   the algebra says it is, and the D1 trap pin (`c_choice_traps`) is one lemma
+   away, differing exactly by the Fail-arm scope line. ============================================================================ *)
+
+Definition c_pair_prog : Expr := Choice (Ret (VInt 1)) (Ret (VInt 2)).
+Definition c_pair_flip_prog : Expr := Choice (Ret (VInt 2)) (Ret (VInt 1)).
+
+Lemma c_pair_node_shape :
+  compile c_pair_prog 5%nat
+  = @CDone SResult
+      [Clight.Sset choice_cand0 (Lower.vconst (VInt 1));
+       Clight.Sset choice_cand1 (Lower.vconst (VInt 2));
+       Clight.Scall None (Clight.Evar choice_arbiter arbiter_signature)
+         [Clight.Evar choice_cand0 Lower.tint64; Clight.Evar choice_cand1 Lower.tint64]]
+      (SOk (VInt 1)).
+Proof. reflexivity. Qed.
+
+(* Leftmost IS the spec's observation: flipping the arms moves the candidate
+   constants AND the verdict value together - the arbiter never reorders. *)
+Lemma c_pair_node_flip :
+  compile c_pair_flip_prog 5%nat
+  = @CDone SResult
+      [Clight.Sset choice_cand0 (Lower.vconst (VInt 2));
+       Clight.Sset choice_cand1 (Lower.vconst (VInt 1));
+       Clight.Scall None (Clight.Evar choice_arbiter arbiter_signature)
+         [Clight.Evar choice_cand0 Lower.tint64; Clight.Evar choice_cand1 Lower.tint64]]
+      (SOk (VInt 2)).
+Proof. reflexivity. Qed.
+
+(* The pair path never unrolls the MAIN program (the node IS the branch's
+   compilation; the two arm folds are bounded by the same `fuel`): even at
+   fuel 1 - where the forced corner hit `CLoop` - the pair materializes
+   complete.  Budget honesty: the arm folds are what cost; the node is O(1)
+   per observer, exactly strategy sec. 5. *)
+Lemma c_pair_lowfuel_materializes :
+  compile c_pair_prog 1%nat
+  = @CDone SResult
+      [Clight.Sset choice_cand0 (Lower.vconst (VInt 1));
+       Clight.Sset choice_cand1 (Lower.vconst (VInt 2));
+       Clight.Scall None (Clight.Evar choice_arbiter arbiter_signature)
+         [Clight.Evar choice_cand0 Lower.tint64; Clight.Evar choice_cand1 Lower.tint64]]
+      (SOk (VInt 1)).
+Proof. reflexivity. Qed.
+
+(* The D3 corner menu is UNCHANGED by D4a - measured re-pins, not hope:
+   forced value/stuck and the flip still fold under their cert (`c_choice_forced_*`),
+   the vacuous site still agrees, the two-site program still refuses (`peek`
+   says Trap before any pair question), and the Fail-arm pair still traps. *)
+
+(* Root-scope ruling (probe p531, docs/probes/p531/): the `Pair` dispatch is a
+   whole-program replacement outside the fold, so it can only see the SITE -
+   under a CONTEXT it loses the context's terminal rule (p531 measured a
+   `Seq _ Fail` prefix emitting the node with `SOk 1` where the kernel says
+   `SFail`, a `Seq _ (Ret 7)` prefix saying `SOk 1` where the kernel says
+   `SOk 7`, and a `TupE` prefix dropping its tuple-building).  The certified
+   FORCED rulings need no root scope (the fold carries the context:
+   `c_choice_certified_in_seq`) - only the genuine pair does.  Context-carried
+   genuine pairs TRAP at D4a: the trap mis-emits nothing; node emission INSIDE
+   the fold (where the continuation decides the terminal) is a named
+   D4-follow-up/M3 obligation. *)
+Lemma c_pair_in_seq_refused :
+  compile (Seq c_pair_prog Fail) 5%nat = @CTrap SResult nil.
+Proof. reflexivity. Qed.
+
+Lemma c_pair_in_seq_val_refused :
+  compile (Seq c_pair_prog (Ret (VInt 7))) 5%nat = @CTrap SResult nil.
+Proof. reflexivity. Qed.
+
+Lemma c_pair_in_tup_refused :
+  compile (TupE [c_pair_prog; Ret (VInt 3)]) 5%nat = @CTrap SResult nil.
+Proof. reflexivity. Qed.
+
+Lemma c_pair_in_block_refused :
+  compile (Block nil c_pair_prog) 5%nat = @CTrap SResult nil.
+Proof. reflexivity. Qed.
+
+(* The certified FORCED ruling in the same context carrier, re-pinned green:
+   the hint travels with the fold, the terminal rule still decides. *)
+Lemma c_pair_forced_in_seq_untouched :
   compile (Seq (Choice (Ret (VInt 1)) (cprim PDiv [VInt 1; VInt 0])) Fail) 5%nat
   = @CDone SResult [Clight.Sskip] SFail.
 Proof. reflexivity. Qed.

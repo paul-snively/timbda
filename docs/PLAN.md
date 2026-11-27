@@ -523,7 +523,19 @@ attestations):
   site scope, genuine pairs and multi-site programs stay trapped, vacuous (both-stuck)
   sites certified output-neutral; D1's trap pin survived as the measured delta, the budget
   law generalized untouched (`iterF`'s hint threading never moved).  What M2 now owes: D4
-  (materialized choice nodes + arbiter spec + the golden test).*
+  (materialized choice nodes + arbiter spec + the golden test).*  *Increment D4a landed 2026-11-27:* the genuine
+  VALUE pair materializes the choice node - `pair_result` emits the strategy sec. 4 shape
+  verbatim (`Sset cand0 v1; Sset cand1 v2; Scall arbiter (cand0, cand1)` with the arbiter's
+  M2 signature pinned), verdict = leftmost candidate; the arbiter SPEC (leftmost-present is
+  the observed value, written to `lower_res`) is pinned in Compile.v sec. 3, its
+  implementation stays the named M4/M5 obligation; a `Fail`-arm pair stays TRAPPED (an arm
+  ending in `Sskip` has no constant to seat in a candidate slot - fail-as-carrier is named
+  M3+ debt); `Pair` is root-site scoped (p531 measured context-carried mis-emits, four
+  carriers now pinned as traps), and the budget law generalizes honestly to the dispatch: exact 1/0 on every
+  `compile_h` path, `1 \/ 3` overall (a program holds at most one pair node under the
+  exactly-one-site scope). All three D4a lemmas print `Closed under the global context` -
+  zero axioms added, cone still the pinned 13.  What M2 now owes: D4b (the golden test +
+  gate chain 9 + M2 close-out).*
   *Ordering 2026-11-25 (decision 9): what remains of M2 and the order it must land in are
   pinned at § 5.0 - M1 closure first.*
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
@@ -1060,6 +1072,41 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
     remaining-fuel peeks and multi-site hints move with D4's choice nodes; the general
     vacuous-site argument (arms terminating as the same SStuck data up to the fold verdict)
     stays a corner-level pin until a lane needs the lemma.
+18. (2026-11-27, increment D4a) **The genuine value pair gets a CHOICE NODE, not a pick and
+    not a trap - and the node's shape is the strategy's, verbatim, pinned where it is built.**
+    `peek_result` gained a fourth ruling (`Pair`: both arms `AVVal`); `compile` dispatches it
+    to `pair_result`, which runs the same unhinted fold on each arm, seats both values in
+    fresh candidate temps (`xO xH`, `x1 xH` beside `lower_res = xH`), and emits the arbiter as
+    the statement-level `Clight.Scall` with the pinned `Tfunction [tint64; tint64] Tvoid`
+    signature (measured: Clight has no call EXPRESSION - `Evar` even carries its type
+    argument). The ARBITER SPEC is stated at the node, not deferred: leftmost-candidate-present
+    IS the observed value, written to `lower_res` - the `one`/`if` reading of the paper's combs -
+    and pinned as measured deltas: `c_pair_node_shape`, `c_pair_node_flip` (flipping arms moves
+    constants AND verdict together: the arbiter never reorders), `c_pair_node_lowfuel` (the
+    pair materializes COMPLETE even at fuel 1, where the forced corner hit `CLoop` - the node
+    IS the branch's compilation; the two arm folds are bounded, the node is O(1) per observer,
+    exactly strategy sec. 5). Scope ruled by what the algebra can actually seat: BOTH ARMS
+    END IN VALUE WRITES - a `Fail` arm ends `Sskip` (no constant for a candidate slot), so the
+    fail-as-zero pair `Choice Fail (Ret 1)` REMAINS decision 15's trapped witness
+    (`c_choice_traps` proof untouched) and its materialization waits for the fail-as-carrier
+    ruling (named M3+ obligation). The same carrier question ruled the SITE's POSITION too
+    (probe p531, docs/probes/p531/): the `Pair` dispatch is a whole-program replacement outside
+    the fold — measured context-carried mis-emits (`Seq _ Fail` prefix at `SOk 1` where the
+    kernel says `SFail`, `Seq _ (Ret 7)` where it says `SOk 7`, `TupE` losing tuple-building) —
+    so `Pair` is a ROOT-SITE ruling: a non-root genuine pair TRAPS (four carriers pinned:
+    Seq-fail, Seq-value, TupE, Block), the forced/vacuous rulings keep their context-carried
+    fold-decided scope (the hint travels with the fold, terminal rule decides), and node
+    emission INSIDE the fold joins the named M3 drawer with the multi-site hint queue. Budget
+    law re-scoped honestly instead of quietly widened:
+    the fold induction's exact 1/0 statement survives verbatim as `frag_bound_of_verdict` on
+    every `compile_h` path; the citable `c_compile_frag_bound` becomes `1 \/ 3` because the
+    peek's exactly-one-site scope admits at most ONE pair node per program - the counted-sum
+    form for multi-observer programs is D4b/M3 territory. Every D3 corner re-pinned unchanged
+    (forced value/flip, vacuous agreement, two-site refusal, low-fuel `CLoop`, Seq-nested).
+    Cone: all three new lemmas print `Closed under the global context`; `Print Assumptions`
+    sweep still the 13. Named debts unchanged from 17 plus: the Coq-side execution lemma for
+    the node (arbiter extern entered into `ge0`, candidate temps in the env) is M4/M5 - in M2
+    the node is observed through the clang leg (D4b golden pins).
 
 ## 9. Known reference anchors
 
