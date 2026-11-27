@@ -790,6 +790,28 @@
                 touch $out
               '');
 
+          # Milestone table of record (docs/TOOLING.md T-005): the README
+          # "Milestones at a glance" table must mirror tools/pins/milestones.toml
+          # row-for-row, PLAN must record the closure dates the table claims, and
+          # the GitHub About string derived from the table must fit 350 chars.
+          # The same script runs in the CI pins job and in tools/build/push-task.sh.
+          milestones-consistency = pkgs.stdenv.mkDerivation {
+            pname = "timbda-milestones-consistency";
+            version = "0.0.0";
+            src = ./.;
+            nativeBuildInputs = [ pkgs.python3 ];
+            phases = [ "buildPhase" "installPhase" ];
+            buildPhase = ''
+              set -e
+              cd $src
+              python3 tools/pins/milestones.py check > $NIX_BUILD_TOP/milestones.log
+            '';
+            installPhase = ''
+              mkdir -p $out
+              cp $NIX_BUILD_TOP/milestones.log $out/
+            '';
+          };
+
           # The kernel + its Print Assumptions audit.
           coq-kernel-tests = self.packages.${system}.timbda-kernel;
 

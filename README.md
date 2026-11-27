@@ -5,6 +5,24 @@
 **A verified compiler for the core semantics of the Verse language — built for
 real, in MLIR and C++, with the proofs done in Rocq.**
 
+## Milestones at a glance
+
+| Milestone | Summary | Status |
+|---|---|---|
+| M-1 | Toolchain pins proven installable: both graphs (bazel + nix) build a hello-world green against the pin table. | **CLOSED** |
+| M0 | The Gallina kernel: Syntax/Semantics/Rewriting, T1 at core-rule scope, T2 br2 algebra, the extracted evaluator, and the differential corpus as a build gate (64 cases / 7 candidate bags). | **CLOSED** |
+| M1 | The MLIR Timbda dialect with tblgen-DRR canonicalization - generated, not hand-glued - gated by the paper-rule audit, with the DCont vintage pinned for the next milestone. | **CLOSED 2026-11-25** |
+| M2 | CertiRocq->C: compile is a fold-specialized hylomorphism with a first-class budget law; nondeterminism is proved away or printed as specified choice nodes; the golden test byte-pins 13 programs through Coq, clang, and the run. | **CLOSED 2026-11-27** |
+| M3 | The full Gallina evaluator: T8/T9 end-to-end with zero boost.context; carries the named M2 debts (loop-fusion carrier ruling, context-carried choice-node emission, multi-site hint queue, fail-as-carrier). | **NOT STARTED** |
+| M4 | DoD written before start (decision 9); carries the arbiter IMPLEMENTATION obligation (re-enterable control) named by decision 18. | **NOT STARTED** |
+| M5 | DoD written before start (decision 9); the post-M4 milestone per the PLAN sec. 5 roadmap. | **NOT STARTED** |
+
+This table mirrors `tools/pins/milestones.toml` - the milestone table of
+record.  CI asserts they match (`checks.milestones-consistency`); the repo's
+About section is derived from the same file on every push
+(`tools/build/push-task.sh`, docs/TOOLING.md T-005).  Full DoDs, closure
+records and the decision history: [`docs/PLAN.md`](docs/PLAN.md) sec. 5.0.
+
 ## What this project builds
 
 This project builds a verified Verse Timbda-0 MLIR dialect, **based on** the

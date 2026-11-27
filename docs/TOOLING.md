@@ -109,3 +109,28 @@ An intentional change to the compile algebra shows up as a diff here *before* it
 shows up in the gate - which is the point: a golden edit is a decision, so it lands
 in the same commit as the decision that justifies it (the README table changes in the
 same sweep).  A diff nobody can explain is a mis-emit; the lane fails closed.
+
+### T-005: the push task (2026-11-27) — milestone table + GitHub About in the ritual
+
+`tools/pins/milestones.toml` is the **milestone table of record**: one entry per
+milestone (id, one-sentence summary, status, closure date when PLAN dates it, and
+an `about_line` for the repo's About section).  Three surfaces assert it:
+
+- `checks.milestones-consistency` in the gate chain (default chain now TEN lanes),
+  and the CI pins job run `tools/pins/milestones.py check`: the README "Milestones
+  at a glance" table must mirror the table row-for-row (anti-vacuity: missing rows,
+  extra rows, or a missing section are all FAILs), PLAN must record the closure
+  dates the table claims, and the derived About string must fit GitHub's 350-char cap.
+- `tools/build/push-task.sh` is the **fast, verifiable tail of the landing ritual**,
+  run after the pinned gate chain is green: milestone check -> bookmark `main` to @
+  (recording the full commit id) -> `jj new` -> `jj git push` -> `git ls-remote`
+  verification that `origin/main` is exactly the bookmarked commit -> `gh api`
+  PATCH of the repo About, composed from the latest dated CLOSED milestone,
+  verified by round-trip GET.  The gate stays a separate (long) step; the Strata
+  memory note stays the agent-side last step.
+- A milestone transition MUST edit `milestones.toml` in the same commit as its
+  PLAN closure block - the check makes a stale README a red gate, not a todo item.
+
+When a returning reader should see it: README table (statuses + one-liners,
+mirrored from the table of record) and the GitHub About ("Latest milestone: ...
+Next: ...").

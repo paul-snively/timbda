@@ -1,0 +1,49 @@
+# tools/pins/milestones.toml - the milestone status table of record.
+# CI asserts: README's "Milestones at a glance" table == this file
+# (checks.milestones-consistency, the CI pins job, tools/pins/milestones.py).
+# The push task (tools/build/push-task.sh, TOOLING T-005) additionally syncs the
+# GitHub About section from the latest CLOSED milestone's about_line.
+# Any milestone transition edits this file in the SAME commit as its PLAN closure block.
+# Statuses: CLOSED (closed = closure date when PLAN records one), NOT STARTED.
+
+[about]
+prefix = "Timbda-0: a verified compiler for Verse's core semantics - Rocq kernel, MLIR dialect, CertiRocq->C, all gate-attested. "
+suffix = " See docs/PLAN.md."
+
+[[milestone]]
+id = "M-1"
+summary = "Toolchain pins proven installable: both graphs (bazel + nix) build a hello-world green against the pin table."
+status = "CLOSED"
+
+[[milestone]]
+id = "M0"
+summary = "The Gallina kernel: Syntax/Semantics/Rewriting, T1 at core-rule scope, T2 br2 algebra, the extracted evaluator, and the differential corpus as a build gate (64 cases / 7 candidate bags)."
+status = "CLOSED"
+
+[[milestone]]
+id = "M1"
+summary = "The MLIR Timbda dialect with tblgen-DRR canonicalization - generated, not hand-glued - gated by the paper-rule audit, with the DCont vintage pinned for the next milestone."
+status = "CLOSED"
+closed = "2026-11-25"
+
+[[milestone]]
+id = "M2"
+summary = "CertiRocq->C: compile is a fold-specialized hylomorphism with a first-class budget law; nondeterminism is proved away or printed as specified choice nodes; the golden test byte-pins 13 programs through Coq, clang, and the run."
+status = "CLOSED"
+closed = "2026-11-27"
+about_line = "compile = a fold-specialized hylomorphism with a proved budget law and a 13-program golden test pinned Coq->clang->run; nine-lane gate chain green."
+
+[[milestone]]
+id = "M3"
+summary = "The full Gallina evaluator: T8/T9 end-to-end with zero boost.context; carries the named M2 debts (loop-fusion carrier ruling, context-carried choice-node emission, multi-site hint queue, fail-as-carrier)."
+status = "NOT STARTED"
+
+[[milestone]]
+id = "M4"
+summary = "DoD written before start (decision 9); carries the arbiter IMPLEMENTATION obligation (re-enterable control) named by decision 18."
+status = "NOT STARTED"
+
+[[milestone]]
+id = "M5"
+summary = "DoD written before start (decision 9); the post-M4 milestone per the PLAN sec. 5 roadmap."
+status = "NOT STARTED"

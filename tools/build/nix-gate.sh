@@ -75,9 +75,10 @@
 #                                            disables it, which is the way to make this script worse.
 #   TIMBDA_NIX_GATE_JOBS      default 1      passed as `nix build --max-jobs`.
 #   TIMBDA_NIX_GATE_ALLOW     default no     `yes` runs past a failed preflight, at your own risk.
-#   TIMBDA_NIX_GATE_TARGETS   default: the nine documented targets (the five M2-era
+#   TIMBDA_NIX_GATE_TARGETS   default: the ten documented targets (the five M2-era
 #                                            lanes incl. golden-compile (D4b) + the four M1
-#                                            lanes of decision 9 § 5.0),
+#                                            lanes of decision 9 § 5.0 + the milestone-table
+#                                            lane (T-005, both joined 2026-11-27)),
 #                                            cheapest-first EXCEPT that the Coq package lane
 #                                            runs before the check lanes that drag it; a
 #                                            space-separated override.
@@ -207,6 +208,7 @@ if [ "$#" -eq 0 ]; then
     # in, and the evidence lines up with the lane that actually costs the memory.
     TARGETS=(
       .#checks.x86_64-linux.version-consistency
+      .#checks.x86_64-linux.milestones-consistency
       .#checks.x86_64-linux.rules-audit
       .#checks.x86_64-linux.bazel-native-tests
       .#checks.x86_64-linux.tblgen-rocq-golden
