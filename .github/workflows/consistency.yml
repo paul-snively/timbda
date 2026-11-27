@@ -21,9 +21,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install bazelisk (respects .bazelversion)
+        # Measured root cause of this job's failure on every run since 2026-11-19
+        # (bazel red, pins and nix green on all 40): GitHub-hosted ubuntu-24.04
+        # runners execute steps as a NON-ROOT user, so the unprivileged write to
+        # /usr/local/bin failed with curl's exit 23, "Failure writing output to
+        # file".  Install into $HOME/.local/bin and extend GITHUB_PATH instead.
         run: |
-          curl -fsSL -o /usr/local/bin/bazelisk https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
-          chmod +x /usr/local/bin/bazelisk
+          mkdir -p "$HOME/.local/bin"
+          curl -fsSL -o "$HOME/.local/bin/bazelisk" https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
+          chmod +x "$HOME/.local/bin/bazelisk"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: bazelisk test //dialect:timbda_dialect_test --test_output=all
 
   nix:
