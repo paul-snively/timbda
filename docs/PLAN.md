@@ -512,6 +512,9 @@ attestations):
 Shape: one Nix flake, two graphs, one generated interface. Nix = provisioner + formalization build
 + checks; Bazel = C++ orchestrator. They meet only at generated artifacts (timbda.td -> dialect
 C++/DRR on the Bazel side; -gen-rocq output on the Nix side) plus a version-consistency check.
+Candidates for this section - tools and build-loop ideas evaluated but not yet stipulated - are
+ledgered in docs/TOOLING.md (parking lot); adoption moves an entry here plus a decision log item,
+never happens in the ledger.
 Distinct trusted roots by design; do not make one graph build the other's artifacts.
 
 ### C++ side (Bazel + hermetic-llvm)
@@ -1021,6 +1024,10 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
   /recall or find_solutions, and check /strata-status / get_project_context at session start.
 - After each significant decision or fix, store a new Strata record per the project AGENTS.md so
   the ledger stays current between sessions.
+- docs/TOOLING.md is the parking lot for infrastructure and build possibilities (workflow tools,
+  dev-loop ideas): read its statuses before re-evaluating anything parked there (T-001: `rq`,
+  persistent Rocq sessions; also mirrored in Strata, tag "parked"). Nothing is adopted there;
+  adoption means PLAN sec. 6 + a decision log item.
 
 ## 11. Prior-art audit and claim boundaries (added 2026-11-16; full audit = first week of M0)
 
