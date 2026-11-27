@@ -512,7 +512,18 @@ attestations):
   COMPILE-STRATEGY § 9 amendments A/B: the IFor rebound regime is a carrier gap (→ M3),
   and the 7-bag wording needs true multi-candidate golden programs at D4.
   What M2 now owes: Compile corners D2 (primops with guards)–D4 (choice nodes) and the
-  golden test.*
+  golden test.*  *Increment D2 landed 2026-11-27:* primops through the fold are value-
+  faithful straight-line - `compile` emits NO primop structure (the spine collapses inside
+  one observation, p529 law 4), measured prim budget 5 (stuck-at-4 pinned), floor-`Z.div`
+  values as constants (the truncation fork cannot bite an emitted division node there is
+  none), guard test-shape (left operand carried), fail-as-zero, and the zero-divisor
+  `PStuck` corner.  *Increment D3 landed 2026-11-27 (probe p530, decision 17):* the
+  candidate-peek scheduler at the `chint` seam - a three-valued arm certificate
+  (`AVVal`/`AVStuck`/`AVUndef`) run through the same compile algebra per arm, exactly-one-
+  site scope, genuine pairs and multi-site programs stay trapped, vacuous (both-stuck)
+  sites certified output-neutral; D1's trap pin survived as the measured delta, the budget
+  law generalized untouched (`iterF`'s hint threading never moved).  What M2 now owes: D4
+  (materialized choice nodes + arbiter spec + the golden test).*
   *Ordering 2026-11-25 (decision 9): what remains of M2 and the order it must land in are
   pinned at § 5.0 - M1 closure first.*
 - M3: closed certified runtime. Full Gallina evaluator (T8, T9 e2e). Complete usable Timbda-0
@@ -1026,6 +1037,29 @@ Distinct trusted roots by design; do not make one graph build the other's artifa
     in m2-det). Cone audit unchanged: `rocq check Timbda.Compile` prints exactly the 13
     pinned axioms, `Print Assumptions c_ret` is closed, and the kernel lane's strict
     single-axiom gate survived the CompCert-window test lane untouched.
+17. (2026-11-27, probe p530 + increment D3) **The candidate-peek scheduler lands at the
+    `chint` seam as a three-valued certificate over the compile algebra itself; its scope is
+    exactly-one-site, and everything outside that scope stays trapped.** The five measured
+    facts (docs/probes/p530/): (1) `true` = left arm, `false` = right at a resolved BrF -
+    so the forcing bool decision 15 required is literally a direction; (2) `Choice Fail
+    (Ret 1)` answers on BOTH arms (fail-as-zero IS a candidate) - the genuine pair, and the
+    certificate REFUSES it: D1's trap pin `c_choice_traps` stands unchanged, now with a
+    proof-shaped reason; (3) an arm whose test verdict is `CLoop`/`CTrap` is UNDECIDED, not
+    "no candidate" - the three-valued `arm_verdict` is what keeps a shallow budget from
+    certifying a wrong direction (measured boundary corner: certified left, fold too shallow
+    - the verdict is `CLoop`, the budget law's own answer, never a wrong pick); (4) a hint
+    handed to a multi-site program answers EVERY BrF - p530 measured the silent left-priority
+    run the FoldCTree horn warns about - so the walker refuses two+-site programs and the
+    materialized choice node (D4) is where multi-site gets its semantics; (5) both-stuck
+    sites are vacuous (both answers identical, pinned as `c_choice_vacuous_agrees`).
+    Ruling on shape: the certificate runs the SAME `compile` unhinted on each arm at the
+    program budget - decision 15's kernel-side determinacy analysis with the guard rail
+    intact (one bounded fold per arm, no whole-program normalization); the site walker is a
+    depth-indexed pair run at `e_fuel p` (exact there, conservative below). `iterF`, the
+    budget law, and the cone audit did not move. Remaining obligations named: per-site
+    remaining-fuel peeks and multi-site hints move with D4's choice nodes; the general
+    vacuous-site argument (arms terminating as the same SStuck data up to the fold verdict)
+    stays a corner-level pin until a lane needs the lemma.
 
 ## 9. Known reference anchors
 

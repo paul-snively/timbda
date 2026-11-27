@@ -224,12 +224,114 @@ Definition terminal_stmt (r : SResult) : Clight.statement :=
    the observed result.  No goal in this file asks `compile` for a normal form
    of a tree (decision 14's checkable guard rail: the budget law makes the
    working set proportional to the observations the goal mentions). *)
-Definition compile (p : Expr) (fuel : nat) : CRes SResult :=
-  match fold h g (denE nil p fuel) (cstate0 fuel) with
+Definition compile_h (p : Expr) (fuel : nat) (hint : option bool) : CRes SResult :=
+  match fold h g (denE nil p fuel) (mkCS fuel nil hint) with
   | @CDone _ frag r => @CDone SResult (frag ++ [terminal_stmt r]) r
   | @CLoop _ frag   => @CLoop SResult frag
   | @CTrap _ frag   => @CTrap SResult frag
   end.
+
+(* ---------- D3 (probe p530): the candidate-peek scheduler.  Measured facts
+   the design must honor (docs/probes/p530/README.md):
+   (1) at a RESOLVED BrF, `Some true` takes the LEFT arm, `Some false` the
+       right - so a bool answer means "left" / "right" outright;
+   (2) `Choice Fail (Ret 1)` answers in BOTH arms (fail-as-zero IS a value
+       candidate, T2) - decision 15's genuine pair, and the certificate must
+       REFUSE it, not pick;
+   (3) a `CLoop` verdict on an arm means UNDECIDED (fuel too shallow), NOT
+       "no candidate" - the certificate is therefore three-valued;
+   (4) handing a hint to a program with TWO sites makes the SAME bool answer
+       every BrF (p530-B measured it: a silent left-priority run) - so the
+       single-hint certificate covers programs with EXACTLY ONE site; multi-
+       site programs stay trapped until D4's materialized choice nodes;
+   (5) both-arms-stuck is a VACUOUS site: both answers measured identical
+       (`CDone [] SStuck`, p530-B), the arms terminate as the same SStuck
+       data - picking left there is provably output-neutral. *)
+
+Inductive arm_verdict : Type := AVVal | AVStuck | AVUndef.
+
+(* The certificate runs the SAME compile algebra (unhinted - guarded below:
+   a certified site's arms are site-free) on each arm at the program budget.
+   This is the determinacy analysis decision 15's ruling licenses kernel-side;
+   the guard rail still holds: no whole-program normalization, one bounded
+   fold per arm. *)
+Definition arm_verdict_of (e : Expr) (fuel : nat) : arm_verdict :=
+  match compile_h e fuel None with
+  | @CDone _ _ (SOk _) => AVVal
+  | @CDone _ _ SFail   => AVVal    (* fail-as-zero IS a candidate (T2; p530 (2)) *)
+  | @CDone _ _ SStuck  => AVStuck  (* stuck is NOT a candidate (p529 law 2) *)
+  | @CLoop _ _         => AVUndef  (* fuel-exhausted: undecided (p530 (3)) *)
+  | @CTrap _ _         => AVUndef  (* uncertified interior: undecided *)
+  end.
+
+
+Definition pick_site (a b : option (Expr * Expr)) : option (Expr * Expr) :=
+  match a, b with
+  | Some x, None => Some x
+  | None, Some y => Some y
+  | _, _ => None                  (* two sites anywhere: refuse *)
+  end.
+
+(* Site walker: mutual on a shared DEPTH index (the one cross-shape recursion
+   Rocq's structural check accepts - it refused both the Expr/list mutual
+   block and constructor-rebuilt recursive arguments; only pattern variables,
+   measured).  Run at `e_fuel p` (Checks.v:616): every child's `e_fuel` is
+   strictly below its parent's, so the walk at that depth sees every
+   constructor - EXACT.  Shallower walks only ever return `None` earlier,
+   i.e. they REFUSE certification, never grant a wrong one.
+   `Some` exactly when the program carries EXACTLY ONE `Choice` site; zero
+   or two+ sites both give None (p530 (4): a single hint would answer every
+   BrF, giving the silent left-priority run the probe measured). *)
+Fixpoint scan_sites (d : nat) (p : Expr) : option (Expr * Expr) :=
+  match d with
+  | Datatypes.O => None
+  | Datatypes.S k =>
+      match p with
+      | Ret _ | Glob _ | Fail => None
+      | App e1 e2 | Seq e1 e2 | Unify e1 e2 =>
+          pick_site (scan_sites k e1) (scan_sites k e2)
+      | TupE es => scan_sites_list k es
+      | Choice e1 e2 =>
+          match scan_sites k e1, scan_sites k e2 with
+          | None, None => Some (e1, e2)   (* the unique site *)
+          | _, _       => None            (* nested sites: refuse *)
+          end
+      | Block _ b => scan_sites k b
+      | Iter _ b e => pick_site (scan_sites k b) (scan_sites k e)
+      end
+  end
+with scan_sites_list (d : nat) (es : list Expr) : option (Expr * Expr) :=
+  match d with
+  | Datatypes.O => None
+  | Datatypes.S k =>
+      match es with
+      | nil => None
+      | e :: rest => pick_site (scan_sites k e) (scan_sites_list k rest)
+      end
+  end.
+
+Definition one_choice_site (p : Expr) : option (Expr * Expr) :=
+  scan_sites (e_fuel p) p.
+
+Definition choice_cert (e1 e2 : Expr) (fuel : nat) : option bool :=
+  match arm_verdict_of e1 fuel, arm_verdict_of e2 fuel with
+  | AVVal, AVStuck   => Some true    (* left arm has the candidate (p530 (1)) *)
+  | AVStuck, AVVal   => Some false   (* right arm *)
+  | AVStuck, AVStuck => Some true    (* vacuous site: output-neutral (p530 (5)) *)
+  | _, _             => None         (* the genuine pair, or any UNDECIDED arm *)
+  end.
+
+Definition peek_plan (p : Expr) (fuel : nat) : option bool :=
+  match one_choice_site p with
+  | Some (e1, e2) => choice_cert e1 e2 fuel
+  | None => None
+  end.
+
+(* The public compile: the hylo plus its certificate.  Choice-free programs
+   peek to `None` - no BrF can occur, so the hint is never consulted, and
+   every D1/D2 pin is unchanged by construction. *)
+Definition compile (p : Expr) (fuel : nat) : CRes SResult :=
+  compile_h p fuel (peek_plan p fuel).
 
 (* ============================================================================
    4. The budget law, first-class so a lane can cite it (strategy sec. 5:
@@ -390,16 +492,16 @@ Qed.
 
 (* The fold-side corollary at the initial state: before the single terminal
    append, the accumulated fragment is EMPTY. *)
-Lemma c_frag_of_fold : forall (p : Expr) (fuel : nat),
-  match fold h g (denE nil p fuel) (cstate0 fuel) with
+Lemma c_frag_of_fold : forall (p : Expr) (fuel : nat) (hint : option bool),
+  match fold h g (denE nil p fuel) (mkCS fuel nil hint) with
   | @CDone _ frag _ => frag = @nil Clight.statement
   | @CLoop _ frag   => frag = @nil Clight.statement
   | @CTrap _ frag   => frag = @nil Clight.statement
   end.
 Proof.
-  intros p fuel. rewrite fold_bridge.
+  intros p fuel hint. rewrite fold_bridge.
   apply iterF_frag_stable.
-  cbn [cfrag cstate0]. reflexivity.
+  cbn [cfrag]. reflexivity.
 Qed.
 
 (* Consuming the verdict: an empty pre-terminal fragment means a `CDone`
@@ -630,4 +732,83 @@ Proof. reflexivity. Qed.
 Lemma c_prim_neq_diff :
   compile (cprim PNEq [VInt 1; VInt 2]) 5%nat
   = @CDone SResult [Clight.Sset Lower.lower_res (Lower.vconst (VInt 1))] (SOk (VInt 1)).
+Proof. reflexivity. Qed.
+
+(* ============================================================================
+   8. Corner 3 (strategy sec. 8's third stop): the CERTIFIED choice.  D3
+   installs the candidate-peek scheduler at the `chint` seam - the certificate
+   is decision 15's forcing bool, computed kernel-side by running the SAME
+   compile algebra on each arm (three-valued: has-candidate / stuck /
+   UNDECIDED, per p530), and everything below is a measured delta from D1's
+   trap pin (`c_choice_traps`), exactly the "pinned now so the replacement is
+   a measured delta" discipline.
+
+   Ruled by the p530 measurements (docs/probes/p530/README.md):
+   (1) `true` = LEFT arm, `false` = right at a resolved BrF;
+   (2) genuine pairs (`Choice Fail (Ret 1)`: fail-as-zero is a candidate) stay
+       TRAPPED - the certificate refuses, it does not pick;
+   (3) `CLoop` on an arm is UNDECIDED, never read as "no candidate";
+   (4) exactly-one-site programs get certified; multi-site programs stay
+       trapped until D4 materializes choice nodes - the probe shows why a
+       single hint must not be loosed there (it answers EVERY BrF: silent
+       left-priority);
+   (5) both-stuck sites are vacuous: both answers measured IDENTICAL, so
+       certifying left there emits what either arm would.
+
+   Fuel honesty: the certificate runs at the PROGRAM budget `fuel`; the corners
+   below are shallow (arm completion well inside the budget).  p530 also
+   measured the failure mode at the boundary: `Choice (Ret 1) div0` at fuel 1
+   certifies left but the main fold cannot reach the BrF in time - `CLoop`,
+   the budget verdict, NOT a wrong pick.  A remaining-fuel peek is D4/corpus
+   work; the trap never mis-emits. ============================================================================ *)
+
+(* (1)+(4): the determinate site - value over stuck - compiles. *)
+Lemma c_choice_forced_value :
+  compile (Choice (Ret (VInt 1)) (cprim PDiv [VInt 1; VInt 0])) 5%nat
+  = @CDone SResult [Clight.Sset Lower.lower_res (Lower.vconst (VInt 1))] (SOk (VInt 1)).
+Proof. reflexivity. Qed.
+
+(* (1): the flip - stuck left, value right - forces the OTHER bool. *)
+Lemma c_choice_forced_flip :
+  compile (Choice (cprim PDiv [VInt 1; VInt 0]) (Ret (VInt 2))) 5%nat
+  = @CDone SResult [Clight.Sset Lower.lower_res (Lower.vconst (VInt 2))] (SOk (VInt 2)).
+Proof. reflexivity. Qed.
+
+(* (5): the vacuous site: stuck over stuck.  Certifying left emits exactly
+       what either arm would; the agreement itself is pinned next. *)
+Lemma c_choice_vacuous_stuck :
+  compile (Choice (cprim PDiv [VInt 1; VInt 0]) (cprim PDiv [VInt 2; VInt 0])) 5%nat
+  = @CDone SResult [Clight.Sskip] SStuck.
+Proof. reflexivity. Qed.
+
+Lemma c_choice_vacuous_agrees :
+  compile_h (Choice (cprim PDiv [VInt 1; VInt 0]) (cprim PDiv [VInt 2; VInt 0])) 5%nat (Some true)
+  = compile_h (Choice (cprim PDiv [VInt 1; VInt 0]) (cprim PDiv [VInt 2; VInt 0])) 5%nat (Some false).
+Proof. reflexivity. Qed.
+
+(* (2): the genuine pair stays trapped - section 5's `c_choice_traps` is THIS
+       corner and its proof did not move: both arms answer `AVVal` (fail IS a
+       candidate, T2), `choice_cert` returns None, `g` traps. *)
+
+(* (4): two sites refuse the single-hint certificate - the trap stands even
+       though the OUTER site alone would certify. *)
+Lemma c_choice_two_sites_refused :
+  compile (Choice (Choice (Ret (VInt 1)) (cprim PDiv [VInt 1; VInt 0])) (Ret (VInt 2))) 5%nat
+  = @CTrap SResult nil.
+Proof. reflexivity. Qed.
+
+(* Fuel honesty at the boundary: certified left, fold too shallow - the budget
+   verdict `CLoop`, never a wrong pick. *)
+Lemma c_choice_lowfuel_undecided :
+  compile (Choice (Ret (VInt 1)) (cprim PDiv [VInt 1; VInt 0])) 1%nat
+  = @CLoop SResult nil.
+Proof. reflexivity. Qed.
+
+(* The site inside a `Seq`: the certificate travels with the program - the
+   single site deeper in the tree is found by the walker at `e_fuel` depth and
+   certified; the discarded-prefix value rule (Semantics.v) still decides what
+   the terminal write says. *)
+Lemma c_choice_certified_in_seq :
+  compile (Seq (Choice (Ret (VInt 1)) (cprim PDiv [VInt 1; VInt 0])) Fail) 5%nat
+  = @CDone SResult [Clight.Sskip] SFail.
 Proof. reflexivity. Qed.

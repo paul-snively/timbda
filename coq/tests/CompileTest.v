@@ -53,6 +53,9 @@ Definition c_prim_div_neg_prog : Expr :=
   App (Ret (VPrim PDiv)) (TupE (map Ret [VInt 7; VInt (-2)])).
 Definition c_prim_div0_prog : Expr :=
   App (Ret (VPrim PDiv)) (TupE (map Ret [VInt 1; VInt 0])).
+Definition c_choice_vs_prog : Expr := Choice (Ret (VInt 1)) c_prim_div0_prog.
+Definition c_choice_sv_prog : Expr := Choice c_prim_div0_prog (Ret (VInt 2)).
+Definition c_choice_nested_prog : Expr := Choice c_choice_vs_prog (Ret (VInt 2)).
 
 (* Coq re-exports a module's OWN definitions but not the libraries it
    `Require Import`ed, so the Clight statement constructors and the landed
@@ -125,3 +128,25 @@ Example compile_prim_div0_stuck_pin : compile c_prim_div0_prog 5%nat = CDone SRe
 Proof. reflexivity. Qed.
 
 Compute compile c_prim_div_neg_prog 5%nat.
+
+(* Corner 3 (D3): the candidate-peek certificate at the chint seam.  Value
+   over stuck FORCES the branch and compiles; the genuine pair (fail-as-zero
+   is a candidate) stays TRAPPED; two sites refuse the single-hint certificate;
+   at too little fuel the fold answers CLoop - the budget verdict, never a
+   wrong pick. *)
+Example compile_choice_forced_pin :
+  compile c_choice_vs_prog 5%nat
+  = CDone SResult [Sset lower_res (vconst (VInt 1))] (SOk (VInt 1)).
+Proof. reflexivity. Qed.
+
+Example compile_choice_flip_pin :
+  compile c_choice_sv_prog 5%nat
+  = CDone SResult [Sset lower_res (vconst (VInt 2))] (SOk (VInt 2)).
+Proof. reflexivity. Qed.
+
+Example compile_choice_nested_refused_pin :
+  compile c_choice_nested_prog 5%nat = CTrap SResult nil.
+Proof. reflexivity. Qed.
+
+Example compile_choice_lowfuel_pin : compile c_choice_vs_prog 1%nat = CLoop SResult nil.
+Proof. reflexivity. Qed.
