@@ -145,7 +145,9 @@ def main():
     if cmd == "sync-about":
         desc = about_string(pins)
         slug = repo_slug()
-        r = gh_api("PATCH", f"/repos/{slug}", "-f", f"description={desc}")
+        # gh api takes the method as -X/--method; a bare "PATCH" positional is
+        # parsed as an endpoint (measured: "accepts 1 arg(s), received 2").
+        r = gh_api("-X", "PATCH", f"/repos/{slug}", "-f", f"description={desc}")
         if r.returncode != 0:
             print(f"FAIL: gh PATCH: {r.stderr.strip()}")
             return 1
